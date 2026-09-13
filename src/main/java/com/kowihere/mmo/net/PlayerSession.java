@@ -28,6 +28,13 @@ final class PlayerSession implements Client {
     private static final int OUTBOUND_CAPACITY = 256;
 
     /**
+     * Inbound frames allowed per second. A player clicking and typing as fast as
+     * a human can manage stays far below this; anything above it is a script,
+     * and scripts are what turn one socket into everyone's lag.
+     */
+    private static final int INBOUND_FRAMES_PER_SECOND = 30;
+
+    /**
      * Deliberately a fresh instance rather than a literal, so it can be matched
      * by identity and never collides with a frame that happens to say the same.
      */
@@ -37,6 +44,8 @@ final class PlayerSession implements Client {
     private final WebSocketSession session;
     private final BlockingQueue<String> outbound = new ArrayBlockingQueue<>(OUTBOUND_CAPACITY);
     private final AtomicBoolean closing = new AtomicBoolean();
+    private long windowStartedAt = System.nanoTime();
+    private int framesThisWindow;
 
     PlayerSession(WebSocketSession session) {
         this.session = session;
@@ -65,6 +74,23 @@ final class PlayerSession implements Client {
         } finally {
             closeQuietly();
         }
+    }
+
+    /**
+     * Counts one inbound frame against this socket's budget.
+     *
+     * <p>Called only from the container thread that reads this socket, which is
+     * the single reader Spring guarantees - so the counters need no locking.
+     *
+     * @return false when the socket has exceeded its share and should be dropped
+     */
+    boolean allowInboundFrame() {
+        long now = System.nanoTime();
+        if (now - windowStartedAt >= 1_000_000_000L) {
+            windowStartedAt = now;
+            framesThisWindow = 0;
+        }
+        return ++framesThisWindow <= INBOUND_FRAMES_PER_SECOND;
     }
 
     @Override

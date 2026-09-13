@@ -46,6 +46,12 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         if (client == null) {
             return;
         }
+        if (!client.allowInboundFrame()) {
+            log.info("Dropping {}: sending faster than a player can act", session.getId());
+            client.disconnect("Too many messages");
+            return;
+        }
+
         String payload = frame.getPayload();
         if (payload.length() > MAX_FRAME_CHARS) {
             client.disconnect("Frame too large");
