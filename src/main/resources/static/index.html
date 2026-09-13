@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>web-mmo</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 fill=%27%23181c24%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%278%27 fill=%27%236ea8fe%27/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="join" class="overlay">
+    <form id="join-form">
+        <h1>web-mmo</h1>
+        <p>Wpisz nazwe postaci i wejdz na mape. Otworz druga karte, zeby zobaczyc multiplayer.</p>
+        <input id="name" maxlength="16" placeholder="Nazwa postaci" autocomplete="off" required>
+        <button type="submit">Wejdz do gry</button>
+    </form>
+</div>
+
+<div id="game" hidden>
+    <canvas id="view"></canvas>
+
+    <div id="hud">
+        <span id="map-name"></span>
+        <span id="status" class="status"></span>
+    </div>
+
+    <div id="chat">
+        <ul id="chat-log"></ul>
+        <input id="chat-input" maxlength="200" placeholder="Napisz cos i nacisnij Enter" autocomplete="off">
+    </div>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
