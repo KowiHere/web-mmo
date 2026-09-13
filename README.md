@@ -71,6 +71,17 @@ see the multiplayer half actually working.
 ./mvnw test
 ```
 
+To check the multiplayer half for real, start the server and drive two browser
+tabs at it:
+
+```bash
+cd e2e && npm install && npm test
+```
+
+That covers what unit tests cannot — two people seeing each other move, the
+server refusing an illegal destination, and a dropped socket resuming the same
+character.
+
 ## Maps
 
 Maps are content, not database rows: `src/main/resources/maps/*.json`, loaded at
@@ -101,6 +112,12 @@ Client to server:
 
 Server to client: `init` (the whole world once), `delta` (what changed), `error`.
 
+Two limits apply to anything a client sends, both there to stop one socket from
+degrading the map for everyone on it. A socket may send 30 frames per second and
+is dropped above that. Move requests are collected during a tick and resolved
+once at the end of it, so clicking faster buys later destinations, never more
+pathfinding.
+
 ## What is not here yet
 
 No accounts, no database, no combat, no items. Characters live in memory and are
@@ -120,4 +137,5 @@ path/      A* over the collision grid      — server-side only
 loop/      the game loop and its commands  — no Spring below this line
 net/       WebSocket transport             — translates frames, decides nothing
 protocol/  the wire format
+e2e/       two-tab browser checks          — needs a running server
 ```

@@ -1,0 +1,12 @@
+{
+  "name": "web-mmo-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Two-tab browser checks against a running web-mmo server",
+  "scripts": {
+    "test": "node multiplayer.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}
