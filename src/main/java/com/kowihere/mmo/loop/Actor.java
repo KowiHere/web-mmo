@@ -29,6 +29,14 @@ final class Actor {
     final Deque<int[]> path = new ArrayDeque<>();
     long nextStepTick;
 
+    /**
+     * Where this actor has been asked to walk, not yet turned into a path.
+     * Requests are collected during the drain and resolved once per tick, so a
+     * client cannot buy more pathfinding than a tick's worth no matter how fast
+     * it clicks. Null when there is nothing pending.
+     */
+    int[] pendingMove;
+
     Client client;
     long offlineSinceTick;
     /**

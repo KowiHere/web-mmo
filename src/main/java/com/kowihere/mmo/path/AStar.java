@@ -30,6 +30,7 @@ public final class AStar {
     private final int[] visitMark;
     private final int[] closedMark;
     private int generation;
+    private long searches;
 
     public AStar(MapDef map) {
         this.map = map;
@@ -46,6 +47,7 @@ public final class AStar {
      *         the start. Never null — callers should not have to think about it.
      */
     public Deque<int[]> findPath(int startX, int startY, int goalX, int goalY) {
+        searches++;
         Deque<int[]> path = new ArrayDeque<>();
         if (!map.walkable(startX, startY) || !map.walkable(goalX, goalY)) {
             return path;
@@ -114,6 +116,16 @@ public final class AStar {
         }
         path.removeFirst(); // the tile the actor already stands on
         return path;
+    }
+
+    /**
+     * How many searches this instance has run. Pathfinding is the most expensive
+     * thing a client can ask the map thread to do, so the count is worth
+     * watching - a number that tracks connected players is healthy, one that
+     * tracks their click rate is not.
+     */
+    public long searches() {
+        return searches;
     }
 
     private static int heuristic(int x, int y, int goalX, int goalY) {

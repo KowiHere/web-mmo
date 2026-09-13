@@ -123,7 +123,72 @@ class MapRunnerTest {
                 .isTrue();
     }
 
+    @Test
+    void aSecondHelloOnOneSocketDoesNotCreateASecondCharacter() {
+        // Regression: an unguarded second `hello` used to hand the socket a new
+        // actor and orphan the first one. The orphan kept a live client, so
+        // online() stayed true and the reaper never touched it - it sat on the
+        // map until the process restarted, and the socket got every delta twice.
+        FakeClient ala = join("Ala");
+        runner.submit(new Command.Join(ala, "Ala", null, 0));
+        sleep(400);
+
+        FakeClient observer = join("Observer");
+        String init = observer.await("\"type\":\"init\"");
+
+        assertThat(countActors(init))
+                .as("the world should hold Ala and the observer, nothing else")
+                .isEqualTo(2);
+    }
+
+    @Test
+    void aSecondHelloOnOneSocketDoesNotDisconnectTheClient() {
+        // Regression: the "same character opened twice" branch disconnected the
+        // existing socket without checking it was not the very socket asking.
+        FakeClient ala = join("Ala");
+        String token = extract(ala.await("\"type\":\"init\""), "\"token\":\"", "\"");
+
+        runner.submit(new Command.Join(ala, "Ala", token, 0));
+        sleep(400);
+
+        assertThat(ala.disconnected)
+                .as("a client must not be dropped for re-introducing itself")
+                .isFalse();
+    }
+
+    @Test
+    void aBurstOfMoveCommandsCostsAtMostOnePathSearchPerTick() {
+        // Regression: every move command used to trigger a full A* immediately,
+        // so one socket clicking in a loop could pin the map thread and delay
+        // the tick for everyone else on the map.
+        FakeClient ala = join("Ala");
+        long before = runner.pathSearches();
+
+        // Every target is open ground on row spawnY-1, walked right to left.
+        for (int i = 0; i < 50; i++) {
+            runner.submit(new Command.MoveTo(ala, MAP.spawnX() - (i % 5), MAP.spawnY() - 1));
+        }
+        final int lastX = MAP.spawnX() - (49 % 5);
+        sleep(400);
+
+        long searches = runner.pathSearches() - before;
+        assertThat(searches)
+                .as("50 clicks in one burst should not buy 50 searches")
+                .isLessThanOrEqualTo(4);
+        assertThat(ala.await(f -> f.contains("\"moved\"")))
+                .as("the actor should still act on the burst")
+                .isTrue();
+        assertThat(ala.await(f -> f.contains("\"x\":" + lastX + ",\"y\":" + (MAP.spawnY() - 1))))
+                .as("coalescing must honour the most recent click, not the first")
+                .isTrue();
+    }
+
     // ------------------------------------------------------------------
+
+    private static int countActors(String initFrame) {
+        int start = initFrame.indexOf("\"actors\":[");
+        return initFrame.substring(start).split("\"name\":", -1).length - 1;
+    }
 
     private FakeClient join(String name) {
         FakeClient client = new FakeClient();
@@ -148,6 +213,7 @@ class MapRunnerTest {
     private static final class FakeClient implements Client {
 
         private final List<String> frames = new CopyOnWriteArrayList<>();
+        private volatile boolean disconnected;
 
         @Override
         public void send(String json) {
@@ -156,6 +222,7 @@ class MapRunnerTest {
 
         @Override
         public void disconnect(String reason) {
+            disconnected = true;
         }
 
         @Override

@@ -53,11 +53,14 @@ public final class MapRunner implements Runnable {
     private static final int CHAT_COOLDOWN_TICKS = 5;
     private static final int MAX_CHAT_LENGTH = 200;
     private static final int MAX_COMMANDS_PER_TICK = 4_096;
+    /** At most one overrun warning per 10 s, so an overloaded map does not flood the log. */
+    private static final int OVERRUN_WARNING_INTERVAL_TICKS = 100;
 
     private final MapDef map;
     private final ObjectMapper json;
     private final AStar pathfinder;
     private final Queue<Command> inbox = new ConcurrentLinkedQueue<>();
+    private final MapDto mapDto;
 
     // ---- owned exclusively by the map thread from here down ----
     private final Map<Integer, Actor> actors = new HashMap<>();
@@ -70,20 +73,31 @@ public final class MapRunner implements Runnable {
     private final List<MoveDto> moved = new ArrayList<>();
     private final List<ChatDto> chat = new ArrayList<>();
     private final List<PresenceDto> presence = new ArrayList<>();
+    private final List<Actor> pendingMoves = new ArrayList<>();
 
     private long version;
     private long tick;
     private int nextActorId = 1;
     private volatile boolean running = true;
+    private long lastOverrunWarningTick = Long.MIN_VALUE / 2;
 
     public MapRunner(MapDef map, ObjectMapper json) {
         this.map = map;
         this.json = json;
         this.pathfinder = new AStar(map);
+        // MapDef is immutable, so this never changes - build it once instead of
+        // rebuilding the whole collision grid on every player's arrival.
+        this.mapDto = new MapDto(map.id(), map.name(), map.width(), map.height(),
+                map.tileSize(), map.collisionRows());
     }
 
     public String mapId() {
         return map.id();
+    }
+
+    /** How many A* searches this map has run since it started. See {@link AStar#searches()}. */
+    public long pathSearches() {
+        return pathfinder.searches();
     }
 
     /** Called from network threads. The only public way to affect this map. */
@@ -102,6 +116,7 @@ public final class MapRunner implements Runnable {
         while (running) {
             try {
                 drainCommands();
+                resolvePendingPaths();
                 advanceMovement();
                 reapExpiredActors();
                 flush();
@@ -116,7 +131,10 @@ public final class MapRunner implements Runnable {
             if (sleep > 0) {
                 LockSupport.parkNanos(sleep);
             } else {
-                // Fell behind; drop the backlog rather than spiral trying to catch up.
+                // Fell behind. Drop the backlog rather than spiral trying to catch
+                // up - but say so, because a world that silently runs slow just
+                // looks like everyone's connection got worse.
+                warnAboutOverrun(-sleep);
                 nextTickNanos = System.nanoTime();
             }
         }
@@ -143,8 +161,16 @@ public final class MapRunner implements Runnable {
     }
 
     private void handleJoin(Command.Join join) {
+        if (byClient.containsKey(join.client())) {
+            // This socket already has a character. Honouring a second hello would
+            // hand it another one and strand the first with a live client, so
+            // online() would stay true and the reaper would never collect it.
+            log.debug("Ignoring repeated hello from {}", join.client().describe());
+            return;
+        }
+
         Actor existing = join.token() == null ? null : byToken.get(join.token());
-        if (existing != null && existing.online()) {
+        if (existing != null && existing.online() && existing.client != join.client()) {
             // Same character opened twice. The newcomer wins; the stale socket goes.
             existing.client.disconnect("Session resumed elsewhere");
             byClient.remove(existing.client);
@@ -179,6 +205,7 @@ public final class MapRunner implements Runnable {
         actor.client = null;
         actor.offlineSinceTick = tick;
         actor.path.clear(); // you stop where you stood; you do not keep walking unattended
+        actor.pendingMove = null;
         presence.add(new PresenceDto(actor.id, false));
     }
 
@@ -187,12 +214,30 @@ public final class MapRunner implements Runnable {
         if (actor == null) {
             return;
         }
-        Deque<int[]> path = pathfinder.findPath(actor.x, actor.y, move.x(), move.y());
-        actor.path.clear();
-        actor.path.addAll(path);
-        // nextStepTick is left alone on purpose: an idle actor's is already in the
-        // past and steps at once, while one mid-step finishes the tile it entered
-        // before turning. Re-pathing must not let a click buy a free step.
+        // Remember the request; do not search yet. Pathfinding is the most
+        // expensive thing a client can ask for, and resolving once per tick caps
+        // what one socket can spend no matter how fast it clicks.
+        if (actor.pendingMove == null) {
+            pendingMoves.add(actor);
+        }
+        actor.pendingMove = new int[]{move.x(), move.y()};
+    }
+
+    /** Turns at most one move request per actor per tick into an actual path. */
+    private void resolvePendingPaths() {
+        for (Actor actor : pendingMoves) {
+            int[] target = actor.pendingMove;
+            actor.pendingMove = null;
+            if (target == null) {
+                continue;
+            }
+            actor.path.clear();
+            actor.path.addAll(pathfinder.findPath(actor.x, actor.y, target[0], target[1]));
+            // nextStepTick is left alone on purpose: an idle actor's is already in
+            // the past and steps at once, while one mid-step finishes the tile it
+            // entered before turning. Re-pathing must not buy a free step.
+        }
+        pendingMoves.clear();
     }
 
     private void handleChat(Command.Chat message) {
@@ -288,8 +333,6 @@ public final class MapRunner implements Runnable {
         for (Actor actor : actors.values()) {
             snapshot.add(toDto(actor));
         }
-        MapDto mapDto = new MapDto(map.id(), map.name(), map.width(), map.height(),
-                map.tileSize(), map.collisionRows());
         String frame = serialise(new ServerMessages.Init(version, mapDto, self.id, self.token, snapshot));
         if (frame != null) {
             client.send(frame);
@@ -326,6 +369,16 @@ public final class MapRunner implements Runnable {
             log.error("Could not serialise {} on map '{}'", message.getClass().getSimpleName(), map.id(), e);
             return null;
         }
+    }
+
+    /** Rate-limited so a sustained overload logs steadily instead of flooding. */
+    private void warnAboutOverrun(long overrunNanos) {
+        if (tick - lastOverrunWarningTick < OVERRUN_WARNING_INTERVAL_TICKS) {
+            return;
+        }
+        lastOverrunWarningTick = tick;
+        log.warn("Map '{}' missed its {} ms tick by {} ms - the world is running slow",
+                map.id(), TICK_MS, overrunNanos / 1_000_000L);
     }
 
     private ActorDto toDto(Actor actor) {
