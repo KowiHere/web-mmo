@@ -6,6 +6,7 @@
     --muted: #7a8394;
     --accent: #6ea8fe;
     --danger: #e06c75;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -36,10 +37,11 @@ html, body {
     background: var(--bg);
     z-index: 10;
     padding: 16px;
+    overflow-y: auto;
 }
 
 #join-form {
-    width: min(380px, 100%);
+    width: min(400px, 100%);
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -47,7 +49,7 @@ html, body {
 }
 
 #join-form h1 { margin: 0 0 4px; font-size: 20px; }
-#join-form p { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+.lead { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
 
 input, button {
     width: 100%;
@@ -59,7 +61,7 @@ input, button {
     font: inherit;
 }
 
-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
 
 button {
     margin-top: 10px;
@@ -71,6 +73,20 @@ button {
 }
 
 button:hover { filter: brightness(1.08); }
+
+/* Two columns: the key on the left, what it does on the right. */
+.controls {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+    margin: 20px 0 0;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+}
+
+.controls dt { color: var(--text); font-family: var(--mono); white-space: nowrap; }
+.controls dd { margin: 0; color: var(--muted); }
 
 /* ---- game ---- */
 
@@ -102,6 +118,21 @@ button:hover { filter: brightness(1.08); }
 .status { color: var(--muted); }
 .status[data-state="down"] { color: var(--danger); }
 
+#debug {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    margin: 0;
+    background: rgba(15, 17, 22, .9);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font: 12px/1.6 var(--mono);
+    color: var(--muted);
+    white-space: pre;
+    pointer-events: none;
+}
+
 #chat {
     position: absolute;
     left: 12px;
@@ -122,6 +153,20 @@ button:hover { filter: brightness(1.08); }
     font-size: 13px;
 }
 
-#chat-log li { margin-bottom: 2px; word-break: break-word; }
+#chat-log:empty { display: none; }
+#chat-log li { margin-bottom: 3px; word-break: break-word; }
 #chat-log .who { color: var(--accent); font-weight: 600; }
-#chat-log .sys { color: var(--muted); font-style: italic; }
+
+/*
+ * System notices are indented and muted so the eye can skip them: what another
+ * player said matters more than who reconnected.
+ */
+#chat-log .sys {
+    display: block;
+    padding-left: 10px;
+    border-left: 2px solid var(--border);
+    color: var(--muted);
+    font-size: 12px;
+}
+
+#chat-input:not(:focus) { border-color: transparent; background: #12141a; }

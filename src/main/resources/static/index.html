@@ -11,9 +11,26 @@
 <div id="join" class="overlay">
     <form id="join-form">
         <h1>web-mmo</h1>
-        <p>Wpisz nazwe postaci i wejdz na mape. Otworz druga karte, zeby zobaczyc multiplayer.</p>
+        <p class="lead">
+            Wpisz nazwę postaci i wejdź na mapę.
+            Otwórz drugą kartę, żeby zobaczyć tryb wieloosobowy.
+        </p>
+
         <input id="name" maxlength="16" placeholder="Nazwa postaci" autocomplete="off" required>
-        <button type="submit">Wejdz do gry</button>
+        <button type="submit">Wejdź do gry</button>
+
+        <dl class="controls">
+            <dt>WASD / strzałki</dt>
+            <dd>chodzenie</dd>
+            <dt>kliknięcie</dt>
+            <dd>idź na wskazany kafel</dd>
+            <dt>Enter</dt>
+            <dd>czat; Enter wysyła i wraca do gry</dd>
+            <dt>Esc</dt>
+            <dd>powrót do sterowania grą</dd>
+            <dt>F3</dt>
+            <dd>podgląd diagnostyczny</dd>
+        </dl>
     </form>
 </div>
 
@@ -25,9 +42,11 @@
         <span id="status" class="status"></span>
     </div>
 
+    <pre id="debug" hidden></pre>
+
     <div id="chat">
         <ul id="chat-log"></ul>
-        <input id="chat-input" maxlength="200" placeholder="Napisz cos i nacisnij Enter" autocomplete="off">
+        <input id="chat-input" maxlength="200" placeholder="Enter, żeby pisać" autocomplete="off">
     </div>
 </div>
 

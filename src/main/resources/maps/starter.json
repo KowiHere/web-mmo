@@ -1,6 +1,6 @@
 {
   "id": "starter",
-  "name": "Polana Poczatkujacych",
+  "name": "Polana Początkujących",
   "tileSize": 32,
   "spawn": [14, 17],
   "collision": [

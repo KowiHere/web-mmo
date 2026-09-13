@@ -58,6 +58,13 @@ and that is the *only* thing it makes up. There is no client-side prediction and
 no client-side pathfinding, so there is nothing for the two sides to disagree
 about.
 
+Other players are drawn 150 ms behind the newest known state. The server ticks
+perfectly evenly but the network does not deliver evenly, so playing each step
+the moment its frame lands turns smooth movement into stutter; a small buffer
+gives late frames somewhere to land. Your own character is exempt — it already
+waits for the server to agree, and delaying it on top of that would just feel
+heavy.
+
 ## Running it
 
 ```bash
@@ -66,6 +73,18 @@ about.
 
 Then open <http://localhost:8080> — and open it a second time in another tab to
 see the multiplayer half actually working.
+
+| key | does |
+| --- | --- |
+| `WASD` / arrows | walk one tile, held to keep walking |
+| click | walk to that tile |
+| `Enter` | chat; sending returns the keyboard to the game |
+| `Esc` | leave the chat box |
+| `F3` | frame rate, delta rate, world version, buffer depth |
+
+`F3` deliberately shows no latency figure: an honest round-trip needs a
+ping/pong the protocol does not have, and an invented number would be worse
+than none.
 
 ```bash
 ./mvnw test

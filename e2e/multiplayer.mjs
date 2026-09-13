@@ -37,6 +37,30 @@ async function join(name) {
     return page;
 }
 
+/**
+ * Picks a direction the character can actually walk right now.
+ *
+ * Hard-coding one makes the test depend on wherever earlier steps happened to
+ * leave the character - and a refusal to walk into a wall is correct behaviour,
+ * so such a test fails while reporting nothing real.
+ */
+const pickFreeDirection = (page) => page.evaluate(() => {
+    const self = state.actors.get(state.selfId);
+    const options = [
+        { key: 'w', dx: 0, dy: -1 },
+        { key: 's', dx: 0, dy: 1 },
+        { key: 'a', dx: -1, dy: 0 },
+        { key: 'd', dx: 1, dy: 0 },
+    ];
+    const free = options.find((o) => {
+        const x = self.x + o.dx;
+        const y = self.y + o.dy;
+        return y >= 0 && y < state.map.height && x >= 0 && x < state.map.width
+            && state.map.collision[y][x] === '.';
+    });
+    return free && { ...free, fromX: self.x, fromY: self.y };
+});
+
 const snapshot = (page) => page.evaluate(() => ({
     version: state.version,
     selfId: state.selfId,
@@ -90,6 +114,53 @@ try {
         })
         .then(() => ok('chat reached the other client'))
         .catch(() => fail('chat did not reach the other client'));
+
+    // ---- a tapped key walks the character --------------------------------
+    const step = await pickFreeDirection(ala);
+    if (!step) {
+        fail('no free tile next to the character; cannot test keyboard movement');
+    } else {
+        await ala.keyboard.press(step.key);
+        await ala.waitForTimeout(STEP_MS * 3);
+        const walked = (await snapshot(ala)).actors.find((a) => a.id === alaView.selfId);
+
+        walked.x === step.fromX + step.dx && walked.y === step.fromY + step.dy
+            ? ok(`tapping "${step.key}" walked ${step.fromX},${step.fromY} -> ${walked.x},${walked.y}`)
+            : fail(`"${step.key}" from ${step.fromX},${step.fromY} left the character at ${walked.x},${walked.y}`);
+    }
+
+    // ---- typing must not walk the character ------------------------------
+    // The easiest thing in the whole feature to get wrong: chatting "wadas"
+    // should say a word, not send the character in four directions.
+    await ala.focus('#chat-input');
+    const beforeTyping = (await snapshot(ala)).actors.find((a) => a.id === alaView.selfId);
+    await ala.keyboard.type('wasd');
+    await ala.waitForTimeout(STEP_MS * 3);
+    const afterTyping = (await snapshot(ala)).actors.find((a) => a.id === alaView.selfId);
+
+    afterTyping.x === beforeTyping.x && afterTyping.y === beforeTyping.y
+        ? ok('movement keys are inert while the chat box has focus')
+        : fail(`typing moved the character ${[beforeTyping.x, beforeTyping.y]} -> ${[afterTyping.x, afterTyping.y]}`);
+
+    // ---- Escape hands the keyboard back ----------------------------------
+    await ala.keyboard.press('Escape');
+    const focusedAfterEscape = await ala.evaluate(() => document.activeElement.id);
+    focusedAfterEscape !== 'chat-input'
+        ? ok('Escape returns control to the game')
+        : fail('Escape left focus in the chat box');
+
+    const again = await pickFreeDirection(ala);
+    if (!again) {
+        fail('no free tile next to the character; cannot re-test movement');
+    } else {
+        await ala.keyboard.press(again.key);
+        await ala.waitForTimeout(STEP_MS * 3);
+        const walked = (await snapshot(ala)).actors.find((a) => a.id === alaView.selfId);
+
+        walked.x === again.fromX + again.dx && walked.y === again.fromY + again.dy
+            ? ok('movement works again once the chat box is left')
+            : fail(`character stayed at ${walked.x},${walked.y} after Escape`);
+    }
 
     // ---- a dropped socket resumes the same character ---------------------
     const before = alaView.selfId;
