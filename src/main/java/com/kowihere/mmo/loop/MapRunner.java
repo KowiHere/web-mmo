@@ -12,6 +12,9 @@ import com.kowihere.mmo.protocol.ServerMessages.MoveDto;
 import com.kowihere.mmo.protocol.ServerMessages.PresenceDto;
 import com.kowihere.mmo.world.Direction;
 import com.kowihere.mmo.world.MapDef;
+import com.kowihere.mmo.world.MobDef;
+import com.kowihere.mmo.world.RoamingSpawn;
+import com.kowihere.mmo.world.SpawnPoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,6 +26,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Random;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.LockSupport;
 
@@ -45,13 +49,22 @@ public final class MapRunner implements Runnable {
     static final int TICK_MS = 100;
     /** Ticks to cross one tile, i.e. 300 ms per step. */
     static final int STEP_TICKS = 3;
-    /** How long a disconnected actor stays in the world before being removed. */
-    private static final int GRACE_TICKS = 300;
+    /** Default time a disconnected character stays in the world before being removed. */
+    private static final int DEFAULT_GRACE_TICKS = 300;
     /** How many past deltas are kept for reconnect replay. */
     private static final int HISTORY_TICKS = 300;
     private static final int CHAT_COOLDOWN_TICKS = 5;
     /** How often a moving character's position is handed to persistence. */
     private static final int SAVE_INTERVAL_TICKS = 150;
+    /**
+     * How many paths every mob on this map may collectively buy in one tick.
+     *
+     * The Etap 0 fix capped what one PLAYER could spend on pathfinding; mobs sit
+     * outside that limit and can spend the same budget between them, so thirty
+     * chasers would mean thirty A* searches per tick. Past this cap the rest
+     * wander instead - a crowd should slow down, not freeze.
+     */
+    private static final int MOB_PATHS_PER_TICK = 4;
     private static final int MAX_CHAT_LENGTH = 200;
     private static final int MAX_COMMANDS_PER_TICK = 4_096;
     /** At most one overrun warning per 10 s, so an overloaded map does not flood the log. */
@@ -67,6 +80,11 @@ public final class MapRunner implements Runnable {
     // ---- owned exclusively by the map thread from here down ----
     private final Map<Integer, Actor> actors = new HashMap<>();
     private final Map<String, Actor> byNameKey = new HashMap<>();
+    private final Map<String, MobDef> mobDefs;
+    private final MobBehaviour brain;
+    private final Random random = new Random();
+    private final Map<String, Long> nextRoamTick = new HashMap<>();
+    private final int graceTicks;
     private final Map<Client, Actor> byClient = new IdentityHashMap<>();
     private final Deque<Delta> history = new ArrayDeque<>();
 
@@ -88,10 +106,31 @@ public final class MapRunner implements Runnable {
     }
 
     public MapRunner(MapDef map, ObjectMapper json, WorldPersistence persistence) {
+        this(map, json, persistence, Map.of());
+    }
+
+    public MapRunner(MapDef map, ObjectMapper json, WorldPersistence persistence,
+                     Map<String, MobDef> mobDefs) {
+        this(map, json, persistence, mobDefs, DEFAULT_GRACE_TICKS);
+    }
+
+    /**
+     * @param graceTicks how long a character stays standing in the world after
+     *                   its socket drops. Tunable mostly so tests need not wait
+     *                   out the real half-minute.
+     */
+    public MapRunner(MapDef map, ObjectMapper json, WorldPersistence persistence,
+                     Map<String, MobDef> mobDefs, int graceTicks) {
+        this.graceTicks = graceTicks;
         this.map = map;
         this.json = json;
         this.persistence = persistence;
+        this.mobDefs = mobDefs;
         this.pathfinder = new AStar(map);
+        // The same pathfinder players use, deliberately: both run on this thread,
+        // and sharing it makes pathSearches() the map's true total rather than
+        // half of it.
+        this.brain = new MobBehaviour(map, pathfinder, random);
         // MapDef is immutable, so this never changes - build it once instead of
         // rebuilding the whole collision grid on every player's arrival.
         this.mapDto = new MapDto(map.id(), map.name(), map.width(), map.height(),
@@ -127,11 +166,13 @@ public final class MapRunner implements Runnable {
     @Override
     public void run() {
         log.info("Map '{}' running: {}x{} tiles, {} ms tick", map.id(), map.width(), map.height(), TICK_MS);
+        spawnFixedMobs();
         long nextTickNanos = System.nanoTime();
         while (running) {
             try {
                 drainCommands();
                 resolvePendingPaths();
+                advanceMobs();
                 advanceMovement();
                 reapExpiredActors();
                 saveDirtyActors();
@@ -235,7 +276,8 @@ public final class MapRunner implements Runnable {
 
         Actor actor = new Actor(nextActorId++, saved.name(), saved.nameKey(), accountId,
                 usable ? saved.x() : map.spawnX(),
-                usable ? saved.y() : map.spawnY());
+                usable ? saved.y() : map.spawnY(),
+                STEP_TICKS);
         if (usable) {
             actor.dir = saved.dir();
         }
@@ -324,22 +366,162 @@ public final class MapRunner implements Runnable {
             actor.dir = Direction.between(actor.x, actor.y, next[0], next[1]);
             actor.x = next[0];
             actor.y = next[1];
-            actor.nextStepTick = tick + STEP_TICKS;
-            actor.dirty = true;
+            actor.nextStepTick = tick + actor.stepTicks;
+            actor.dirty = !actor.isMob(); // a mob's position is never worth keeping
             moved.add(new MoveDto(actor.id, actor.fromX, actor.fromY, actor.x, actor.y,
-                    actor.dir.name(), STEP_TICKS * TICK_MS));
+                    actor.dir.name(), actor.stepTicks * TICK_MS));
         }
     }
 
     private void reapExpiredActors() {
         actors.values().removeIf(actor -> {
-            if (actor.online() || tick - actor.offlineSinceTick < GRACE_TICKS) {
+            // A mob has no socket, so by the player rules it looks permanently
+            // disconnected and would be swept away thirty seconds after the map
+            // starts. It leaves the world only when something kills it.
+            if (actor.isMob() || actor.online() || tick - actor.offlineSinceTick < graceTicks) {
                 return false;
             }
             byNameKey.remove(actor.nameKey);
             left.add(actor.id);
             return true;
         });
+    }
+
+    // ------------------------------------------------------------------
+    // creatures
+    // ------------------------------------------------------------------
+
+    /**
+     * Puts the map's marked population in place, once, before the first tick.
+     *
+     * <p>An empty registry means creatures are switched off deliberately - the
+     * loop tests run that way so wandering mobs cannot make an assertion about
+     * player movement pass by accident. A registry that merely lacks one id is a
+     * different matter and says so loudly.
+     */
+    private void spawnFixedMobs() {
+        if (mobDefs.isEmpty()) {
+            log.info("Map '{}' running without creatures: no definitions supplied", map.id());
+            return;
+        }
+        for (SpawnPoint point : map.spawns()) {
+            MobDef def = mobDefs.get(point.mobId());
+            if (def == null) {
+                // The loader checks this, so reaching here means the two got out
+                // of step - worth a loud line rather than a silent empty map.
+                log.error("Map '{}' wants unknown mob '{}'", map.id(), point.mobId());
+                continue;
+            }
+            spawn(def, point.x(), point.y());
+        }
+        log.info("Map '{}' spawned {} creature(s)", map.id(), actors.size());
+    }
+
+    private Actor spawn(MobDef def, int x, int y) {
+        Actor mob = new Actor(nextActorId++, def, x, y);
+        actors.put(mob.id, mob);
+        joined.add(toDto(mob));
+        return mob;
+    }
+
+    /**
+     * Lets every creature decide, within one shared pathfinding budget.
+     *
+     * <p>The budget is the point: a mob that cannot afford a path this tick
+     * wanders instead of standing still, so a crowd of chasers degrades into
+     * milling about rather than stalling the map for everyone on it.
+     */
+    private void advanceMobs() {
+        rollForRoamingElites();
+
+        int budget = MOB_PATHS_PER_TICK;
+        for (Actor actor : actors.values()) {
+            if (!actor.isMob()) {
+                continue;
+            }
+            budget -= brain.think(actor, actors.values(), tick, budget > 0);
+        }
+    }
+
+    /**
+     * Elites are not placed on the map; they turn up. Each entry rolls on its own
+     * schedule, and only while the previous one is gone - otherwise a long enough
+     * session would carpet the map in them.
+     */
+    private void rollForRoamingElites() {
+        for (RoamingSpawn roaming : map.roaming()) {
+            // The first roll waits a full interval rather than firing at tick
+            // zero: an elite that is simply there when the map starts is part of
+            // the furniture, not an event worth noticing.
+            long due = nextRoamTick.computeIfAbsent(roaming.mobId(),
+                    id -> secondsToTicks(roaming.everySeconds()));
+            if (tick < due) {
+                continue;
+            }
+            nextRoamTick.put(roaming.mobId(), tick + secondsToTicks(roaming.everySeconds()));
+
+            if (isAlive(roaming.mobId()) || random.nextDouble() > roaming.chance()) {
+                continue;
+            }
+            spawnRoaming(roaming);
+        }
+    }
+
+    private void spawnRoaming(RoamingSpawn roaming) {
+        MobDef elite = mobDefs.get(roaming.mobId());
+        int[] tile = randomFreeTile();
+        if (elite == null || tile == null) {
+            return;
+        }
+        Actor spawned = spawn(elite, tile[0], tile[1]);
+        log.info("Elite '{}' appeared on '{}' at {},{}", elite.name(), map.id(), tile[0], tile[1]);
+
+        MobDef escort = roaming.escortMobId() == null ? null : mobDefs.get(roaming.escortMobId());
+        if (escort == null) {
+            return;
+        }
+        for (int i = 0; i < roaming.escortCount(); i++) {
+            int[] beside = freeTileNear(spawned.x, spawned.y);
+            if (beside != null) {
+                spawn(escort, beside[0], beside[1]);
+            }
+        }
+    }
+
+    private boolean isAlive(String mobId) {
+        for (Actor actor : actors.values()) {
+            if (actor.isMob() && actor.mob.id().equals(mobId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** @return a walkable tile, or null if a bounded search could not find one. */
+    private int[] randomFreeTile() {
+        for (int attempt = 0; attempt < 64; attempt++) {
+            int x = random.nextInt(map.width());
+            int y = random.nextInt(map.height());
+            if (map.walkable(x, y)) {
+                return new int[]{x, y};
+            }
+        }
+        return null;
+    }
+
+    private int[] freeTileNear(int x, int y) {
+        for (int attempt = 0; attempt < 16; attempt++) {
+            int nx = x + random.nextInt(5) - 2;
+            int ny = y + random.nextInt(5) - 2;
+            if (map.walkable(nx, ny)) {
+                return new int[]{nx, ny};
+            }
+        }
+        return null;
+    }
+
+    private static long secondsToTicks(int seconds) {
+        return seconds * 1000L / TICK_MS;
     }
 
     // ------------------------------------------------------------------
@@ -445,7 +627,10 @@ public final class MapRunner implements Runnable {
     }
 
     private void persist(Actor actor) {
-        if (!actor.dirty) {
+        // Creatures come from the map definition, so they respawn by themselves
+        // after a restart. Saving one would also mean writing a row with a
+        // foreign key to an account it does not have.
+        if (actor.isMob() || !actor.dirty) {
             return;
         }
         actor.dirty = false;
@@ -456,6 +641,9 @@ public final class MapRunner implements Runnable {
     }
 
     private ActorDto toDto(Actor actor) {
-        return new ActorDto(actor.id, actor.name, actor.x, actor.y, actor.dir.name(), actor.online());
+        return new ActorDto(actor.id, actor.name, actor.x, actor.y, actor.dir.name(),
+                actor.isMob() || actor.online(),
+                actor.kind.name(),
+                actor.isMob() ? actor.mob.tier().name() : null);
     }
 }

@@ -1,6 +1,7 @@
 package com.kowihere.mmo.loop;
 
 import com.kowihere.mmo.world.Direction;
+import com.kowihere.mmo.world.MobDef;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -15,6 +16,21 @@ import java.util.Deque;
  * instead of racing ahead of it.
  */
 final class Actor {
+
+    /** What this actor is. Players and creatures share the loop but little else. */
+    enum Kind { PLAYER, MOB }
+
+    final Kind kind;
+    /** The creature this is a copy of, or null for a player. */
+    final MobDef mob;
+    /** Where a creature came from, and where it returns to when it gives up a chase. */
+    final int homeX;
+    final int homeY;
+    /** Ticks this actor takes to cross one tile. */
+    final int stepTicks;
+
+    /** Tick from which this creature may next decide what to do. Throttles pathfinding. */
+    long nextThinkTick;
 
     final int id;
     final String name;
@@ -52,7 +68,26 @@ final class Actor {
      */
     long nextChatTick;
 
-    Actor(int id, String name, String nameKey, long accountId, int x, int y) {
+    /** A player. */
+    Actor(int id, String name, String nameKey, long accountId, int x, int y, int stepTicks) {
+        this(Kind.PLAYER, null, id, name, nameKey, accountId, x, y, stepTicks);
+    }
+
+    /**
+     * A creature. It has no account and no session: it is derived from map data,
+     * so it is never saved and never reaped for being offline.
+     */
+    Actor(int id, MobDef mob, int x, int y) {
+        this(Kind.MOB, mob, id, mob.name(), "mob:" + mob.id() + "#" + id, 0, x, y, mob.stepTicks());
+    }
+
+    private Actor(Kind kind, MobDef mob, int id, String name, String nameKey, long accountId,
+                  int x, int y, int stepTicks) {
+        this.kind = kind;
+        this.mob = mob;
+        this.homeX = x;
+        this.homeY = y;
+        this.stepTicks = stepTicks;
         this.id = id;
         this.name = name;
         this.nameKey = nameKey;
@@ -65,5 +100,9 @@ final class Actor {
 
     boolean online() {
         return client != null;
+    }
+
+    boolean isMob() {
+        return kind == Kind.MOB;
     }
 }

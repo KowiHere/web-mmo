@@ -17,7 +17,13 @@ public final class ServerMessages {
     private ServerMessages() {
     }
 
-    public record ActorDto(int id, String name, int x, int y, String dir, boolean online) {
+    /**
+     * @param kind PLAYER or MOB - the client draws them differently
+     * @param tier only a mob has one; null for players and omitted from the wire
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ActorDto(int id, String name, int x, int y, String dir, boolean online,
+                           String kind, String tier) {
     }
 
     /** One step in progress: the actor left ({@code fx},{@code fy}) and arrives at ({@code x},{@code y}) in {@code ms}. */

@@ -1,0 +1,8 @@
+{
+  "id": "zly-stwor",
+  "name": "Nieznany stwor",
+  "tileSize": 32,
+  "spawn": [2, 2],
+  "collision": ["#####", "#...#", "#...#", "#...#", "#####"],
+  "spawns": [ { "mob": "smok-ktorego-nie-ma", "x": 2, "y": 3 } ]
+}

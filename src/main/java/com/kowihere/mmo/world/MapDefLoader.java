@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,27 +25,44 @@ public class MapDefLoader {
     private static final String LOCATION = "classpath:maps/*.json";
 
     private final ObjectMapper mapper = new ObjectMapper();
+    private final MobDefLoader mobs;
+    private final String location;
+
+    public MapDefLoader() {
+        this(new MobDefLoader());
+    }
+
+    public MapDefLoader(MobDefLoader mobs) {
+        this(mobs, LOCATION);
+    }
+
+    /** Where the maps live. Content need not sit at the default path. */
+    public MapDefLoader(MobDefLoader mobs, String location) {
+        this.mobs = mobs;
+        this.location = location;
+    }
 
     public Map<String, MapDef> loadAll() {
+        Map<String, MobDef> creatures = mobs.loadAll();
         var resolver = new PathMatchingResourcePatternResolver();
         var loaded = new LinkedHashMap<String, MapDef>();
         try {
-            for (Resource resource : resolver.getResources(LOCATION)) {
-                MapDef def = parse(resource);
+            for (Resource resource : resolver.getResources(location)) {
+                MapDef def = parse(resource, creatures);
                 if (loaded.putIfAbsent(def.id(), def) != null) {
                     throw new IllegalStateException("Duplicate map id: " + def.id());
                 }
             }
         } catch (IOException e) {
-            throw new IllegalStateException("Could not read map definitions from " + LOCATION, e);
+            throw new IllegalStateException("Could not read map definitions from " + location, e);
         }
         if (loaded.isEmpty()) {
-            throw new IllegalStateException("No map definitions found at " + LOCATION);
+            throw new IllegalStateException("No map definitions found at " + location);
         }
         return Map.copyOf(loaded);
     }
 
-    private MapDef parse(Resource resource) throws IOException {
+    private MapDef parse(Resource resource, Map<String, MobDef> creatures) throws IOException {
         JsonNode root;
         try (InputStream in = resource.getInputStream()) {
             root = mapper.readTree(in);
@@ -87,7 +105,68 @@ public class MapDefLoader {
             throw new IllegalStateException(where + ": spawn " + spawnX + "," + spawnY + " is on a blocked tile");
         }
 
-        return new MapDef(id, name, width, height, tileSize, spawnX, spawnY, blocked, rows);
+        // Built once without its creatures purely so the spawn validation below
+        // can ask walkable() instead of re-deriving collision from the bitset.
+        MapDef map = new MapDef(id, name, width, height, tileSize, spawnX, spawnY, blocked, rows,
+                List.of(), List.of());
+        return new MapDef(id, name, width, height, tileSize, spawnX, spawnY, blocked, rows,
+                spawnPoints(root, map, creatures, where),
+                roamingSpawns(root, creatures, where));
+    }
+
+    /**
+     * Creatures at marked places. A spawn inside a wall is refused rather than
+     * nudged aside: a creature that cannot be reached is content that looks
+     * present and is not, which is worse than a server that will not start.
+     */
+    private static List<SpawnPoint> spawnPoints(JsonNode root, MapDef map,
+                                                Map<String, MobDef> creatures, String where) {
+        List<SpawnPoint> points = new ArrayList<>();
+        for (JsonNode node : root.path("spawns")) {
+            String mobId = requireKnownMob(node, "mob", creatures, where);
+            int x = node.path("x").asInt(-1);
+            int y = node.path("y").asInt(-1);
+            if (!map.walkable(x, y)) {
+                throw new IllegalStateException(where + ": spawn for '" + mobId + "' at " + x + ","
+                        + y + " is not a tile anything can stand on");
+            }
+            points.add(new SpawnPoint(mobId, x, y));
+        }
+        return points;
+    }
+
+    private static List<RoamingSpawn> roamingSpawns(JsonNode root, Map<String, MobDef> creatures,
+                                                    String where) {
+        List<RoamingSpawn> roaming = new ArrayList<>();
+        for (JsonNode node : root.path("roaming")) {
+            String mobId = requireKnownMob(node, "mob", creatures, where);
+            int everySeconds = node.path("everySeconds").asInt(300);
+            double chance = node.path("chance").asDouble(1.0);
+            if (everySeconds < 1) {
+                throw new IllegalStateException(where + ": everySeconds for '" + mobId + "' must be positive");
+            }
+            if (chance <= 0 || chance > 1) {
+                throw new IllegalStateException(
+                        where + ": chance for '" + mobId + "' must be between 0 (exclusive) and 1");
+            }
+
+            JsonNode escort = node.path("escort");
+            String escortId = escort.isMissingNode() || escort.isNull()
+                    ? null : requireKnownMob(escort, "mob", creatures, where);
+            int escortCount = escortId == null ? 0 : Math.max(0, escort.path("count").asInt(0));
+            roaming.add(new RoamingSpawn(mobId, everySeconds, chance, escortId, escortCount));
+        }
+        return roaming;
+    }
+
+    private static String requireKnownMob(JsonNode node, String field,
+                                          Map<String, MobDef> creatures, String where) {
+        String mobId = node.path(field).asText(null);
+        if (mobId == null || !creatures.containsKey(mobId)) {
+            throw new IllegalStateException(where + ": unknown mob '" + mobId
+                    + "'. Known: " + creatures.keySet());
+        }
+        return mobId;
     }
 
     private static JsonNode required(JsonNode root, String field, String where) {

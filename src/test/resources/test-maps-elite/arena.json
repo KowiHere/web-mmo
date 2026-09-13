@@ -1,0 +1,20 @@
+{
+  "id": "arena",
+  "name": "Arena testowa",
+  "tileSize": 32,
+  "spawn": [3, 3],
+  "collision": [
+    "########",
+    "#......#",
+    "#......#",
+    "#......#",
+    "#......#",
+    "#......#",
+    "########"
+  ],
+  "spawns": [],
+  "roaming": [
+    { "mob": "wilczyca", "everySeconds": 1, "chance": 1.0,
+      "escort": { "mob": "wilk", "count": 2 } }
+  ]
+}

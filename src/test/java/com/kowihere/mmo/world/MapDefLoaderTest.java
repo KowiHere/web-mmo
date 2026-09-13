@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Guards the shipped map data. A map is edited by hand, so the cheap mistakes -
@@ -45,6 +46,43 @@ class MapDefLoaderTest {
             assertThat(starter.isBlocked(0, y)).as("left edge at y=%s", y).isTrue();
             assertThat(starter.isBlocked(starter.width() - 1, y)).as("right edge at y=%s", y).isTrue();
         }
+    }
+
+    @Test
+    void everySpawnPointIsSomewhereACreatureCanStand() {
+        assertThat(maps.values()).allSatisfy(map ->
+                assertThat(map.spawns()).allSatisfy(point ->
+                        assertThat(map.walkable(point.x(), point.y()))
+                                .as("spawn of '%s' on map '%s'", point.mobId(), map.id())
+                                .isTrue()));
+    }
+
+    @Test
+    void theStarterMapIsPopulated() {
+        MapDef starter = maps.get("starter");
+
+        assertThat(starter.spawns()).isNotEmpty();
+        assertThat(starter.roaming())
+                .as("the map should offer at least one elite that turns up on its own")
+                .isNotEmpty();
+    }
+
+    @Test
+    void aSpawnInsideAWallIsRefused() {
+        // A creature nobody can reach is content that looks present and is not,
+        // which is worse than a server that refuses to start.
+        assertThatThrownBy(() -> new MapDefLoader(new MobDefLoader(), "classpath:bad-maps-wall/*.json")
+                .loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("stand on");
+    }
+
+    @Test
+    void aSpawnOfACreatureThatDoesNotExistIsRefused() {
+        assertThatThrownBy(() -> new MapDefLoader(new MobDefLoader(), "classpath:bad-maps-unknown/*.json")
+                .loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("smok-ktorego-nie-ma");
     }
 
     @Test

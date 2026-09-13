@@ -1,0 +1,2 @@
+{ "id": "nerwus", "name": "Nerwus", "tier": "MOB", "level": 2, "hp": 20,
+  "aggroRadius": 8, "leashRadius": 2 }

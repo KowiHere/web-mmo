@@ -23,8 +23,28 @@ const INTERPOLATION_DELAY_MS = 150;
 /** How often a held movement key repeats. */
 const KEY_REPEAT_MS = 150;
 
+/**
+ * How close an ordinary creature must be before its name is drawn. A pack of
+ * six wolves on adjacent tiles turns into a pile of overlapping labels, and the
+ * name of the wolf two screens away was never the thing you needed to read.
+ * Players and elites are always named.
+ */
+const NAME_RADIUS_TILES = 6;
+
 const MARKER_LIFETIME_MS = 600;
 const BUBBLE_LIFETIME_MS = 4500;
+
+/**
+ * How each kind of actor reads on the map. Players are blue-ish and named in
+ * light text; creatures are warmer and sit lower, so a crowded tile is still
+ * legible at a glance.
+ */
+const MOB_STYLE = {
+    MOB: { fill: '#8a6a4a', stroke: 'rgba(0,0,0,.5)', label: '#c8a887', radius: 9, ring: null },
+    ELITE: { fill: '#c9863f', stroke: '#f0c07a', label: '#f0c07a', radius: 11, ring: '#f0c07a' },
+    HERO: { fill: '#b4558f', stroke: '#e79ac8', label: '#e79ac8', radius: 12, ring: '#e79ac8' },
+    COLOSSUS: { fill: '#a03c3c', stroke: '#e58686', label: '#e58686', radius: 14, ring: '#e58686' },
+};
 
 const MOVEMENT_KEYS = {
     ArrowUp: [0, -1], w: [0, -1], W: [0, -1],
@@ -161,7 +181,9 @@ function applyDelta(msg) {
         const actor = state.actors.get(p.id);
         if (!actor) continue;
         actor.online = p.online;
-        logSystem(`${actor.name} ${p.online ? 'wrócił do gry' : 'stracił połączenie'}.`);
+        if (actor.kind !== 'MOB') {
+            logSystem(`${actor.name} ${p.online ? 'wrócił do gry' : 'stracił połączenie'}.`);
+        }
     }
 
     for (const line of msg.chat || []) {
@@ -262,8 +284,14 @@ function frame(now) {
     drawMarker(ox, oy, now);
 
     // Painter's order: whoever is further down the map is drawn last, so an
-    // actor in front correctly overlaps one behind.
-    const actors = [...state.actors.values()].sort((a, b) => a.ry - b.ry);
+    // actor in front correctly overlaps one behind - except yourself, who is
+    // drawn last of all. Creatures and players share tiles, and losing your own
+    // character under a wolf is never the right answer.
+    const actors = [...state.actors.values()].sort((a, b) => {
+        if (a.id === state.selfId) return 1;
+        if (b.id === state.selfId) return -1;
+        return a.ry - b.ry;
+    });
     for (const actor of actors) drawActor(actor, ox, oy, now);
 
     sampleStats(now);
@@ -361,37 +389,53 @@ function drawActor(actor, ox, oy, now) {
     const px = actor.rx * TILE - ox + TILE / 2;
     const py = actor.ry * TILE - oy + TILE / 2 - bob;
     const isSelf = actor.id === state.selfId;
+    const mob = actor.kind === 'MOB' ? (MOB_STYLE[actor.tier] || MOB_STYLE.MOB) : null;
+    const radius = mob ? mob.radius : 10;
 
     ctx.globalAlpha = actor.online ? 1 : 0.4;
 
     // The shadow stays on the ground while the body rises, which is what sells
     // the bob as a stride rather than the whole sprite sliding upward.
     ctx.beginPath();
-    ctx.ellipse(px, py + 11 + bob, 10 - bob * 0.6, 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(px, py + radius + 1 + bob, radius - bob * 0.6, 4, 0, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,0,0,.35)';
     ctx.fill();
 
+    // An elite and above wears a ring, so it is obvious before you are close
+    // enough to read the name.
+    if (mob && mob.ring) {
+        ctx.beginPath();
+        ctx.arc(px, py, radius + 4, 0, Math.PI * 2);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = mob.ring;
+        ctx.globalAlpha = (actor.online ? 1 : 0.4) * 0.55;
+        ctx.stroke();
+        ctx.globalAlpha = actor.online ? 1 : 0.4;
+    }
+
     ctx.beginPath();
-    ctx.arc(px, py, 10, 0, Math.PI * 2);
-    ctx.fillStyle = isSelf ? '#6ea8fe' : `hsl(${(actor.id * 67) % 360} 45% 58%)`;
+    ctx.arc(px, py, radius, 0, Math.PI * 2);
+    ctx.fillStyle = mob ? mob.fill : (isSelf ? '#6ea8fe' : `hsl(${(actor.id * 67) % 360} 45% 58%)`);
     ctx.fill();
     ctx.lineWidth = 2;
-    ctx.strokeStyle = isSelf ? '#e8f0ff' : 'rgba(0,0,0,.45)';
+    ctx.strokeStyle = mob ? mob.stroke : (isSelf ? '#e8f0ff' : 'rgba(0,0,0,.45)');
     ctx.stroke();
 
     // Which way the actor faces, as a notch on the rim.
     const facing = { UP: [0, -1], DOWN: [0, 1], LEFT: [-1, 0], RIGHT: [1, 0] }[actor.dir] || [0, 1];
     ctx.beginPath();
-    ctx.arc(px + facing[0] * 6, py + facing[1] * 6, 2.5, 0, Math.PI * 2);
+    ctx.arc(px + facing[0] * (radius - 4), py + facing[1] * (radius - 4), 2.5, 0, Math.PI * 2);
     ctx.fillStyle = '#0f1116';
     ctx.fill();
 
-    ctx.font = '11px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#0f1116';
-    ctx.fillText(actor.name, px + 1, py - 15);
-    ctx.fillStyle = isSelf ? '#cfe0ff' : '#c2c9d6';
-    ctx.fillText(actor.name, px, py - 16);
+    if (shouldName(actor, mob)) {
+        ctx.font = '11px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#0f1116';
+        ctx.fillText(actor.name, px + 1, py - radius - 5);
+        ctx.fillStyle = mob ? mob.label : (isSelf ? '#cfe0ff' : '#c2c9d6');
+        ctx.fillText(actor.name, px, py - radius - 6);
+    }
 
     if (actor.bubble && actor.bubble.until > now) {
         drawBubble(actor.bubble.text, px, py - 32);
@@ -400,6 +444,19 @@ function drawActor(actor, ox, oy, now) {
     }
 
     ctx.globalAlpha = 1;
+}
+
+/** Everything is named except a common creature standing far away. */
+function shouldName(actor, mob) {
+    if (!mob || mob.ring) {
+        return true; // players, and anything elite or above
+    }
+    const self = state.actors.get(state.selfId);
+    if (!self) {
+        return true;
+    }
+    const distance = Math.max(Math.abs(actor.x - self.x), Math.abs(actor.y - self.y));
+    return distance <= NAME_RADIUS_TILES;
 }
 
 function drawBubble(text, px, py) {
@@ -762,11 +819,17 @@ function sampleStats(now) {
         if (actor.id !== state.selfId) buffered = Math.max(buffered, actor.steps.length);
     }
 
+    let mobs = 0;
+    for (const actor of state.actors.values()) {
+        if (actor.kind === 'MOB') mobs++;
+    }
+
     debugEl.textContent = [
         `klatki   ${stats.fps}/s`,
         `delty    ${stats.deltaRate}/s`,
         `wersja   ${state.version}`,
-        `aktorzy  ${state.actors.size}`,
+        `gracze   ${state.actors.size - mobs}`,
+        `stwory   ${mobs}`,
         `bufor    ${buffered} kroków (${INTERPOLATION_DELAY_MS} ms)`,
     ].join('\n');
 }

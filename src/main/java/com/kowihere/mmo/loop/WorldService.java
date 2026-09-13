@@ -3,6 +3,8 @@ package com.kowihere.mmo.loop;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kowihere.mmo.world.MapDef;
 import com.kowihere.mmo.world.MapDefLoader;
+import com.kowihere.mmo.world.MobDef;
+import com.kowihere.mmo.world.MobDefLoader;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -29,6 +31,7 @@ public class WorldService {
     private static final Logger log = LoggerFactory.getLogger(WorldService.class);
 
     private final MapDefLoader loader;
+    private final MobDefLoader mobLoader;
     private final ObjectMapper json;
     private final WorldPersistence persistence;
     private final Map<String, MapRunner> runners = new LinkedHashMap<>();
@@ -36,16 +39,19 @@ public class WorldService {
 
     private String defaultMapId;
 
-    public WorldService(MapDefLoader loader, ObjectMapper json, WorldPersistence persistence) {
+    public WorldService(MapDefLoader loader, MobDefLoader mobLoader, ObjectMapper json,
+                        WorldPersistence persistence) {
         this.loader = loader;
+        this.mobLoader = mobLoader;
         this.json = json;
         this.persistence = persistence;
     }
 
     @PostConstruct
     void start() {
+        Map<String, MobDef> mobs = mobLoader.loadAll();
         for (MapDef def : loader.loadAll().values()) {
-            MapRunner runner = new MapRunner(def, json, persistence);
+            MapRunner runner = new MapRunner(def, json, persistence, mobs);
             runners.put(def.id(), runner);
             Thread thread = new Thread(runner, "map-" + def.id());
             thread.setDaemon(false);
@@ -55,7 +61,8 @@ public class WorldService {
                 defaultMapId = def.id();
             }
         }
-        log.info("World started with {} map(s); default is '{}'", runners.size(), defaultMapId);
+        log.info("World started with {} map(s) and {} creature definition(s); default is '{}'",
+                runners.size(), mobs.size(), defaultMapId);
     }
 
     @PreDestroy

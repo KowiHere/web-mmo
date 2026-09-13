@@ -123,6 +123,29 @@ try {
         ? ok("the server refused Ala a socket for Bob's character")
         : fail(`Ala opened a socket as Bob's character (${stolen})`);
 
+    // ---- the map is populated and alive ----------------------------------
+    const creatures = await ala.evaluate(() =>
+        [...state.actors.values()].filter((a) => a.kind === 'MOB')
+            .map((a) => ({ id: a.id, tier: a.tier, x: a.x, y: a.y })));
+
+    creatures.length > 0
+        ? ok(`the map came with ${creatures.length} creature(s)`)
+        : fail('no creatures on the map');
+    creatures.every((c) => c.tier)
+        ? ok('every creature says which tier it is')
+        : fail('a creature arrived without a tier');
+
+    // Nobody sends a command here: anything that moves, moved by itself.
+    const before = Object.fromEntries(creatures.map((c) => [c.id, `${c.x},${c.y}`]));
+    await ala.waitForTimeout(3_000);
+    const after = await ala.evaluate(() =>
+        Object.fromEntries([...state.actors.values()].filter((a) => a.kind === 'MOB')
+            .map((a) => [a.id, `${a.x},${a.y}`])));
+
+    Object.keys(before).some((id) => after[id] && after[id] !== before[id])
+        ? ok('creatures move on their own, with no player input')
+        : fail('the creatures never moved by themselves');
+
     // ---- movement is server-driven and reaches the other client ----------
     const start = bobView.actors.find((a) => a.id === alaView.selfId);
     await ala.mouse.click(200, 200);
@@ -204,14 +227,14 @@ try {
     }
 
     // ---- a dropped socket resumes the same character ---------------------
-    const before = alaView.selfId;
+    const previousActor = alaView.selfId;
     await ala.evaluate(() => state.ws.close());
     await ala.waitForTimeout(2_500);
     const resumed = await snapshot(ala);
 
-    resumed.selfId === before
-        ? ok(`reconnect resumed actor ${before} rather than spawning a new one`)
-        : fail(`reconnect produced actor ${resumed.selfId}, expected ${before}`);
+    resumed.selfId === previousActor
+        ? ok(`reconnect resumed actor ${previousActor} rather than spawning a new one`)
+        : fail(`reconnect produced actor ${resumed.selfId}, expected ${previousActor}`);
 } finally {
     await browser.close();
 }

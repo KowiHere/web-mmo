@@ -91,6 +91,39 @@ Two things worth knowing before this leaves your machine:
   HTTP, and the symptom is a login that appears to do nothing at all. Turn it on
   the moment the game is served over HTTPS.
 
+### The map is not empty
+
+Creatures live in the same loop and on the same thread as players — they are
+actors like any other, so deltas, interpolation and rendering needed no changes
+to carry them. They are defined as content in `src/main/resources/mobs/*.json`
+and placed by the map that wants them.
+
+**A tier is not a difficulty multiplier; it is a spawn policy.** That is the
+distinction worth keeping, because without it a boss ends up being a fat wolf:
+
+| tier | how it appears |
+| --- | --- |
+| `MOB` | stands at a marked point on a shared map |
+| `ELITE` | turns up on its own schedule, somewhere unpredictable, often escorted |
+| `HERO` | dungeon boss, placed by an instance — **not implemented** |
+| `COLOSSUS` | raid boss, placed by an instance — **not implemented** |
+
+The last two exist in the enum and the loader **refuses to start** on a
+definition using one, rather than accepting a creature that would silently never
+appear. They need instances and parties, which are a milestone of their own.
+
+Creatures are never saved. They are derived from map data, so a restart brings
+them back by itself — and a creature has no account to own it, so writing one
+would violate the very foreign key that keeps characters honest.
+
+### Mobs and NPCs are different things
+
+A **mob** is hostile: combat statistics, behaviour, a respawn timer, loot. It
+dies. An **NPC** is something you interact with — dialogue, a shop, a quest —
+with no combat statistics, no respawn, and nothing to kill. Only mobs exist so
+far; NPCs arrive as their own kind of actor rather than as a mob with its
+aggression switched off.
+
 ### Disconnecting is not leaving
 
 Drop your connection and your character stays standing in the world for 30
@@ -202,20 +235,27 @@ pathfinding.
 
 ## What is not here yet
 
-No combat, no items, one map. There is no password reset and no email
-confirmation either — both need to send mail, which means a service to run, and
-this project deliberately needs nothing installed.
+**No combat**, which is the honest limit of the creatures above: nothing can be
+killed, so their statistics are carried but unread, their respawn timers never
+fire, and the difference between a mob and an elite is for now how it arrives
+and how it looks rather than how it fights. Loot tables are deliberately absent
+until items exist — a table pointing at a registry that does not exist cannot
+even be validated.
 
-Roughly in order: NPCs with spawn points and respawn timers, turn-based combat
-on timers, items with rolled statistics, then multiple maps with gates between
-them.
+Also missing: items, interactive NPCs, more than one map, and instances with
+parties. No password reset or email confirmation either — both need to send
+mail, which means a service to run.
+
+Roughly in order: turn-based combat on timers, items with rolled statistics and
+loot, interactive NPCs, then instances and parties, which is what heroes and
+colossi are waiting on.
 
 ## Layout
 
 ```
-world/       map definitions and collision — immutable, shared
+world/       maps and creature definitions — immutable, shared
 path/        A* over the collision grid    — server-side only
-loop/        the game loop and its commands — no Spring below this line
+loop/        the game loop, commands, creature behaviour — no Spring below this line
 account/     registration, login, sessions — passwords never reach the loop
 net/         WebSocket transport           — authenticates, then decides nothing
 persistence/ the only place with SQL       — never called from a map thread

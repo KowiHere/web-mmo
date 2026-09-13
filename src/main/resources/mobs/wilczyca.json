@@ -1,0 +1,13 @@
+{
+  "id": "wilczyca",
+  "name": "Wilczyca Watahy",
+  "tier": "ELITE",
+  "level": 9,
+  "hp": 240,
+  "attack": 21,
+  "armor": 8,
+  "stepTicks": 3,
+  "aggroRadius": 6,
+  "leashRadius": 12,
+  "respawnSeconds": 600
+}

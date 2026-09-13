@@ -1,0 +1,13 @@
+{
+  "id": "dzik",
+  "name": "Dzik",
+  "tier": "MOB",
+  "level": 3,
+  "hp": 40,
+  "attack": 6,
+  "armor": 2,
+  "stepTicks": 5,
+  "aggroRadius": 3,
+  "leashRadius": 7,
+  "respawnSeconds": 30
+}

@@ -1,0 +1,8 @@
+{
+  "id": "zla-sciana",
+  "name": "Spawn w scianie",
+  "tileSize": 32,
+  "spawn": [2, 2],
+  "collision": ["#####", "#...#", "#...#", "#...#", "#####"],
+  "spawns": [ { "mob": "dzik", "x": 0, "y": 0 } ]
+}

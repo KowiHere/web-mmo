@@ -19,9 +19,12 @@ public final class MapDef {
     private final int spawnY;
     private final BitSet blocked;
     private final List<String> collisionRows;
+    private final List<SpawnPoint> spawns;
+    private final List<RoamingSpawn> roaming;
 
     MapDef(String id, String name, int width, int height, int tileSize,
-           int spawnX, int spawnY, BitSet blocked, List<String> collisionRows) {
+           int spawnX, int spawnY, BitSet blocked, List<String> collisionRows,
+           List<SpawnPoint> spawns, List<RoamingSpawn> roaming) {
         this.id = id;
         this.name = name;
         this.width = width;
@@ -31,6 +34,8 @@ public final class MapDef {
         this.spawnY = spawnY;
         this.blocked = blocked;
         this.collisionRows = List.copyOf(collisionRows);
+        this.spawns = List.copyOf(spawns);
+        this.roaming = List.copyOf(roaming);
     }
 
     public String id() { return id; }
@@ -43,6 +48,12 @@ public final class MapDef {
 
     /** Collision as one string per row, '#' blocked and '.' free — what the client renders and the loader parsed. */
     public List<String> collisionRows() { return collisionRows; }
+
+    /** Creatures that stand at marked places and go back to them. */
+    public List<SpawnPoint> spawns() { return spawns; }
+
+    /** Elites that appear on their own schedule, somewhere unpredictable. */
+    public List<RoamingSpawn> roaming() { return roaming; }
 
     public boolean inBounds(int x, int y) {
         return x >= 0 && y >= 0 && x < width && y < height;
