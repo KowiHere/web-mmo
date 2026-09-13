@@ -15,6 +15,9 @@ target/
 .DS_Store
 Thumbs.db
 
+### Local database ###
+data/
+
 ### Local config — never commit credentials ###
 src/main/resources/application-local.properties
 .env

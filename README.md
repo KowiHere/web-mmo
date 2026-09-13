@@ -42,6 +42,33 @@ An idle tick sends nothing at all. A client that notices a gap in the version
 sequence knows its picture is stale and reloads, rather than drifting quietly
 out of sync.
 
+### Characters outlive the process
+
+An embedded H2 database file under `data/` keeps where each character was last
+standing. Nothing to install and no container to run — the file appears on first
+start and Flyway owns the schema, so a migration is a file you can read rather
+than a side effect of some entity class.
+
+Saving happens **behind** the tick, never inside it. The map thread drops an
+immutable snapshot into a queue and carries on; one writer thread drains it into
+the database. A slow write delays a save, not the world. Positions are written
+when a player leaves, every 15 seconds while they are moving, and once more when
+the server shuts down.
+
+Only one server may run against one database file at a time — H2 holds a lock,
+and a second instance fails to start. That is the right answer rather than an
+inconvenience: two worlds writing the same characters would corrupt both.
+
+### Who you are, for now
+
+There are no accounts yet, so **the name is the identity**. Type the same name
+and you get the same character back; pick a name nobody is using and you get a
+new one. A name currently being played is refused rather than taken over.
+
+This is deliberately insecure — anyone who knows your character's name can play
+it while you are offline — and it is the next thing to fix. Passwords are what
+turn a name into an identity that is actually yours.
+
 ### Disconnecting is not leaving
 
 Drop your connection and your character stays standing in the world for 30
@@ -101,6 +128,17 @@ That covers what unit tests cannot — two people seeing each other move, the
 server refusing an illegal destination, and a dropped socket resuming the same
 character.
 
+One check needs the server stopped and started around it, so it runs itself:
+
+```bash
+./mvnw package -DskipTests
+e2e/restart-check.sh
+```
+
+It walks a character somewhere, kills the server, starts it again, and fails
+unless the character is standing where it was left. Nothing inside a single
+process can prove that.
+
 ## Maps
 
 Maps are content, not database rows: `src/main/resources/maps/*.json`, loaded at
@@ -139,22 +177,21 @@ pathfinding.
 
 ## What is not here yet
 
-No accounts, no database, no combat, no items. Characters live in memory and are
-gone when the process stops. That is deliberate — the world and its movement had
-to be right before anything got stacked on top of them.
+No accounts, no combat, no items, one map. Characters persist, but a name is all
+that stands between you and someone else's.
 
-Roughly in order: accounts and persistence (PostgreSQL, written behind the tick
-rather than during it), NPCs with spawn points and respawn timers, turn-based
-combat on timers, items with rolled statistics, then multiple maps with gates
-between them.
+Roughly in order: accounts with real passwords, NPCs with spawn points and
+respawn timers, turn-based combat on timers, items with rolled statistics, then
+multiple maps with gates between them.
 
 ## Layout
 
 ```
-world/     map definitions and collision   — immutable, shared
-path/      A* over the collision grid      — server-side only
-loop/      the game loop and its commands  — no Spring below this line
-net/       WebSocket transport             — translates frames, decides nothing
-protocol/  the wire format
-e2e/       two-tab browser checks          — needs a running server
+world/       map definitions and collision — immutable, shared
+path/        A* over the collision grid    — server-side only
+loop/        the game loop and its commands — no Spring below this line
+net/         WebSocket transport           — translates frames, decides nothing
+persistence/ the only place with SQL       — never called from a map thread
+protocol/    the wire format
+e2e/         browser checks                — needs a running server
 ```

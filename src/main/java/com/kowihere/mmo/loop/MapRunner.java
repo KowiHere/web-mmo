@@ -51,6 +51,8 @@ public final class MapRunner implements Runnable {
     /** How many past deltas are kept for reconnect replay. */
     private static final int HISTORY_TICKS = 300;
     private static final int CHAT_COOLDOWN_TICKS = 5;
+    /** How often a moving character's position is handed to persistence. */
+    private static final int SAVE_INTERVAL_TICKS = 150;
     private static final int MAX_CHAT_LENGTH = 200;
     private static final int MAX_COMMANDS_PER_TICK = 4_096;
     /** At most one overrun warning per 10 s, so an overloaded map does not flood the log. */
@@ -58,6 +60,7 @@ public final class MapRunner implements Runnable {
 
     private final MapDef map;
     private final ObjectMapper json;
+    private final WorldPersistence persistence;
     private final AStar pathfinder;
     private final Queue<Command> inbox = new ConcurrentLinkedQueue<>();
     private final MapDto mapDto;
@@ -65,6 +68,7 @@ public final class MapRunner implements Runnable {
     // ---- owned exclusively by the map thread from here down ----
     private final Map<Integer, Actor> actors = new HashMap<>();
     private final Map<String, Actor> byToken = new HashMap<>();
+    private final Map<String, Actor> byNameKey = new HashMap<>();
     private final Map<Client, Actor> byClient = new IdentityHashMap<>();
     private final Deque<Delta> history = new ArrayDeque<>();
 
@@ -82,8 +86,13 @@ public final class MapRunner implements Runnable {
     private long lastOverrunWarningTick = Long.MIN_VALUE / 2;
 
     public MapRunner(MapDef map, ObjectMapper json) {
+        this(map, json, WorldPersistence.NONE);
+    }
+
+    public MapRunner(MapDef map, ObjectMapper json, WorldPersistence persistence) {
         this.map = map;
         this.json = json;
+        this.persistence = persistence;
         this.pathfinder = new AStar(map);
         // MapDef is immutable, so this never changes - build it once instead of
         // rebuilding the whole collision grid on every player's arrival.
@@ -119,6 +128,7 @@ public final class MapRunner implements Runnable {
                 resolvePendingPaths();
                 advanceMovement();
                 reapExpiredActors();
+                saveDirtyActors();
                 flush();
             } catch (RuntimeException e) {
                 // A single bad command must never take the whole map down with it.
@@ -138,6 +148,7 @@ public final class MapRunner implements Runnable {
                 nextTickNanos = System.nanoTime();
             }
         }
+        saveEveryone();
         log.info("Map '{}' stopped after {} ticks", map.id(), tick);
     }
 
@@ -169,32 +180,78 @@ public final class MapRunner implements Runnable {
             return;
         }
 
-        Actor existing = join.token() == null ? null : byToken.get(join.token());
-        if (existing != null && existing.online() && existing.client != join.client()) {
-            // Same character opened twice. The newcomer wins; the stale socket goes.
-            existing.client.disconnect("Session resumed elsewhere");
-            byClient.remove(existing.client);
-            existing.client = null;
-        }
-
-        if (existing != null) {
-            existing.client = join.client();
-            byClient.put(join.client(), existing);
-            presence.add(new PresenceDto(existing.id, true));
-            if (!replayFrom(join.since(), join.client())) {
-                sendInit(existing, join.client());
-            }
+        // Fast path: this socket dropped a moment ago and its character is
+        // still standing here, inside the grace period.
+        Actor live = join.token() == null ? null : byToken.get(join.token());
+        if (live != null) {
+            attach(live, join);
             return;
         }
 
-        Actor actor = new Actor(nextActorId++, sanitiseName(join.name()),
-                UUID.randomUUID().toString(), map.spawnX(), map.spawnY());
+        String name = PlayerNames.sanitise(join.name());
+        String nameKey = PlayerNames.key(name);
+
+        Actor sameName = byNameKey.get(nameKey);
+        if (sameName != null) {
+            if (sameName.online()) {
+                // Until accounts exist the name IS the identity, so whoever is
+                // already playing it keeps it. Anyone can still claim a name
+                // nobody is using - that is what passwords will fix.
+                sendError(join.client(), "Postać o tej nazwie jest już w grze.");
+                return;
+            }
+            attach(sameName, join); // their own character, not yet reaped
+            return;
+        }
+
+        Actor actor = placeCharacter(name, nameKey, join.saved());
         actor.client = join.client();
         actors.put(actor.id, actor);
         byToken.put(actor.token, actor);
+        byNameKey.put(nameKey, actor);
         byClient.put(join.client(), actor);
         joined.add(toDto(actor));
         sendInit(actor, join.client());
+    }
+
+    private void attach(Actor actor, Command.Join join) {
+        if (actor.online() && actor.client != join.client()) {
+            // The same character opened twice. The newcomer wins; the stale
+            // socket goes.
+            actor.client.disconnect("Session resumed elsewhere");
+            byClient.remove(actor.client);
+        }
+        actor.client = join.client();
+        byClient.put(join.client(), actor);
+        presence.add(new PresenceDto(actor.id, true));
+        if (!replayFrom(join.since(), join.client())) {
+            sendInit(actor, join.client());
+        }
+    }
+
+    /**
+     * Puts a returning character back where it stood, or a new one at the spawn.
+     *
+     * <p>A stored position is only honoured if it is still somewhere a player
+     * can stand: a map can be edited between sessions, and waking up inside a
+     * wall would leave someone permanently stuck.
+     */
+    private Actor placeCharacter(String name, String nameKey, SavedCharacter saved) {
+        boolean usable = saved != null
+                && map.id().equals(saved.mapId())
+                && map.walkable(saved.x(), saved.y());
+        if (saved != null && !usable) {
+            log.info("Stored position {},{} for '{}' is not usable on '{}'; starting at the spawn",
+                    saved.x(), saved.y(), name, map.id());
+        }
+
+        Actor actor = new Actor(nextActorId++, name, nameKey, UUID.randomUUID().toString(),
+                usable ? saved.x() : map.spawnX(),
+                usable ? saved.y() : map.spawnY());
+        if (usable) {
+            actor.dir = saved.dir();
+        }
+        return actor;
     }
 
     private void handleDetach(Command.Detach detach) {
@@ -207,6 +264,7 @@ public final class MapRunner implements Runnable {
         actor.path.clear(); // you stop where you stood; you do not keep walking unattended
         actor.pendingMove = null;
         presence.add(new PresenceDto(actor.id, false));
+        persist(actor); // leaving is exactly when a position is worth keeping
     }
 
     private void handleMove(Command.MoveTo move) {
@@ -279,6 +337,7 @@ public final class MapRunner implements Runnable {
             actor.x = next[0];
             actor.y = next[1];
             actor.nextStepTick = tick + STEP_TICKS;
+            actor.dirty = true;
             moved.add(new MoveDto(actor.id, actor.fromX, actor.fromY, actor.x, actor.y,
                     actor.dir.name(), STEP_TICKS * TICK_MS));
         }
@@ -290,6 +349,7 @@ public final class MapRunner implements Runnable {
                 return false;
             }
             byToken.remove(actor.token);
+            byNameKey.remove(actor.nameKey);
             left.add(actor.id);
             return true;
         });
@@ -381,18 +441,41 @@ public final class MapRunner implements Runnable {
                 map.id(), TICK_MS, overrunNanos / 1_000_000L);
     }
 
-    private ActorDto toDto(Actor actor) {
-        return new ActorDto(actor.id, actor.name, actor.x, actor.y, actor.dir.name(), actor.online());
+    private void saveDirtyActors() {
+        if (tick % SAVE_INTERVAL_TICKS != 0) {
+            return;
+        }
+        for (Actor actor : actors.values()) {
+            persist(actor);
+        }
     }
 
-    private static String sanitiseName(String raw) {
-        if (raw == null) {
-            return "Wanderer";
+    private void saveEveryone() {
+        for (Actor actor : actors.values()) {
+            actor.dirty = true;
+            persist(actor);
         }
-        String cleaned = raw.strip().replaceAll("[^\\p{L}\\p{N} _-]", "");
-        if (cleaned.length() > 16) {
-            cleaned = cleaned.substring(0, 16);
+    }
+
+    private void persist(Actor actor) {
+        if (!actor.dirty) {
+            return;
         }
-        return cleaned.isBlank() ? "Wanderer" : cleaned;
+        actor.dirty = false;
+        // A copy, never the live actor: anything handed across threads must not
+        // be something the tick is still writing to.
+        persistence.save(new ActorSnapshot(actor.nameKey, actor.name, map.id(),
+                actor.x, actor.y, actor.dir.name()));
+    }
+
+    private void sendError(Client client, String message) {
+        String frame = serialise(new ServerMessages.Error(message));
+        if (frame != null) {
+            client.send(frame);
+        }
+    }
+
+    private ActorDto toDto(Actor actor) {
+        return new ActorDto(actor.id, actor.name, actor.x, actor.y, actor.dir.name(), actor.online());
     }
 }

@@ -1,6 +1,7 @@
 package com.kowihere.mmo.loop;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kowihere.mmo.world.Direction;
 import com.kowihere.mmo.world.MapDef;
 import com.kowihere.mmo.world.MapDefLoader;
 import org.junit.jupiter.api.AfterEach;
@@ -25,10 +26,12 @@ class MapRunnerTest {
 
     private MapRunner runner;
     private Thread thread;
+    private RecordingPersistence saved;
 
     @BeforeEach
     void startMap() {
-        runner = new MapRunner(MAP, new ObjectMapper());
+        saved = new RecordingPersistence();
+        runner = new MapRunner(MAP, new ObjectMapper(), saved);
         thread = new Thread(runner, "test-map");
         thread.setDaemon(true);
         thread.start();
@@ -183,7 +186,100 @@ class MapRunnerTest {
                 .isTrue();
     }
 
+    @Test
+    void aReturningCharacterStartsWhereItLeftOff() {
+        SavedCharacter stored = new SavedCharacter("Ala", MAP.id(), 3, 1, Direction.LEFT);
+        FakeClient client = new FakeClient();
+
+        runner.submit(new Command.Join(client, "Ala", null, 0, stored));
+
+        String init = client.await("\"type\":\"init\"");
+        assertThat(init)
+                .as("the character should be placed at its stored tile, not the spawn")
+                .contains("\"x\":3,\"y\":1");
+    }
+
+    @Test
+    void aStoredPositionInsideAWallFallsBackToTheSpawn() {
+        // Maps get edited between sessions. Waking up inside a wall would leave
+        // a player permanently stuck, with no way to walk out of it.
+        SavedCharacter walledIn = new SavedCharacter("Ala", MAP.id(), 0, 0, Direction.DOWN);
+        FakeClient client = new FakeClient();
+
+        runner.submit(new Command.Join(client, "Ala", null, 0, walledIn));
+
+        String init = client.await("\"type\":\"init\"");
+        assertThat(init).contains("\"x\":" + MAP.spawnX() + ",\"y\":" + MAP.spawnY());
+    }
+
+    @Test
+    void aStoredPositionFromAnotherMapIsIgnored() {
+        SavedCharacter elsewhere = new SavedCharacter("Ala", "some-other-map", 3, 1, Direction.LEFT);
+        FakeClient client = new FakeClient();
+
+        runner.submit(new Command.Join(client, "Ala", null, 0, elsewhere));
+
+        String init = client.await("\"type\":\"init\"");
+        assertThat(init).contains("\"x\":" + MAP.spawnX() + ",\"y\":" + MAP.spawnY());
+    }
+
+    @Test
+    void aNameAlreadyBeingPlayedIsRefused() {
+        join("Ala");
+
+        FakeClient impostor = new FakeClient();
+        runner.submit(new Command.Join(impostor, "ala", null, 0, null)); // note the case
+        sleep(400);
+
+        assertThat(impostor.await(f -> f.contains("\"type\":\"error\"")))
+                .as("a name in use should be refused, case-insensitively")
+                .isTrue();
+        assertThat(impostor.frames()).noneMatch(f -> f.contains("\"type\":\"init\""));
+    }
+
+    @Test
+    void leavingHandsThePositionToPersistence() {
+        FakeClient client = join("Ala");
+        runner.submit(new Command.MoveTo(client, MAP.spawnX() - 2, MAP.spawnY()));
+        assertThat(client.await(f -> f.contains("\"x\":" + (MAP.spawnX() - 2)))).isTrue();
+
+        runner.submit(new Command.Detach(client));
+        sleep(400);
+
+        assertThat(saved.snapshots)
+                .as("detaching is exactly when a position is worth keeping")
+                .anySatisfy(snapshot -> {
+                    assertThat(snapshot.nameKey()).isEqualTo("ala");
+                    assertThat(snapshot.mapId()).isEqualTo(MAP.id());
+                    assertThat(snapshot.x()).isEqualTo(MAP.spawnX() - 2);
+                });
+    }
+
+    @Test
+    void aCharacterThatNeverMovedIsNotWrittenAgainAndAgain() {
+        FakeClient client = join("Ala");
+        runner.submit(new Command.Detach(client));
+        sleep(400);
+        int afterLeaving = saved.snapshots.size();
+
+        sleep(500);
+
+        assertThat(saved.snapshots.size())
+                .as("an idle character should not be re-saved on every pass")
+                .isEqualTo(afterLeaving);
+    }
+
     // ------------------------------------------------------------------
+
+    private static final class RecordingPersistence implements WorldPersistence {
+
+        private final List<ActorSnapshot> snapshots = new CopyOnWriteArrayList<>();
+
+        @Override
+        public void save(ActorSnapshot snapshot) {
+            snapshots.add(snapshot);
+        }
+    }
 
     private static int countActors(String initFrame) {
         int start = initFrame.indexOf("\"actors\":[");

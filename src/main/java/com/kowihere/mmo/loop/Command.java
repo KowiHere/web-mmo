@@ -10,7 +10,17 @@ public sealed interface Command {
 
     Client client();
 
-    record Join(Client client, String name, String token, long since) implements Command {
+    /**
+     * @param saved what the database knew about this name, or null for someone
+     *              who has never played here. Loaded by the network layer so
+     *              the map thread never waits on a query.
+     */
+    record Join(Client client, String name, String token, long since, SavedCharacter saved)
+            implements Command {
+
+        public Join(Client client, String name, String token, long since) {
+            this(client, name, token, since, null);
+        }
     }
 
     record Detach(Client client) implements Command {

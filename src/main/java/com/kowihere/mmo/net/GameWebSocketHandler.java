@@ -3,7 +3,10 @@ package com.kowihere.mmo.net;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kowihere.mmo.loop.Command;
 import com.kowihere.mmo.loop.MapRunner;
+import com.kowihere.mmo.loop.PlayerNames;
+import com.kowihere.mmo.loop.SavedCharacter;
 import com.kowihere.mmo.loop.WorldService;
+import com.kowihere.mmo.persistence.CharacterRepository;
 import com.kowihere.mmo.protocol.ClientMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,10 +31,12 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
 
     private final WorldService world;
     private final ObjectMapper json;
+    private final CharacterRepository characters;
 
-    public GameWebSocketHandler(WorldService world, ObjectMapper json) {
+    public GameWebSocketHandler(WorldService world, ObjectMapper json, CharacterRepository characters) {
         this.world = world;
         this.json = json;
+        this.characters = characters;
     }
 
     @Override
@@ -72,8 +77,14 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
 
         MapRunner map = world.defaultMap();
         switch (message.type()) {
-            case "hello" -> map.submit(new Command.Join(client, message.name(), message.token(),
-                    message.since() == null ? 0L : message.since()));
+            case "hello" -> {
+                // The lookup happens here, on a container thread, precisely so
+                // that the map thread never waits on a database.
+                String name = PlayerNames.sanitise(message.name());
+                SavedCharacter saved = characters.find(PlayerNames.key(name)).orElse(null);
+                map.submit(new Command.Join(client, name, message.token(),
+                        message.since() == null ? 0L : message.since(), saved));
+            }
             case "move" -> {
                 if (message.x() != null && message.y() != null) {
                     map.submit(new Command.MoveTo(client, message.x(), message.y()));

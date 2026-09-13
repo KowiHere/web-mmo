@@ -30,20 +30,22 @@ public class WorldService {
 
     private final MapDefLoader loader;
     private final ObjectMapper json;
+    private final WorldPersistence persistence;
     private final Map<String, MapRunner> runners = new LinkedHashMap<>();
     private final List<Thread> threads = new ArrayList<>();
 
     private String defaultMapId;
 
-    public WorldService(MapDefLoader loader, ObjectMapper json) {
+    public WorldService(MapDefLoader loader, ObjectMapper json, WorldPersistence persistence) {
         this.loader = loader;
         this.json = json;
+        this.persistence = persistence;
     }
 
     @PostConstruct
     void start() {
         for (MapDef def : loader.loadAll().values()) {
-            MapRunner runner = new MapRunner(def, json);
+            MapRunner runner = new MapRunner(def, json, persistence);
             runners.put(def.id(), runner);
             Thread thread = new Thread(runner, "map-" + def.id());
             thread.setDaemon(false);

@@ -77,9 +77,17 @@ try {
     const alaView = await snapshot(ala);
     const bobView = await snapshot(bob);
 
+    const sees = (view, name) => view.actors.some((a) => a.name === name);
+
     alaView.mapId ? ok('init carried the map definition') : fail('init had no map');
-    alaView.actors.length === 2 ? ok('Ala sees both characters') : fail(`Ala sees ${alaView.actors.length}`);
-    bobView.actors.length === 2 ? ok('Bob sees both characters') : fail(`Bob sees ${bobView.actors.length}`);
+    // Named rather than counted: a character whose owner just left lingers for
+    // a grace period by design, so a headcount reports unrelated news.
+    sees(alaView, 'Ala') && sees(alaView, 'Bob')
+        ? ok('Ala sees both characters')
+        : fail(`Ala sees ${JSON.stringify(alaView.actors.map((a) => a.name))}`);
+    sees(bobView, 'Ala') && sees(bobView, 'Bob')
+        ? ok('Bob sees both characters')
+        : fail(`Bob sees ${JSON.stringify(bobView.actors.map((a) => a.name))}`);
     alaView.selfId !== bobView.selfId ? ok('each client owns a distinct actor') : fail('shared actor id');
 
     // ---- movement is server-driven and reaches the other client ----------
