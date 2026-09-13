@@ -23,7 +23,6 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.LockSupport;
 
@@ -67,7 +66,6 @@ public final class MapRunner implements Runnable {
 
     // ---- owned exclusively by the map thread from here down ----
     private final Map<Integer, Actor> actors = new HashMap<>();
-    private final Map<String, Actor> byToken = new HashMap<>();
     private final Map<String, Actor> byNameKey = new HashMap<>();
     private final Map<Client, Actor> byClient = new IdentityHashMap<>();
     private final Deque<Delta> history = new ArrayDeque<>();
@@ -102,6 +100,14 @@ public final class MapRunner implements Runnable {
 
     public String mapId() {
         return map.id();
+    }
+
+    public int spawnX() {
+        return map.spawnX();
+    }
+
+    public int spawnY() {
+        return map.spawnY();
     }
 
     /** How many A* searches this map has run since it started. See {@link AStar#searches()}. */
@@ -180,35 +186,19 @@ public final class MapRunner implements Runnable {
             return;
         }
 
-        // Fast path: this socket dropped a moment ago and its character is
-        // still standing here, inside the grace period.
-        Actor live = join.token() == null ? null : byToken.get(join.token());
+        // Already in the world: either still standing here inside the grace
+        // period, or being opened a second time. Both are the same character
+        // coming back, because the handshake proved whose it is.
+        Actor live = byNameKey.get(join.character().nameKey());
         if (live != null) {
             attach(live, join);
             return;
         }
 
-        String name = PlayerNames.sanitise(join.name());
-        String nameKey = PlayerNames.key(name);
-
-        Actor sameName = byNameKey.get(nameKey);
-        if (sameName != null) {
-            if (sameName.online()) {
-                // Until accounts exist the name IS the identity, so whoever is
-                // already playing it keeps it. Anyone can still claim a name
-                // nobody is using - that is what passwords will fix.
-                sendError(join.client(), "Postać o tej nazwie jest już w grze.");
-                return;
-            }
-            attach(sameName, join); // their own character, not yet reaped
-            return;
-        }
-
-        Actor actor = placeCharacter(name, nameKey, join.saved());
+        Actor actor = placeCharacter(join.accountId(), join.character());
         actor.client = join.client();
         actors.put(actor.id, actor);
-        byToken.put(actor.token, actor);
-        byNameKey.put(nameKey, actor);
+        byNameKey.put(actor.nameKey, actor);
         byClient.put(join.client(), actor);
         joined.add(toDto(actor));
         sendInit(actor, join.client());
@@ -236,16 +226,14 @@ public final class MapRunner implements Runnable {
      * can stand: a map can be edited between sessions, and waking up inside a
      * wall would leave someone permanently stuck.
      */
-    private Actor placeCharacter(String name, String nameKey, SavedCharacter saved) {
-        boolean usable = saved != null
-                && map.id().equals(saved.mapId())
-                && map.walkable(saved.x(), saved.y());
-        if (saved != null && !usable) {
+    private Actor placeCharacter(long accountId, SavedCharacter saved) {
+        boolean usable = map.id().equals(saved.mapId()) && map.walkable(saved.x(), saved.y());
+        if (!usable) {
             log.info("Stored position {},{} for '{}' is not usable on '{}'; starting at the spawn",
-                    saved.x(), saved.y(), name, map.id());
+                    saved.x(), saved.y(), saved.name(), map.id());
         }
 
-        Actor actor = new Actor(nextActorId++, name, nameKey, UUID.randomUUID().toString(),
+        Actor actor = new Actor(nextActorId++, saved.name(), saved.nameKey(), accountId,
                 usable ? saved.x() : map.spawnX(),
                 usable ? saved.y() : map.spawnY());
         if (usable) {
@@ -348,7 +336,6 @@ public final class MapRunner implements Runnable {
             if (actor.online() || tick - actor.offlineSinceTick < GRACE_TICKS) {
                 return false;
             }
-            byToken.remove(actor.token);
             byNameKey.remove(actor.nameKey);
             left.add(actor.id);
             return true;
@@ -393,7 +380,7 @@ public final class MapRunner implements Runnable {
         for (Actor actor : actors.values()) {
             snapshot.add(toDto(actor));
         }
-        String frame = serialise(new ServerMessages.Init(version, mapDto, self.id, self.token, snapshot));
+        String frame = serialise(new ServerMessages.Init(version, mapDto, self.id, snapshot));
         if (frame != null) {
             client.send(frame);
         }
@@ -466,13 +453,6 @@ public final class MapRunner implements Runnable {
         // be something the tick is still writing to.
         persistence.save(new ActorSnapshot(actor.nameKey, actor.name, map.id(),
                 actor.x, actor.y, actor.dir.name()));
-    }
-
-    private void sendError(Client client, String message) {
-        String frame = serialise(new ServerMessages.Error(message));
-        if (frame != null) {
-            client.send(frame);
-        }
     }
 
     private ActorDto toDto(Actor actor) {

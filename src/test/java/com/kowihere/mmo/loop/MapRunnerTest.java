@@ -18,11 +18,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Drives a real map thread and reads what comes out of it. These are slower
  * than unit tests by design: the bugs worth catching here are the ones that
  * only exist once the loop is actually ticking.
+ *
+ * <p>Every join here arrives with a character the caller already owns, because
+ * that is all the map thread ever sees - whether the socket was entitled to it
+ * was settled at the handshake, well before any of this.
  */
 class MapRunnerTest {
 
     private static final MapDef MAP = new MapDefLoader().loadAll().get("starter");
     private static final long TIMEOUT_MS = 5_000;
+    private static final long ACCOUNT = 1L;
+    private static final long OTHER_ACCOUNT = 2L;
 
     private MapRunner runner;
     private Thread thread;
@@ -43,10 +49,12 @@ class MapRunnerTest {
         thread.join(2_000);
     }
 
+    // ------------------------------------------------------------------ chat
+
     @Test
     void theFirstChatMessageIsDelivered() {
         // Regression: the cooldown used to be measured against a Long.MIN_VALUE
-        // sentinel, and `tick - MIN_VALUE` overflows negative — so every actor's
+        // sentinel, and `tick - MIN_VALUE` overflows negative - so every actor's
         // very first message looked like it had been sent a moment ago.
         FakeClient client = join("Ala");
 
@@ -68,6 +76,8 @@ class MapRunnerTest {
 
         assertThat(client.frames()).noneMatch(f -> f.contains("natychmiast"));
     }
+
+    // -------------------------------------------------------------- movement
 
     @Test
     void aClickWalksTheActorTowardsTheTile() {
@@ -95,71 +105,6 @@ class MapRunnerTest {
     }
 
     @Test
-    void twoClientsOnOneMapSeeEachOther() {
-        FakeClient ala = join("Ala");
-        FakeClient bob = join("Bob");
-
-        assertThat(ala.await(f -> f.contains("\"joined\"") && f.contains("Bob")))
-                .as("Ala should be told that Bob arrived")
-                .isTrue();
-
-        runner.submit(new Command.MoveTo(bob, MAP.spawnX(), MAP.spawnY() - 2));
-        assertThat(ala.await(f -> f.contains("\"moved\"")))
-                .as("Ala should see Bob move")
-                .isTrue();
-    }
-
-    @Test
-    void aReconnectWithTheRightTokenResumesTheSameActor() {
-        FakeClient first = join("Ala");
-        String token = extract(first.await("\"type\":\"init\""), "\"token\":\"", "\"");
-        String actorId = extract(first.await("\"type\":\"init\""), "\"selfId\":", ",");
-
-        runner.submit(new Command.Detach(first));
-        sleep(300);
-
-        FakeClient second = new FakeClient();
-        runner.submit(new Command.Join(second, "Ala", token, 0));
-
-        assertThat(second.await(f -> f.contains("\"selfId\":" + actorId)))
-                .as("the same actor should be handed back, not a new one")
-                .isTrue();
-    }
-
-    @Test
-    void aSecondHelloOnOneSocketDoesNotCreateASecondCharacter() {
-        // Regression: an unguarded second `hello` used to hand the socket a new
-        // actor and orphan the first one. The orphan kept a live client, so
-        // online() stayed true and the reaper never touched it - it sat on the
-        // map until the process restarted, and the socket got every delta twice.
-        FakeClient ala = join("Ala");
-        runner.submit(new Command.Join(ala, "Ala", null, 0));
-        sleep(400);
-
-        FakeClient observer = join("Observer");
-        String init = observer.await("\"type\":\"init\"");
-
-        assertThat(countActors(init))
-                .as("the world should hold Ala and the observer, nothing else")
-                .isEqualTo(2);
-    }
-
-    @Test
-    void aSecondHelloOnOneSocketDoesNotDisconnectTheClient() {
-        // Regression: the "same character opened twice" branch disconnected the
-        // existing socket without checking it was not the very socket asking.
-        FakeClient ala = join("Ala");
-        String token = extract(ala.await("\"type\":\"init\""), "\"token\":\"", "\"");
-
-        runner.submit(new Command.Join(ala, "Ala", token, 0));
-        sleep(400);
-
-        assertThat(ala.disconnected)
-                .as("a client must not be dropped for re-introducing itself")
-                .isFalse();
-    }
-
-    @Test
     void aBurstOfMoveCommandsCostsAtMostOnePathSearchPerTick() {
         // Regression: every move command used to trigger a full A* immediately,
         // so one socket clicking in a loop could pin the map thread and delay
@@ -178,23 +123,33 @@ class MapRunnerTest {
         assertThat(searches)
                 .as("50 clicks in one burst should not buy 50 searches")
                 .isLessThanOrEqualTo(4);
-        assertThat(ala.await(f -> f.contains("\"moved\"")))
-                .as("the actor should still act on the burst")
-                .isTrue();
         assertThat(ala.await(f -> f.contains("\"x\":" + lastX + ",\"y\":" + (MAP.spawnY() - 1))))
                 .as("coalescing must honour the most recent click, not the first")
                 .isTrue();
     }
 
     @Test
+    void twoClientsOnOneMapSeeEachOther() {
+        FakeClient ala = join("Ala");
+        FakeClient bob = join("Bob");
+
+        assertThat(ala.await(f -> f.contains("\"joined\"") && f.contains("Bob")))
+                .as("Ala should be told that Bob arrived")
+                .isTrue();
+
+        runner.submit(new Command.MoveTo(bob, MAP.spawnX(), MAP.spawnY() - 2));
+        assertThat(ala.await(f -> f.contains("\"moved\"")))
+                .as("Ala should see Bob move")
+                .isTrue();
+    }
+
+    // ------------------------------------------------------------- arriving
+
+    @Test
     void aReturningCharacterStartsWhereItLeftOff() {
-        SavedCharacter stored = new SavedCharacter("Ala", MAP.id(), 3, 1, Direction.LEFT);
-        FakeClient client = new FakeClient();
+        FakeClient client = joinAt("Ala", 3, 1);
 
-        runner.submit(new Command.Join(client, "Ala", null, 0, stored));
-
-        String init = client.await("\"type\":\"init\"");
-        assertThat(init)
+        assertThat(client.await("\"type\":\"init\""))
                 .as("the character should be placed at its stored tile, not the spawn")
                 .contains("\"x\":3,\"y\":1");
     }
@@ -203,39 +158,87 @@ class MapRunnerTest {
     void aStoredPositionInsideAWallFallsBackToTheSpawn() {
         // Maps get edited between sessions. Waking up inside a wall would leave
         // a player permanently stuck, with no way to walk out of it.
-        SavedCharacter walledIn = new SavedCharacter("Ala", MAP.id(), 0, 0, Direction.DOWN);
-        FakeClient client = new FakeClient();
+        FakeClient client = joinAt("Ala", 0, 0);
 
-        runner.submit(new Command.Join(client, "Ala", null, 0, walledIn));
-
-        String init = client.await("\"type\":\"init\"");
-        assertThat(init).contains("\"x\":" + MAP.spawnX() + ",\"y\":" + MAP.spawnY());
+        assertThat(client.await("\"type\":\"init\""))
+                .contains("\"x\":" + MAP.spawnX() + ",\"y\":" + MAP.spawnY());
     }
 
     @Test
     void aStoredPositionFromAnotherMapIsIgnored() {
-        SavedCharacter elsewhere = new SavedCharacter("Ala", "some-other-map", 3, 1, Direction.LEFT);
         FakeClient client = new FakeClient();
+        SavedCharacter elsewhere = new SavedCharacter("ala", "Ala", "some-other-map", 3, 1, Direction.LEFT);
 
-        runner.submit(new Command.Join(client, "Ala", null, 0, elsewhere));
+        runner.submit(new Command.Join(client, ACCOUNT, elsewhere, 0));
 
-        String init = client.await("\"type\":\"init\"");
-        assertThat(init).contains("\"x\":" + MAP.spawnX() + ",\"y\":" + MAP.spawnY());
+        assertThat(client.await("\"type\":\"init\""))
+                .contains("\"x\":" + MAP.spawnX() + ",\"y\":" + MAP.spawnY());
     }
 
     @Test
-    void aNameAlreadyBeingPlayedIsRefused() {
-        join("Ala");
-
-        FakeClient impostor = new FakeClient();
-        runner.submit(new Command.Join(impostor, "ala", null, 0, null)); // note the case
+    void aSecondHelloOnOneSocketIsIgnored() {
+        // Regression: an unguarded second hello used to hand the socket a new
+        // actor and orphan the first one. The orphan kept a live client, so
+        // online() stayed true and the reaper never touched it - it sat on the
+        // map until the process restarted, and the socket got every delta twice.
+        FakeClient ala = join("Ala");
+        runner.submit(new Command.Join(ala, ACCOUNT, character("Ala", MAP.spawnX(), MAP.spawnY()), 0));
         sleep(400);
 
-        assertThat(impostor.await(f -> f.contains("\"type\":\"error\"")))
-                .as("a name in use should be refused, case-insensitively")
-                .isTrue();
-        assertThat(impostor.frames()).noneMatch(f -> f.contains("\"type\":\"init\""));
+        FakeClient observer = join("Obserwator");
+
+        assertThat(countActors(observer.await("\"type\":\"init\"")))
+                .as("the world should hold Ala and the observer, nothing else")
+                .isEqualTo(2);
     }
+
+    @Test
+    void openingTheSameCharacterTwiceMovesItToTheNewerSocket() {
+        // The handshake already proved both sockets may play this character, so
+        // the second one is the same person on another tab, not an intruder.
+        FakeClient firstTab = join("Ala");
+        FakeClient secondTab = new FakeClient();
+
+        runner.submit(new Command.Join(secondTab, ACCOUNT, character("Ala", MAP.spawnX(), MAP.spawnY()), 0));
+
+        assertThat(secondTab.await(f -> f.contains("\"type\":\"init\"")))
+                .as("the newer socket should be handed the character")
+                .isTrue();
+        assertThat(firstTab.disconnected)
+                .as("and the older one should be let go rather than left half-alive")
+                .isTrue();
+    }
+
+    @Test
+    void reconnectingAfterADropResumesTheSameActor() {
+        FakeClient first = join("Ala");
+        String actorId = extract(first.await("\"type\":\"init\""), "\"selfId\":", ",");
+
+        runner.submit(new Command.Detach(first));
+        sleep(300);
+
+        FakeClient second = new FakeClient();
+        runner.submit(new Command.Join(second, ACCOUNT, character("Ala", MAP.spawnX(), MAP.spawnY()), 0));
+
+        assertThat(second.await(f -> f.contains("\"selfId\":" + actorId)))
+                .as("the same actor should be handed back, not a new one")
+                .isTrue();
+    }
+
+    @Test
+    void charactersOfDifferentAccountsCoexist() {
+        FakeClient ala = join("Ala");
+        FakeClient bob = new FakeClient();
+
+        runner.submit(new Command.Join(bob, OTHER_ACCOUNT, character("Bob", MAP.spawnX(), MAP.spawnY()), 0));
+
+        assertThat(bob.await(f -> f.contains("\"type\":\"init\""))).isTrue();
+        assertThat(ala.disconnected)
+                .as("another account's character must not disturb this one")
+                .isFalse();
+    }
+
+    // ---------------------------------------------------------- persistence
 
     @Test
     void leavingHandsThePositionToPersistence() {
@@ -286,9 +289,17 @@ class MapRunnerTest {
         return initFrame.substring(start).split("\"name\":", -1).length - 1;
     }
 
+    private static SavedCharacter character(String name, int x, int y) {
+        return new SavedCharacter(PlayerNames.key(name), name, MAP.id(), x, y, Direction.DOWN);
+    }
+
     private FakeClient join(String name) {
+        return joinAt(name, MAP.spawnX(), MAP.spawnY());
+    }
+
+    private FakeClient joinAt(String name, int x, int y) {
         FakeClient client = new FakeClient();
-        runner.submit(new Command.Join(client, name, null, 0));
+        runner.submit(new Command.Join(client, ACCOUNT, character(name, x, y), 0));
         assertThat(client.await(f -> f.contains("\"type\":\"init\""))).isTrue();
         return client;
     }

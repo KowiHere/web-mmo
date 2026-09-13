@@ -18,17 +18,20 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final GameWebSocketHandler handler;
+    private final AuthHandshakeInterceptor auth;
     private final String allowedOrigins;
 
-    public WebSocketConfig(GameWebSocketHandler handler,
+    public WebSocketConfig(GameWebSocketHandler handler, AuthHandshakeInterceptor auth,
                            @Value("${game.allowed-origins:http://localhost:8080}") String allowedOrigins) {
         this.handler = handler;
+        this.auth = auth;
         this.allowedOrigins = allowedOrigins;
     }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(handler, "/ws")
+                .addInterceptors(auth)
                 .setAllowedOrigins(parseOrigins(allowedOrigins));
     }
 

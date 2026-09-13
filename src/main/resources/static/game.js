@@ -35,6 +35,8 @@ const MOVEMENT_KEYS = {
 
 const state = {
     ws: null,
+    characterKey: null,
+    leaving: false,
     version: 0,
     selfId: null,
     map: null,
@@ -59,22 +61,29 @@ const debugEl = document.getElementById('debug');
 
 // ---------------------------------------------------------------- networking
 
-function connect(name) {
+/**
+ * Opens the world as one character.
+ *
+ * The socket carries no claim about who we are: the session cookie and the
+ * character name go through the handshake, where the server decides. A socket
+ * that is not ours is never created, so there is nothing to prove afterwards.
+ */
+function connect(characterKey) {
+    state.characterKey = characterKey;
+    state.leaving = false;
+
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${proto}//${location.host}/ws`);
+    const ws = new WebSocket(`${proto}//${location.host}/ws?character=${encodeURIComponent(characterKey)}`);
     state.ws = ws;
     setStatus('łączenie…', 'down');
 
+    let opened = false;
+
     ws.onopen = () => {
+        opened = true;
         state.reconnectDelay = 1000;
-        // The token is what makes a reconnect a *resume*: the server still has
-        // our character standing where we left it. `since` asks for the gap only.
-        ws.send(JSON.stringify({
-            type: 'hello',
-            name,
-            token: sessionStorage.getItem('mmo.token'),
-            since: state.version,
-        }));
+        // `since` asks for the frames we missed; identity is already settled.
+        ws.send(JSON.stringify({ type: 'hello', since: state.version }));
     };
 
     ws.onmessage = (event) => {
@@ -85,8 +94,16 @@ function connect(name) {
     };
 
     ws.onclose = () => {
+        if (state.leaving) return;
+        if (!opened) {
+            // The handshake itself was refused - an expired session, or a
+            // character that is not ours. Retrying cannot fix either, so go back
+            // and let the selection screen find out which it was.
+            returnToSelection();
+            return;
+        }
         setStatus('rozłączono, ponawiam…', 'down');
-        setTimeout(() => connect(name), state.reconnectDelay);
+        setTimeout(() => connect(characterKey), state.reconnectDelay);
         state.reconnectDelay = Math.min(state.reconnectDelay * 2, 10000);
     };
 
@@ -105,7 +122,6 @@ function applyInit(msg) {
     state.version = msg.v;
     state.selfId = msg.selfId;
     state.map = msg.map;
-    sessionStorage.setItem('mmo.token', msg.token);
 
     state.actors.clear();
     for (const dto of msg.actors || []) upsertActor(dto);
@@ -519,15 +535,199 @@ chatInput.addEventListener('keydown', (event) => {
     chatInput.blur();
 });
 
-document.getElementById('join-form').addEventListener('submit', (event) => {
-    event.preventDefault();
-    const name = document.getElementById('name').value.trim() || 'Wędrowiec';
-    document.getElementById('join').hidden = true;
-    document.getElementById('game').hidden = false;
+// ------------------------------------------------------------------ screens
+
+const screens = {
+    auth: document.getElementById('auth'),
+    select: document.getElementById('select'),
+    game: document.getElementById('game'),
+};
+
+let rendering = false;
+
+function show(name) {
+    for (const [key, element] of Object.entries(screens)) element.hidden = key !== name;
+    if (name !== 'game') return;
     resize();
-    connect(name);
-    requestAnimationFrame(frame);
+    if (!rendering) {
+        rendering = true;
+        requestAnimationFrame(frame);
+    }
+}
+
+function showError(element, message) {
+    element.textContent = message;
+    element.hidden = !message;
+}
+
+/** Every call to the server goes through here, so errors are reported the same way. */
+async function api(path, options = {}) {
+    const response = await fetch(path, {
+        ...options,
+        headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+    });
+    if (response.status === 204) return null;
+
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const error = new Error(body.error || `Błąd serwera (${response.status}).`);
+        error.status = response.status;
+        throw error;
+    }
+    return body;
+}
+
+// --------------------------------------------------------------------- auth
+
+const authError = document.getElementById('auth-error');
+const selectError = document.getElementById('select-error');
+
+function selectTab(name) {
+    for (const tab of document.querySelectorAll('.tab')) {
+        tab.setAttribute('aria-selected', String(tab.dataset.tab === name));
+    }
+    document.getElementById('login-form').hidden = name !== 'login';
+    document.getElementById('register-form').hidden = name !== 'register';
+    showError(authError, '');
+}
+
+for (const tab of document.querySelectorAll('.tab')) {
+    tab.addEventListener('click', () => selectTab(tab.dataset.tab));
+}
+
+/**
+ * Always lands on the login tab. Someone arriving here has either just logged
+ * out or had their session expire - both want to log in, and showing them a
+ * registration form because it was the last tab they opened is a small way of
+ * asking the wrong question.
+ */
+function showAuth() {
+    selectTab('login');
+    show('auth');
+}
+
+document.getElementById('login-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    showError(authError, '');
+    try {
+        await api('/api/login', {
+            method: 'POST',
+            body: JSON.stringify({
+                login: document.getElementById('login-name').value,
+                password: document.getElementById('login-password').value,
+            }),
+        });
+        document.getElementById('login-password').value = '';
+        await returnToSelection();
+    } catch (error) {
+        showError(authError, error.message);
+    }
 });
+
+document.getElementById('register-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    showError(authError, '');
+    try {
+        await api('/api/register', {
+            method: 'POST',
+            body: JSON.stringify({
+                login: document.getElementById('register-login').value,
+                password: document.getElementById('register-password').value,
+                characterName: document.getElementById('register-character').value,
+            }),
+        });
+        document.getElementById('register-password').value = '';
+        await returnToSelection();
+    } catch (error) {
+        showError(authError, error.message);
+    }
+});
+
+async function logout() {
+    state.leaving = true;
+    if (state.ws) state.ws.close();
+    await api('/api/logout', { method: 'POST' }).catch(() => {});
+    showAuth();
+}
+
+document.getElementById('logout-select').addEventListener('click', logout);
+
+// --------------------------------------------------- character selection
+
+const characterList = document.getElementById('character-list');
+
+/**
+ * Shows the account's characters, or the login screen when the session has
+ * expired. Asking the server is also how we find out which of the two it is.
+ */
+async function returnToSelection() {
+    state.leaving = true;
+    if (state.ws) state.ws.close();
+    state.version = 0;
+    state.actors.clear();
+    showError(selectError, '');
+
+    let characters;
+    try {
+        ({ characters } = await api('/api/characters'));
+    } catch (error) {
+        showAuth();
+        if (error.status !== 401) showError(authError, error.message);
+        return;
+    }
+
+    characterList.replaceChildren();
+    for (const character of characters) {
+        const item = document.createElement('li');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'character';
+        // textContent, never innerHTML: a character name is player input.
+        const name = document.createElement('span');
+        name.className = 'character-name';
+        name.textContent = character.name;
+        const where = document.createElement('span');
+        where.className = 'character-where';
+        where.textContent = `${character.mapId} · ${character.x},${character.y}`;
+        button.append(name, where);
+        button.addEventListener('click', () => {
+            show('game');
+            connect(character.key);
+        });
+        item.append(button);
+        characterList.append(item);
+    }
+
+    if (!characters.length) {
+        const empty = document.createElement('li');
+        empty.className = 'empty';
+        empty.textContent = 'Nie masz jeszcze żadnej postaci.';
+        characterList.append(empty);
+    }
+
+    show('select');
+}
+
+document.getElementById('create-character').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    showError(selectError, '');
+    const field = document.getElementById('new-character');
+    try {
+        await api('/api/characters', {
+            method: 'POST',
+            body: JSON.stringify({ name: field.value }),
+        });
+        field.value = '';
+        await returnToSelection();
+    } catch (error) {
+        showError(selectError, error.message);
+    }
+});
+
+document.getElementById('leave').addEventListener('click', returnToSelection);
+
+// A session may already be waiting from a previous visit.
+returnToSelection();
 
 // ----------------------------------------------------------------------- hud
 

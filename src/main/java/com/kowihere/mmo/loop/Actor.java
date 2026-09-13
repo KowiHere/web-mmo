@@ -18,9 +18,10 @@ final class Actor {
 
     final int id;
     final String name;
-    /** Case-folded name: the character's identity until accounts exist. */
+    /** Case-folded name: the character's identity, and its primary key. */
     final String nameKey;
-    final String token;
+    /** Which account this character belongs to. */
+    final long accountId;
 
     /** Set when this actor has moved since it was last handed to persistence. */
     boolean dirty;
@@ -51,11 +52,11 @@ final class Actor {
      */
     long nextChatTick;
 
-    Actor(int id, String name, String nameKey, String token, int x, int y) {
+    Actor(int id, String name, String nameKey, long accountId, int x, int y) {
         this.id = id;
         this.name = name;
         this.nameKey = nameKey;
-        this.token = token;
+        this.accountId = accountId;
         this.x = x;
         this.y = y;
         this.fromX = x;

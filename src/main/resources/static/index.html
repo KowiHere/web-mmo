@@ -8,30 +8,62 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div id="join" class="overlay">
-    <form id="join-form">
+
+<div id="auth" class="overlay" hidden>
+    <div class="panel">
         <h1>web-mmo</h1>
-        <p class="lead">
-            Wpisz nazwę postaci i wejdź na mapę.
-            Otwórz drugą kartę, żeby zobaczyć tryb wieloosobowy.
-        </p>
 
-        <input id="name" maxlength="16" placeholder="Nazwa postaci" autocomplete="off" required>
-        <button type="submit">Wejdź do gry</button>
+        <div class="tabs" role="tablist">
+            <button type="button" class="tab" data-tab="login" aria-selected="true">Logowanie</button>
+            <button type="button" class="tab" data-tab="register" aria-selected="false">Rejestracja</button>
+        </div>
 
-        <dl class="controls">
-            <dt>WASD / strzałki</dt>
-            <dd>chodzenie</dd>
-            <dt>kliknięcie</dt>
-            <dd>idź na wskazany kafel</dd>
-            <dt>Enter</dt>
-            <dd>czat; Enter wysyła i wraca do gry</dd>
-            <dt>Esc</dt>
-            <dd>powrót do sterowania grą</dd>
-            <dt>F3</dt>
-            <dd>podgląd diagnostyczny</dd>
-        </dl>
-    </form>
+        <form id="login-form" class="tab-panel">
+            <label for="login-name">Login</label>
+            <input id="login-name" autocomplete="username" required>
+
+            <label for="login-password">Hasło</label>
+            <input id="login-password" type="password" autocomplete="current-password" required>
+
+            <button type="submit">Zaloguj</button>
+        </form>
+
+        <form id="register-form" class="tab-panel" hidden>
+            <label for="register-login">Login</label>
+            <input id="register-login" autocomplete="username" required>
+            <p class="hint">3–32 znaki: litery, cyfry, kropka, myślnik, podkreślenie.</p>
+
+            <label for="register-password">Hasło</label>
+            <input id="register-password" type="password" autocomplete="new-password" required>
+            <p class="hint">Co najmniej 8 znaków.</p>
+
+            <label for="register-character">Nazwa postaci</label>
+            <input id="register-character" maxlength="16" autocomplete="off" required>
+            <p class="hint">Widoczna dla innych graczy — dlatego nie jest tym samym co login.</p>
+
+            <button type="submit">Załóż konto</button>
+        </form>
+
+        <p id="auth-error" class="error" hidden></p>
+    </div>
+</div>
+
+<div id="select" class="overlay" hidden>
+    <div class="panel">
+        <h1>Twoje postacie</h1>
+        <ul id="character-list" class="characters"></ul>
+
+        <form id="create-character">
+            <label for="new-character">Nowa postać</label>
+            <div class="row">
+                <input id="new-character" maxlength="16" placeholder="Nazwa" autocomplete="off" required>
+                <button type="submit">Utwórz</button>
+            </div>
+        </form>
+
+        <p id="select-error" class="error" hidden></p>
+        <button type="button" id="logout-select" class="quiet">Wyloguj</button>
+    </div>
 </div>
 
 <div id="game" hidden>
@@ -40,6 +72,7 @@
     <div id="hud">
         <span id="map-name"></span>
         <span id="status" class="status"></span>
+        <button type="button" id="leave" class="quiet">Zmień postać</button>
     </div>
 
     <pre id="debug" hidden></pre>

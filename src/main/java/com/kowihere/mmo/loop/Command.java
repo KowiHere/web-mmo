@@ -11,16 +11,12 @@ public sealed interface Command {
     Client client();
 
     /**
-     * @param saved what the database knew about this name, or null for someone
-     *              who has never played here. Loaded by the network layer so
-     *              the map thread never waits on a query.
+     * @param character the character this socket was already proven to own, at
+     *                  the handshake. The map thread never has to ask who
+     *                  someone is, and never waits on a query to find out.
      */
-    record Join(Client client, String name, String token, long since, SavedCharacter saved)
+    record Join(Client client, long accountId, SavedCharacter character, long since)
             implements Command {
-
-        public Join(Client client, String name, String token, long since) {
-            this(client, name, token, since, null);
-        }
     }
 
     record Detach(Client client) implements Command {

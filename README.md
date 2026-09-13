@@ -59,15 +59,37 @@ Only one server may run against one database file at a time — H2 holds a lock,
 and a second instance fails to start. That is the right answer rather than an
 inconvenience: two worlds writing the same characters would corrupt both.
 
-### Who you are, for now
+### Who you are
 
-There are no accounts yet, so **the name is the identity**. Type the same name
-and you get the same character back; pick a name nobody is using and you get a
-new one. A name currently being played is refused rather than taken over.
+An account, a password, and as many characters as you care to make. Register,
+pick a character, walk around; the login you type is not the name anyone sees,
+because a character's name is public and half a credential should not be.
 
-This is deliberately insecure — anyone who knows your character's name can play
-it while you are offline — and it is the next thing to fix. Passwords are what
-turn a name into an identity that is actually yours.
+**Identity is settled at the WebSocket handshake, not in a message.** The
+session cookie and the character being entered are checked before the socket
+exists, so there is no moment where a connection is open and anonymous, and
+nothing a client can later claim about who it is. Two separate questions get
+asked there, and conflating them is the classic way one player ends up walking
+around as another:
+
+- is this session real? — otherwise the handshake is refused
+- does *this account* own *this character*? — otherwise it is refused too
+
+Passwords are hashed with BCrypt. Session tokens are random, kept in an
+`HttpOnly` cookie, and only their SHA-256 is stored — a copy of the database is
+not a pile of working logins. A wrong password and a login that does not exist
+produce the same message and take about the same time, so the login form cannot
+be used to find out which accounts are real.
+
+Two things worth knowing before this leaves your machine:
+
+- **Over plain HTTP the password crosses the network in the clear.** On
+  localhost that is fine, and through Tailscale the tunnel is encrypted anyway.
+  Exposed any other way, HTTPS stops being optional.
+- `game.session.secure-cookie` is **off** by default and must stay off for
+  `http://localhost`: a cookie marked `Secure` is silently dropped over plain
+  HTTP, and the symptom is a login that appears to do nothing at all. Turn it on
+  the moment the game is served over HTTPS.
 
 ### Disconnecting is not leaving
 
@@ -100,6 +122,8 @@ heavy.
 
 Then open <http://localhost:8080> — and open it a second time in another tab to
 see the multiplayer half actually working.
+
+Register on first visit, then pick a character from the list.
 
 | key | does |
 | --- | --- |
@@ -135,8 +159,9 @@ One check needs the server stopped and started around it, so it runs itself:
 e2e/restart-check.sh
 ```
 
-It walks a character somewhere, kills the server, starts it again, and fails
-unless the character is standing where it was left. Nothing inside a single
+It registers an account, walks the character somewhere, kills the server,
+starts it again, and then **logs in** rather than registering — so it fails
+unless both the account and the character survived. Nothing inside a single
 process can prove that.
 
 ## Maps
@@ -177,12 +202,13 @@ pathfinding.
 
 ## What is not here yet
 
-No accounts, no combat, no items, one map. Characters persist, but a name is all
-that stands between you and someone else's.
+No combat, no items, one map. There is no password reset and no email
+confirmation either — both need to send mail, which means a service to run, and
+this project deliberately needs nothing installed.
 
-Roughly in order: accounts with real passwords, NPCs with spawn points and
-respawn timers, turn-based combat on timers, items with rolled statistics, then
-multiple maps with gates between them.
+Roughly in order: NPCs with spawn points and respawn timers, turn-based combat
+on timers, items with rolled statistics, then multiple maps with gates between
+them.
 
 ## Layout
 
@@ -190,7 +216,8 @@ multiple maps with gates between them.
 world/       map definitions and collision — immutable, shared
 path/        A* over the collision grid    — server-side only
 loop/        the game loop and its commands — no Spring below this line
-net/         WebSocket transport           — translates frames, decides nothing
+account/     registration, login, sessions — passwords never reach the loop
+net/         WebSocket transport           — authenticates, then decides nothing
 persistence/ the only place with SQL       — never called from a map thread
 protocol/    the wire format
 e2e/         browser checks                — needs a running server

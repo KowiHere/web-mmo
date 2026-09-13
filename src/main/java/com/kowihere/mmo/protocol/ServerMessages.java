@@ -34,9 +34,9 @@ public final class ServerMessages {
     }
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
-    public record Init(String type, long v, MapDto map, int selfId, String token, List<ActorDto> actors) {
-        public Init(long v, MapDto map, int selfId, String token, List<ActorDto> actors) {
-            this("init", v, map, selfId, token, actors);
+    public record Init(String type, long v, MapDto map, int selfId, List<ActorDto> actors) {
+        public Init(long v, MapDto map, int selfId, List<ActorDto> actors) {
+            this("init", v, map, selfId, actors);
         }
     }
 

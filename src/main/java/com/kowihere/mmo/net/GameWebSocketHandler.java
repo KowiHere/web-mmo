@@ -3,7 +3,6 @@ package com.kowihere.mmo.net;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kowihere.mmo.loop.Command;
 import com.kowihere.mmo.loop.MapRunner;
-import com.kowihere.mmo.loop.PlayerNames;
 import com.kowihere.mmo.loop.SavedCharacter;
 import com.kowihere.mmo.loop.WorldService;
 import com.kowihere.mmo.persistence.CharacterRepository;
@@ -42,7 +41,9 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         session.getAttributes().put(SESSION_KEY, new PlayerSession(session));
-        log.debug("Socket open: {}", session.getId());
+        log.debug("Socket open for account {} as '{}'",
+                session.getAttributes().get(AuthHandshakeInterceptor.ACCOUNT_ID),
+                session.getAttributes().get(AuthHandshakeInterceptor.CHARACTER_KEY));
     }
 
     @Override
@@ -77,14 +78,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
 
         MapRunner map = world.defaultMap();
         switch (message.type()) {
-            case "hello" -> {
-                // The lookup happens here, on a container thread, precisely so
-                // that the map thread never waits on a database.
-                String name = PlayerNames.sanitise(message.name());
-                SavedCharacter saved = characters.find(PlayerNames.key(name)).orElse(null);
-                map.submit(new Command.Join(client, name, message.token(),
-                        message.since() == null ? 0L : message.since(), saved));
-            }
+            case "hello" -> enterWorld(session, client, map, message);
             case "move" -> {
                 if (message.x() != null && message.y() != null) {
                     map.submit(new Command.MoveTo(client, message.x(), message.y()));
@@ -108,6 +102,34 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) {
         log.debug("Transport error on {}: {}", session.getId(), exception.toString());
+    }
+
+    /**
+     * Turns an authenticated socket into a character in the world.
+     *
+     * <p>The identity comes from the handshake attributes, never from the
+     * message: the client has no say in who it is. The database lookup happens
+     * here, on a container thread, precisely so the map thread never waits on a
+     * query.
+     */
+    private void enterWorld(WebSocketSession session, PlayerSession client,
+                            MapRunner map, ClientMessage message) {
+        Long accountId = (Long) session.getAttributes().get(AuthHandshakeInterceptor.ACCOUNT_ID);
+        String characterKey = (String) session.getAttributes().get(AuthHandshakeInterceptor.CHARACTER_KEY);
+        if (accountId == null || characterKey == null) {
+            client.disconnect("Not authenticated");
+            return;
+        }
+
+        SavedCharacter character = characters.find(characterKey).orElse(null);
+        if (character == null) {
+            // Deleted between the handshake and the first message.
+            client.disconnect("Character no longer exists");
+            return;
+        }
+
+        map.submit(new Command.Join(client, accountId, character,
+                message.since() == null ? 0L : message.since()));
     }
 
     private static PlayerSession client(WebSocketSession session) {

@@ -29,41 +29,63 @@ public class CharacterRepository {
         this.jdbc = jdbc;
     }
 
+    private static final String SELECT =
+            "SELECT name_key, name, map_id, x, y, dir FROM game_character";
+
     public Optional<SavedCharacter> find(String nameKey) {
-        List<SavedCharacter> found = jdbc.query(
-                "SELECT name, map_id, x, y, dir FROM game_character WHERE name_key = ?",
-                (rs, row) -> new SavedCharacter(
-                        rs.getString("name"),
-                        rs.getString("map_id"),
-                        rs.getInt("x"),
-                        rs.getInt("y"),
-                        direction(rs.getString("dir"))),
-                nameKey);
-        return found.stream().findFirst();
+        return jdbc.query(SELECT + " WHERE name_key = ?", CharacterRepository::read, nameKey)
+                .stream().findFirst();
+    }
+
+    /** Every character on one account, for the selection screen. */
+    public List<SavedCharacter> findByAccount(long accountId) {
+        return jdbc.query(SELECT + " WHERE account_id = ? ORDER BY name", CharacterRepository::read, accountId);
     }
 
     /**
-     * Update-then-insert rather than a single upsert statement.
-     *
-     * <p>Every database spells upsert differently - H2 has MERGE, PostgreSQL has
-     * ON CONFLICT - and this project would rather stay portable than save one
-     * round trip on a table written a few times a minute.
+     * Who may play this character. The answer comes from the database rather
+     * than from anything the client said - this is the check that stops one
+     * account entering the world as another account's character.
+     */
+    public Optional<Long> ownerOf(String nameKey) {
+        return jdbc.query("SELECT account_id FROM game_character WHERE name_key = ?",
+                (rs, row) -> rs.getLong("account_id"), nameKey).stream().findFirst();
+    }
+
+    /** @throws org.springframework.dao.DuplicateKeyException if the name is taken */
+    public void create(long accountId, SavedCharacter character) {
+        jdbc.update("INSERT INTO game_character (name_key, name, map_id, x, y, dir, last_seen, account_id)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                character.nameKey(), character.name(), character.mapId(),
+                character.x(), character.y(), character.dir().name(),
+                Timestamp.from(Instant.now()), accountId);
+    }
+
+    private static SavedCharacter read(java.sql.ResultSet rs, int row) throws java.sql.SQLException {
+        return new SavedCharacter(
+                rs.getString("name_key"),
+                rs.getString("name"),
+                rs.getString("map_id"),
+                rs.getInt("x"),
+                rs.getInt("y"),
+                direction(rs.getString("dir")));
+    }
+
+    /**
+     * Writes a position back. Update only, never insert: a character now has an
+     * owner, and the world has no business inventing one. A row that is not
+     * there means the character was deleted while it was being played, which is
+     * worth a line in the log rather than a resurrection.
      */
     public void save(ActorSnapshot snapshot) {
-        Timestamp now = Timestamp.from(Instant.now());
         int updated = jdbc.update(
-                "UPDATE game_character SET name = ?, map_id = ?, x = ?, y = ?, dir = ?, last_seen = ?"
+                "UPDATE game_character SET map_id = ?, x = ?, y = ?, dir = ?, last_seen = ?"
                         + " WHERE name_key = ?",
-                snapshot.name(), snapshot.mapId(), snapshot.x(), snapshot.y(), snapshot.dir(),
-                now, snapshot.nameKey());
-        if (updated > 0) {
-            return;
+                snapshot.mapId(), snapshot.x(), snapshot.y(), snapshot.dir(),
+                Timestamp.from(Instant.now()), snapshot.nameKey());
+        if (updated == 0) {
+            log.warn("No character row for '{}'; its position was not saved", snapshot.nameKey());
         }
-        jdbc.update(
-                "INSERT INTO game_character (name_key, name, map_id, x, y, dir, last_seen)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                snapshot.nameKey(), snapshot.name(), snapshot.mapId(),
-                snapshot.x(), snapshot.y(), snapshot.dir(), now);
     }
 
     private static Direction direction(String stored) {

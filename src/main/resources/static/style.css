@@ -40,17 +40,6 @@ html, body {
     overflow-y: auto;
 }
 
-#join-form {
-    width: min(400px, 100%);
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 24px;
-}
-
-#join-form h1 { margin: 0 0 4px; font-size: 20px; }
-.lead { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
-
 input, button {
     width: 100%;
     padding: 10px 12px;
@@ -74,19 +63,108 @@ button {
 
 button:hover { filter: brightness(1.08); }
 
-/* Two columns: the key on the left, what it does on the right. */
-.controls {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 4px 12px;
-    margin: 20px 0 0;
-    padding-top: 16px;
-    border-top: 1px solid var(--border);
+/*
+ * Everything below narrows the two rules above. Order matters: these selectors
+ * carry the same weight as `input, button`, so whichever comes last wins - and
+ * a full-width tab or a full-width "log out" button is what you get if the
+ * generic rule is allowed to come second.
+ */
+.panel {
+    width: min(420px, 100%);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+}
+
+.panel h1 { margin: 0 0 16px; font-size: 20px; }
+
+label {
+    display: block;
+    margin: 12px 0 4px;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.hint { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+
+.error {
+    margin: 14px 0 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: rgba(224, 108, 117, .12);
+    border: 1px solid rgba(224, 108, 117, .4);
+    color: var(--danger);
+    font-size: 13px;
+}
+
+/* ---- tabs ---- */
+
+.tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+}
+
+.tab {
+    width: auto;
+    margin: 0;
+    padding: 8px 14px;
+    background: transparent;
+    color: var(--muted);
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    font-weight: 500;
+}
+
+.tab[aria-selected="true"] {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+}
+
+.tab:hover { filter: none; color: var(--text); }
+
+/* ---- character selection ---- */
+
+.characters { list-style: none; margin: 0 0 8px; padding: 0; }
+.characters li { margin-bottom: 6px; }
+.characters .empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
+
+.character {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin: 0;
+    text-align: left;
+    background: #0f1116;
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-weight: 500;
+}
+
+.character:hover { border-color: var(--accent); filter: none; }
+.character-name { font-weight: 600; }
+.character-where { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+
+.row { display: flex; gap: 8px; }
+.row input { flex: 1; }
+.row button { width: auto; margin-top: 0; white-space: nowrap; }
+
+.quiet {
+    width: auto;
+    margin-top: 16px;
+    padding: 6px 10px;
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    font-weight: 500;
     font-size: 12px;
 }
 
-.controls dt { color: var(--text); font-family: var(--mono); white-space: nowrap; }
-.controls dd { margin: 0; color: var(--muted); }
+.quiet:hover { color: var(--text); filter: none; }
 
 /* ---- game ---- */
 
@@ -112,8 +190,10 @@ button:hover { filter: brightness(1.08); }
     border-radius: 6px;
     padding: 6px 10px;
     font-size: 13px;
-    pointer-events: none;
 }
+
+#hud > span { pointer-events: none; }
+#hud .quiet { margin-top: 0; }
 
 .status { color: var(--muted); }
 .status[data-state="down"] { color: var(--danger); }

@@ -49,6 +49,16 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!--
+            BCrypt only. The full Spring Security starter would bring a filter
+            chain whose defaults we would spend more effort switching off than
+            this project gains from having it.
+        -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

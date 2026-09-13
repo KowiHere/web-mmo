@@ -1,8 +1,9 @@
 /**
  * Drives two real browser tabs against a running server and checks the things
- * unit tests cannot: that two people actually see each other move, that the
- * server refuses an illegal destination, and that a dropped socket resumes the
- * same character instead of spawning a new one.
+ * unit tests cannot: that two people register, pick a character and see each
+ * other move, that the server refuses an illegal destination, and - the one
+ * that matters most now - that a logged-in account cannot enter the world as
+ * somebody else's character.
  *
  * Usage:
  *   ./mvnw spring-boot:run          # in another terminal
@@ -15,6 +16,13 @@ import { chromium } from 'playwright';
 
 const URL = process.env.GAME_URL || 'http://localhost:8080/';
 const STEP_MS = 300; // one tile, per MapRunner.STEP_TICKS * TICK_MS
+const PASSWORD = 'haslo-do-testow';
+
+// Logins and character names are unique for ever, and this database survives
+// the run - so each run needs its own.
+const TAG = Math.random().toString(36).slice(2, 6);
+const ALA = `Ala-${TAG}`;
+const BOB = `Bob-${TAG}`;
 
 let failures = 0;
 const ok = (message) => console.log(`ok   - ${message}`);
@@ -27,12 +35,23 @@ const launchOptions = { args: ['--no-sandbox'] };
 if (process.env.CHROMIUM_PATH) launchOptions.executablePath = process.env.CHROMIUM_PATH;
 const browser = await chromium.launch(launchOptions);
 
-async function join(name) {
-    const page = await browser.newPage({ viewport: { width: 900, height: 620 } });
-    page.on('pageerror', (error) => fail(`${name}: uncaught ${error.message}`));
+/** Registers an account, then enters the world as its first character. */
+async function register(characterName) {
+    // A fresh context per player: sessions live in cookies now, and two players
+    // sharing one cookie jar would be one player with two tabs.
+    const context = await browser.newContext({ viewport: { width: 900, height: 620 } });
+    const page = await context.newPage();
+    page.on('pageerror', (error) => fail(`${characterName}: uncaught ${error.message}`));
+
     await page.goto(URL);
-    await page.fill('#name', name);
-    await page.click('#join-form button');
+    await page.click('.tab[data-tab="register"]');
+    await page.fill('#register-login', characterName.toLowerCase());
+    await page.fill('#register-password', PASSWORD);
+    await page.fill('#register-character', characterName);
+    await page.click('#register-form button[type="submit"]');
+
+    await page.waitForSelector(`.character:has-text("${characterName}")`, { timeout: 10_000 });
+    await page.click(`.character:has-text("${characterName}")`);
     await page.waitForFunction(() => state.selfId !== null, null, { timeout: 10_000 });
     return page;
 }
@@ -69,26 +88,40 @@ const snapshot = (page) => page.evaluate(() => ({
 }));
 
 try {
-    // ---- two clients share one map ---------------------------------------
-    const ala = await join('Ala');
-    const bob = await join('Bob');
+    // ---- two accounts share one map --------------------------------------
+    const ala = await register(ALA);
+    const bob = await register(BOB);
     await ala.waitForFunction(() => state.actors.size >= 2, null, { timeout: 10_000 });
 
     const alaView = await snapshot(ala);
     const bobView = await snapshot(bob);
-
     const sees = (view, name) => view.actors.some((a) => a.name === name);
 
     alaView.mapId ? ok('init carried the map definition') : fail('init had no map');
     // Named rather than counted: a character whose owner just left lingers for
     // a grace period by design, so a headcount reports unrelated news.
-    sees(alaView, 'Ala') && sees(alaView, 'Bob')
+    sees(alaView, ALA) && sees(alaView, BOB)
         ? ok('Ala sees both characters')
         : fail(`Ala sees ${JSON.stringify(alaView.actors.map((a) => a.name))}`);
-    sees(bobView, 'Ala') && sees(bobView, 'Bob')
+    sees(bobView, ALA) && sees(bobView, BOB)
         ? ok('Bob sees both characters')
         : fail(`Bob sees ${JSON.stringify(bobView.actors.map((a) => a.name))}`);
     alaView.selfId !== bobView.selfId ? ok('each client owns a distinct actor') : fail('shared actor id');
+
+    // ---- ONE ACCOUNT MAY NOT PLAY ANOTHER'S CHARACTER --------------------
+    // Being logged in is not the same as being entitled to this character.
+    // Missing that distinction is the whole reason accounts exist.
+    const stolen = await ala.evaluate((victim) => new Promise((resolve) => {
+        const socket = new WebSocket(
+            `ws://${location.host}/ws?character=${encodeURIComponent(victim)}`);
+        socket.onopen = () => { socket.close(); resolve('opened'); };
+        socket.onerror = () => resolve('refused');
+        socket.onclose = (event) => resolve(event.wasClean && event.code === 1000 ? 'opened' : 'refused');
+    }), BOB.toLowerCase());
+
+    stolen === 'refused'
+        ? ok("the server refused Ala a socket for Bob's character")
+        : fail(`Ala opened a socket as Bob's character (${stolen})`);
 
     // ---- movement is server-driven and reaches the other client ----------
     const start = bobView.actors.find((a) => a.id === alaView.selfId);
@@ -138,7 +171,7 @@ try {
     }
 
     // ---- typing must not walk the character ------------------------------
-    // The easiest thing in the whole feature to get wrong: chatting "wadas"
+    // The easiest thing in the whole feature to get wrong: chatting "wasd"
     // should say a word, not send the character in four directions.
     await ala.focus('#chat-input');
     const beforeTyping = (await snapshot(ala)).actors.find((a) => a.id === alaView.selfId);

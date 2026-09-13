@@ -10,12 +10,13 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * <p>Every field is a request, never an instruction: the server decides what
  * actually happens. {@code x}/{@code y} are a destination to path towards, not
  * a position to teleport to.
+ *
+ * <p>Notably absent: any claim about who the sender is. Identity is settled at
+ * the handshake, so there is nothing here for a client to lie about.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ClientMessage(
         String type,
-        String name,
-        String token,
         Long since,
         Integer x,
         Integer y,
