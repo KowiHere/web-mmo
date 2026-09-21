@@ -93,7 +93,7 @@ class RoamingEliteTest {
     private FakeClient joinAt(int x, int y) {
         FakeClient client = new FakeClient();
         runner.submit(new Command.Join(client, 1L,
-                new SavedCharacter("ala", "Ala", ARENA.id(), x, y, Direction.DOWN), 0));
+                SavedCharacter.fresh("ala", "Ala", ARENA.id(), x, y, Direction.DOWN), 0));
         assertThat(client.await("\"type\":\"init\"")).isNotBlank();
         return client;
     }

@@ -23,7 +23,15 @@ public final class ServerMessages {
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ActorDto(int id, String name, int x, int y, String dir, boolean online,
-                           String kind, String tier) {
+                           String kind, String tier, int level, int hp, int maxHp,
+                           boolean inFight) {
+    }
+
+    /** One blow. {@code hp} is the target's health after it, so bars need no arithmetic. */
+    public record DamageDto(int attacker, int target, int amount, int hp) {
+    }
+
+    public record FightDto(int id, boolean inFight) {
     }
 
     /** One step in progress: the actor left ({@code fx},{@code fy}) and arrives at ({@code x},{@code y}) in {@code ms}. */
@@ -48,10 +56,27 @@ public final class ServerMessages {
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     public record Delta(String type, long v, List<ActorDto> joined, List<Integer> left,
-                        List<MoveDto> moved, List<ChatDto> chat, List<PresenceDto> presence) {
+                        List<MoveDto> moved, List<ChatDto> chat, List<PresenceDto> presence,
+                        List<DamageDto> damage, List<Integer> died, List<FightDto> fights) {
         public Delta(long v, List<ActorDto> joined, List<Integer> left,
-                     List<MoveDto> moved, List<ChatDto> chat, List<PresenceDto> presence) {
-            this("delta", v, joined, left, moved, chat, presence);
+                     List<MoveDto> moved, List<ChatDto> chat, List<PresenceDto> presence,
+                     List<DamageDto> damage, List<Integer> died, List<FightDto> fights) {
+            this("delta", v, joined, left, moved, chat, presence, damage, died, fights);
+        }
+    }
+
+    /**
+     * The state of your own character, sent only to its owner.
+     *
+     * <p>Deltas go to everyone on the map, so experience cannot travel in one:
+     * another player's progress is nobody else's business, and a leak like that
+     * is the kind nobody ever files a bug about.
+     */
+    public record You(String type, int hp, int maxHp, int level, long xp,
+                      long xpThisLevel, long xpForNextLevel, long weakenedUntil, boolean dead) {
+        public You(int hp, int maxHp, int level, long xp, long xpThisLevel, long xpForNextLevel,
+                   long weakenedUntil, boolean dead) {
+            this("you", hp, maxHp, level, xp, xpThisLevel, xpForNextLevel, weakenedUntil, dead);
         }
     }
 

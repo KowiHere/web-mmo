@@ -2,12 +2,12 @@
   "id": "wilk",
   "name": "Wilk",
   "tier": "MOB",
-  "level": 5,
-  "hp": 55,
-  "attack": 9,
-  "armor": 3,
+  "level": 3,
+  "hp": 44,
+  "attack": 7,
+  "armor": 2,
   "stepTicks": 3,
-  "aggroRadius": 5,
-  "leashRadius": 10,
+  "aggroRadius": 4,
+  "leashRadius": 9,
   "respawnSeconds": 45
 }

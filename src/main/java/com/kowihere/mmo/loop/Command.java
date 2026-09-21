@@ -27,4 +27,12 @@ public sealed interface Command {
 
     record Chat(Client client, String text) implements Command {
     }
+
+    /** Walk to this actor and fight it. The server does the walking. */
+    record Attack(Client client, int targetId) implements Command {
+    }
+
+    /** Try to leave the current fight. Resolved at the start of the next round. */
+    record Flee(Client client) implements Command {
+    }
 }

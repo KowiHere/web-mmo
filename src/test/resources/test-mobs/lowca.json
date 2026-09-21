@@ -1,0 +1,13 @@
+{
+  "id": "lowca",
+  "name": "Lowca",
+  "tier": "MOB",
+  "level": 1,
+  "hp": 200,
+  "attack": 1,
+  "armor": 0,
+  "stepTicks": 2,
+  "aggroRadius": 9,
+  "leashRadius": 12,
+  "respawnSeconds": 1
+}

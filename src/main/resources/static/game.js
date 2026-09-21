@@ -32,6 +32,7 @@ const KEY_REPEAT_MS = 150;
 const NAME_RADIUS_TILES = 6;
 
 const MARKER_LIFETIME_MS = 600;
+const FLOATER_LIFETIME_MS = 1100;
 const BUBBLE_LIFETIME_MS = 4500;
 
 /**
@@ -68,6 +69,8 @@ const state = {
     debug: false,
     held: new Set(),
     lastKeyMoveAt: 0,
+    you: null,
+    floaters: [],
     stats: { frames: 0, fps: 0, deltas: 0, deltaRate: 0, sampledAt: 0 },
 };
 
@@ -78,6 +81,8 @@ const mapNameEl = document.getElementById('map-name');
 const chatLog = document.getElementById('chat-log');
 const chatInput = document.getElementById('chat-input');
 const debugEl = document.getElementById('debug');
+const sheetEl = document.getElementById('sheet');
+const fleeButton = document.getElementById('flee');
 
 // ---------------------------------------------------------------- networking
 
@@ -110,6 +115,7 @@ function connect(characterKey) {
         const msg = JSON.parse(event.data);
         if (msg.type === 'init') applyInit(msg);
         else if (msg.type === 'delta') applyDelta(msg);
+        else if (msg.type === 'you') applyYou(msg);
         else if (msg.type === 'error') logSystem(msg.message);
     };
 
@@ -165,9 +171,6 @@ function applyDelta(msg) {
 
     const now = performance.now();
 
-    for (const dto of msg.joined || []) upsertActor(dto);
-    for (const id of msg.left || []) state.actors.delete(id);
-
     for (const mv of msg.moved || []) {
         const actor = state.actors.get(mv.id);
         if (!actor) continue;
@@ -186,6 +189,46 @@ function applyDelta(msg) {
         }
     }
 
+    for (const blow of msg.damage || []) {
+        const target = state.actors.get(blow.target);
+        if (!target) continue;
+        target.hp = blow.hp;
+        state.floaters.push({
+            // Where the blow landed. Held here rather than looked up later,
+            // because by then the target may be dead, or back at the spawn.
+            x: target.rx ?? target.x,
+            y: target.ry ?? target.y,
+            text: `-${blow.amount}`,
+            colour: blow.target === state.selfId ? '#e06c75' : '#f0c07a',
+            until: now + FLOATER_LIFETIME_MS,
+            born: now,
+        });
+    }
+
+    for (const id of msg.died || []) {
+        const actor = state.actors.get(id);
+        if (!actor) continue;
+        // A creature that dies is gone from the world - the server has already
+        // removed it. A player is not: killPlayer re-announced them in this
+        // same delta, back at the spawn with full health, and that arrived a
+        // few lines above. Zeroing their health here would undo it.
+        if (actor.kind === 'MOB') state.actors.delete(id);
+    }
+
+    for (const change of msg.fights || []) {
+        const actor = state.actors.get(change.id);
+        if (actor) actor.inFight = change.inFight;
+        if (change.id === state.selfId) updateFleeButton();
+    }
+
+    // Arrivals and departures last, on purpose. A delta says what happened and
+    // then what the world looks like now, and death is both at once: the fatal
+    // blow and the re-announcement of a character already back at the spawn
+    // with full health travel together. Applying the blow afterwards would
+    // leave the living character showing an empty health bar.
+    for (const dto of msg.joined || []) upsertActor(dto);
+    for (const id of msg.left || []) state.actors.delete(id);
+
     for (const line of msg.chat || []) {
         const actor = state.actors.get(line.id);
         if (actor) actor.bubble = { text: line.text, until: now + BUBBLE_LIFETIME_MS };
@@ -193,10 +236,67 @@ function applyDelta(msg) {
     }
 }
 
+/** The player's own sheet, which only ever arrives addressed to them. */
+function applyYou(msg) {
+    const wasLevel = state.you && state.you.level;
+    state.you = msg;
+    if (wasLevel && msg.level > wasLevel) logSystem(`Awans na poziom ${msg.level}!`);
+    renderSheet();
+    updateFleeButton();
+}
+
+function renderSheet() {
+    if (!state.you) return;
+    const you = state.you;
+    const healthPercent = Math.max(0, Math.round((you.hp / you.maxHp) * 100));
+    const xpPercent = you.xpForNextLevel > 0
+        ? Math.max(0, Math.min(100, Math.round((you.xpThisLevel / you.xpForNextLevel) * 100)))
+        : 0;
+    const weakened = you.weakenedUntil > Date.now();
+
+    sheetEl.innerHTML = '';
+    sheetEl.append(
+        bar('hp', `${you.hp} / ${you.maxHp}`, healthPercent),
+        bar('xp', `poziom ${you.level}`, xpPercent),
+    );
+    if (weakened) {
+        const note = document.createElement('div');
+        note.className = 'weakened';
+        note.textContent = `osłabienie: ${Math.ceil((you.weakenedUntil - Date.now()) / 1000)} s`;
+        sheetEl.append(note);
+    }
+}
+
+function bar(kind, label, percent) {
+    const wrap = document.createElement('div');
+    wrap.className = `bar bar-${kind}`;
+    const fill = document.createElement('div');
+    fill.className = 'bar-fill';
+    fill.style.width = `${percent}%`;
+    const text = document.createElement('span');
+    text.className = 'bar-label';
+    text.textContent = label;
+    wrap.append(fill, text);
+    return wrap;
+}
+
+function updateFleeButton() {
+    const self = state.actors.get(state.selfId);
+    fleeButton.hidden = !(self && self.inFight);
+}
+
 function upsertActor(dto) {
     const existing = state.actors.get(dto.id);
     if (existing) {
         Object.assign(existing, dto);
+        // An actor already here that is announced again did not walk - it was
+        // put somewhere, which today means it died and woke at the spawn. Drop
+        // whatever was still being played out, or the body slides across the
+        // whole map to get there.
+        existing.steps = [];
+        existing.anim = null;
+        existing.rx = dto.x;
+        existing.ry = dto.y;
         return;
     }
     state.actors.set(dto.id, {
@@ -293,6 +393,7 @@ function frame(now) {
         return a.ry - b.ry;
     });
     for (const actor of actors) drawActor(actor, ox, oy, now);
+    drawFloaters(ox, oy, now);
 
     sampleStats(now);
 }
@@ -359,7 +460,8 @@ function drawHover(ox, oy) {
     const sy = Math.round(y * TILE - oy);
 
     ctx.lineWidth = 2;
-    ctx.strokeStyle = isBlocked(x, y) ? 'rgba(224,108,117,.75)' : 'rgba(110,168,254,.75)';
+    ctx.strokeStyle = creatureAt(x, y) ? 'rgba(240,192,122,.9)'
+            : isBlocked(x, y) ? 'rgba(224,108,117,.75)' : 'rgba(110,168,254,.75)';
     ctx.strokeRect(sx + 1, sy + 1, TILE - 2, TILE - 2);
 }
 
@@ -437,12 +539,56 @@ function drawActor(actor, ox, oy, now) {
         ctx.fillText(actor.name, px, py - radius - 6);
     }
 
+    if (actor.maxHp > 0 && actor.hp < actor.maxHp) {
+        drawHealthBar(actor, px, py - radius - (shouldName(actor, mob) ? 18 : 6));
+    }
+
+    if (actor.inFight) {
+        ctx.beginPath();
+        ctx.arc(px, py, radius + 7, 0, Math.PI * 2);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(224,108,117,.7)';
+        ctx.stroke();
+    }
+
     if (actor.bubble && actor.bubble.until > now) {
         drawBubble(actor.bubble.text, px, py - 32);
     } else {
         actor.bubble = null;
     }
 
+    ctx.globalAlpha = 1;
+}
+
+/** A bar only appears once something is hurt: a map of full bars is just noise. */
+function drawHealthBar(actor, px, py) {
+    const width = 26;
+    const ratio = Math.max(0, Math.min(1, actor.hp / actor.maxHp));
+    ctx.fillStyle = 'rgba(15,17,22,.85)';
+    ctx.fillRect(px - width / 2 - 1, py - 4, width + 2, 5);
+    ctx.fillStyle = ratio > 0.5 ? '#77c36a' : ratio > 0.2 ? '#e0b457' : '#e06c75';
+    ctx.fillRect(px - width / 2, py - 3, width * ratio, 3);
+}
+
+/** Damage rises from whoever took it and fades, so a round is readable as it happens. */
+function drawFloaters(ox, oy, now) {
+    state.floaters = state.floaters.filter((floater) => floater.until > now);
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+
+    for (const floater of state.floaters) {
+        // Pinned where the blow landed, not to whoever took it: a death sends
+        // the body back to the spawn, and the number must not travel with it.
+        const age = (now - floater.born) / FLOATER_LIFETIME_MS;
+        const px = floater.x * TILE - ox + TILE / 2;
+        const py = floater.y * TILE - oy + TILE / 2 - 20 - age * 18;
+
+        ctx.globalAlpha = 1 - age;
+        ctx.fillStyle = '#0f1116';
+        ctx.fillText(floater.text, px + 1, py + 1);
+        ctx.fillStyle = floater.colour;
+        ctx.fillText(floater.text, px, py);
+    }
     ctx.globalAlpha = 1;
 }
 
@@ -496,9 +642,29 @@ canvas.addEventListener('mouseleave', () => {
 canvas.addEventListener('click', (event) => {
     const tile = tileAt(event);
     if (!tile) return;
+
+    // A creature standing on the tile is what you meant to click. The server
+    // walks you there and starts the fight; asking the player to line themselves
+    // up first would be an interface chore pretending to be a rule.
+    const creature = creatureAt(tile.x, tile.y);
+    if (creature) {
+        state.marker = { x: tile.x, y: tile.y, at: performance.now() };
+        send({ type: 'attack', targetId: creature.id });
+        return;
+    }
+
     state.marker = { x: tile.x, y: tile.y, at: performance.now() };
     requestMove(tile.x, tile.y);
 });
+
+function creatureAt(x, y) {
+    for (const actor of state.actors.values()) {
+        if (actor.kind === 'MOB' && actor.hp > 0 && actor.x === x && actor.y === y) {
+            return actor;
+        }
+    }
+    return null;
+}
 
 function tileAt(event) {
     if (!state.map) return null;
@@ -781,6 +947,8 @@ document.getElementById('create-character').addEventListener('submit', async (ev
     }
 });
 
+fleeButton.addEventListener('click', () => send({ type: 'flee' }));
+
 document.getElementById('leave').addEventListener('click', returnToSelection);
 
 // A session may already be waiting from a previous visit.
@@ -811,6 +979,10 @@ function sampleStats(now) {
     stats.frames = 0;
     stats.deltas = 0;
     stats.sampledAt = now;
+
+    if (state.you && state.you.weakenedUntil > Date.now()) {
+        renderSheet(); // the countdown has to tick down on its own
+    }
 
     if (!state.debug) return;
 

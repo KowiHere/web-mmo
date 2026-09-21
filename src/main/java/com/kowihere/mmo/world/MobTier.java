@@ -13,21 +13,32 @@ package com.kowihere.mmo.world;
 public enum MobTier {
 
     /** Fixed spawn points on a shared map, short respawn. */
-    MOB(true),
+    MOB(true, 1.0),
 
     /** Random tile and random time on a shared map, alone or escorted by mobs. */
-    ELITE(true),
+    ELITE(true, 8.0),
 
     /** Dungeon boss, placed by an instance template. */
-    HERO(false),
+    HERO(false, 30.0),
 
     /** Raid boss, placed by an instance template. */
-    COLOSSUS(false);
+    COLOSSUS(false, 100.0);
 
     private final boolean spawnable;
+    private final double xpMultiplier;
 
-    MobTier(boolean spawnable) {
+    MobTier(boolean spawnable, double xpMultiplier) {
         this.spawnable = spawnable;
+        this.xpMultiplier = xpMultiplier;
+    }
+
+    /**
+     * How much more this tier is worth than a common creature of the same level.
+     * It lives here rather than in the combat rules because it is a property of
+     * what the thing *is*, not of how a blow is resolved.
+     */
+    public double xpMultiplier() {
+        return xpMultiplier;
     }
 
     /**

@@ -85,6 +85,12 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 }
             }
             case "chat" -> map.submit(new Command.Chat(client, message.text()));
+            case "attack" -> {
+                if (message.targetId() != null) {
+                    map.submit(new Command.Attack(client, message.targetId()));
+                }
+            }
+            case "flee" -> map.submit(new Command.Flee(client));
             default -> log.debug("Unknown message type '{}' from {}", message.type(), session.getId());
         }
     }

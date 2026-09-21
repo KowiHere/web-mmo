@@ -250,3 +250,75 @@ label {
 }
 
 #chat-input:not(:focus) { border-color: transparent; background: #12141a; }
+
+/* ---- character sheet ---- */
+
+/* Under the HUD rather than beside it: centred, this sat on top of the HUD's
+   own buttons as soon as the window was anything but wide. */
+#sheet {
+    position: absolute;
+    top: 58px;
+    left: 12px;
+    width: min(260px, calc(100% - 24px));
+    display: grid;
+    gap: 4px;
+    pointer-events: none;
+}
+
+.bar {
+    position: relative;
+    height: 18px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: rgba(15, 17, 22, .9);
+    overflow: hidden;
+}
+
+.bar-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    transition: width .2s ease-out;
+}
+
+.bar-hp .bar-fill { background: linear-gradient(#7ac96a, #4f9c43); }
+.bar-xp { height: 12px; }
+.bar-xp .bar-fill { background: linear-gradient(#6ea8fe, #3d73c4); }
+
+.bar-label {
+    position: relative;
+    display: block;
+    text-align: center;
+    line-height: 16px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #f2f5fb;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
+}
+
+.bar-xp .bar-label { line-height: 10px; font-size: 10px; }
+
+.weakened {
+    text-align: center;
+    font-size: 11px;
+    color: var(--danger);
+    background: rgba(15, 17, 22, .9);
+    border: 1px solid rgba(224, 108, 117, .4);
+    border-radius: 4px;
+    padding: 2px 6px;
+}
+
+/*
+ * Deliberately large and away from the map: it is pressed in a hurry, and
+ * missing it because it sat next to the chat box would be the game's fault.
+ */
+#flee {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    width: auto;
+    margin: 0;
+    padding: 10px 18px;
+    background: var(--danger);
+    color: #1a0b0c;
+    font-weight: 700;
+}

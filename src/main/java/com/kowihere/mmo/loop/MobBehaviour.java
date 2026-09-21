@@ -6,6 +6,7 @@ import com.kowihere.mmo.world.MapDef;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.Random;
+import java.util.function.BiConsumer;
 
 /**
  * What a creature does when nobody is telling it anything.
@@ -16,9 +17,9 @@ import java.util.Random;
  * only because that class is long enough already, and mixing creature decisions
  * into the socket and delta plumbing would make both harder to read.
  *
- * <p>Three states, no scripts: stand, wander, chase. Without combat a chase ends
- * with the creature standing next to its target - which is the honest visible
- * result of aggro working, and the seam combat will plug into.
+ * <p>Three states, no scripts: stand, wander, chase. A chase that catches up
+ * starts a fight, which then holds the creature as firmly as it holds the
+ * player - so nothing here runs while one is in progress.
  */
 final class MobBehaviour {
 
@@ -29,17 +30,29 @@ final class MobBehaviour {
      */
     private static final int THINK_INTERVAL_TICKS = 5;
 
+    /**
+     * How far around a map's spawn creatures will not start a fight, in tiles.
+     *
+     * <p>Without it the tile every character appears on - and returns to after
+     * dying - is a place where a wandering creature can attack someone who has
+     * not had a chance to take a step, and a death near the spawn becomes a
+     * death loop. It costs nothing: a player who wants a fight walks four tiles.
+     */
+    private static final int SAFE_RADIUS = 4;
+
     private static final int[] DX = {0, 0, -1, 1};
     private static final int[] DY = {-1, 1, 0, 0};
 
     private final MapDef map;
     private final AStar pathfinder;
     private final Random random;
+    private final BiConsumer<Actor, Actor> engage;
 
-    MobBehaviour(MapDef map, AStar pathfinder, Random random) {
+    MobBehaviour(MapDef map, AStar pathfinder, Random random, BiConsumer<Actor, Actor> engage) {
         this.map = map;
         this.pathfinder = pathfinder;
         this.random = random;
+        this.engage = engage;
     }
 
     /**
@@ -52,6 +65,9 @@ final class MobBehaviour {
      * @return how many path searches this used, so the caller can keep count
      */
     int think(Actor mob, Collection<Actor> everyone, long tick, boolean mayPath) {
+        if (mob.inFight() || !mob.isAlive()) {
+            return 0; // a fight holds it as firmly as it holds a player
+        }
         if (tick < mob.nextThinkTick) {
             return 0;
         }
@@ -75,8 +91,11 @@ final class MobBehaviour {
         int bestDistance = Integer.MAX_VALUE;
 
         for (Actor other : everyone) {
-            if (other.isMob() || !other.online()) {
+            if (other.isMob() || !other.online() || !other.isAlive() || other.inFight()) {
                 continue;
+            }
+            if (distance(other.x, other.y, map.spawnX(), map.spawnY()) <= SAFE_RADIUS) {
+                continue; // standing where everybody appears is not a provocation
             }
             int distance = distance(mob.x, mob.y, other.x, other.y);
             if (distance > aggro || distance >= bestDistance) {
@@ -95,7 +114,8 @@ final class MobBehaviour {
 
     private int chase(Actor mob, Actor target, boolean mayPath) {
         if (distance(mob.x, mob.y, target.x, target.y) <= 1) {
-            mob.path.clear(); // close enough; without combat there is nothing more to do
+            mob.path.clear();
+            engage.accept(target, mob); // caught you
             return 0;
         }
         if (!mayPath) {

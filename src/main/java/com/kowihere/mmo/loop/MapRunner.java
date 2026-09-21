@@ -2,10 +2,14 @@ package com.kowihere.mmo.loop;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kowihere.mmo.combat.CombatRules;
+import com.kowihere.mmo.combat.Fight;
 import com.kowihere.mmo.path.AStar;
 import com.kowihere.mmo.protocol.ServerMessages;
 import com.kowihere.mmo.protocol.ServerMessages.ActorDto;
 import com.kowihere.mmo.protocol.ServerMessages.ChatDto;
+import com.kowihere.mmo.protocol.ServerMessages.DamageDto;
+import com.kowihere.mmo.protocol.ServerMessages.FightDto;
 import com.kowihere.mmo.protocol.ServerMessages.Delta;
 import com.kowihere.mmo.protocol.ServerMessages.MapDto;
 import com.kowihere.mmo.protocol.ServerMessages.MoveDto;
@@ -23,10 +27,12 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.LockSupport;
 
@@ -65,6 +71,10 @@ public final class MapRunner implements Runnable {
      * wander instead - a crowd should slow down, not freeze.
      */
     private static final int MOB_PATHS_PER_TICK = 4;
+    /** How far from the player spawn a roaming pack has to keep, in tiles. */
+    private static final int SPAWN_CLEARANCE = 8;
+    /** 1.5 s between rounds: slow enough to read, fast enough not to be a wait. */
+    private static final int ROUND_TICKS = 15;
     private static final int MAX_CHAT_LENGTH = 200;
     private static final int MAX_COMMANDS_PER_TICK = 4_096;
     /** At most one overrun warning per 10 s, so an overloaded map does not flood the log. */
@@ -82,8 +92,13 @@ public final class MapRunner implements Runnable {
     private final Map<String, Actor> byNameKey = new HashMap<>();
     private final Map<String, MobDef> mobDefs;
     private final MobBehaviour brain;
-    private final Random random = new Random();
+    private final Random random;
+    /** Characters owed an own-state frame once this tick's delta has gone out. */
+    private final Set<Integer> pendingYou = new LinkedHashSet<>();
     private final Map<String, Long> nextRoamTick = new HashMap<>();
+    private final List<Fight> fights = new ArrayList<>();
+    private final List<PendingRespawn> respawning = new ArrayList<>();
+    private final CombatRules combat;
     private final int graceTicks;
     private final Map<Client, Actor> byClient = new IdentityHashMap<>();
     private final Deque<Delta> history = new ArrayDeque<>();
@@ -93,6 +108,9 @@ public final class MapRunner implements Runnable {
     private final List<MoveDto> moved = new ArrayList<>();
     private final List<ChatDto> chat = new ArrayList<>();
     private final List<PresenceDto> presence = new ArrayList<>();
+    private final List<DamageDto> damage = new ArrayList<>();
+    private final List<Integer> died = new ArrayList<>();
+    private final List<FightDto> fightChanges = new ArrayList<>();
     private final List<Actor> pendingMoves = new ArrayList<>();
 
     private long version;
@@ -121,6 +139,18 @@ public final class MapRunner implements Runnable {
      */
     public MapRunner(MapDef map, ObjectMapper json, WorldPersistence persistence,
                      Map<String, MobDef> mobDefs, int graceTicks) {
+        this(map, json, persistence, mobDefs, graceTicks, new Random());
+    }
+
+    /**
+     * @param random every roll this map makes - damage swings, escapes, where a
+     *               creature wanders. Handed in rather than made here so a test
+     *               can decide an outcome instead of running the same fight a
+     *               hundred times and hoping to see the case it is after.
+     */
+    MapRunner(MapDef map, ObjectMapper json, WorldPersistence persistence,
+              Map<String, MobDef> mobDefs, int graceTicks, Random random) {
+        this.random = random;
         this.graceTicks = graceTicks;
         this.map = map;
         this.json = json;
@@ -130,7 +160,8 @@ public final class MapRunner implements Runnable {
         // The same pathfinder players use, deliberately: both run on this thread,
         // and sharing it makes pathSearches() the map's true total rather than
         // half of it.
-        this.brain = new MobBehaviour(map, pathfinder, random);
+        this.brain = new MobBehaviour(map, pathfinder, random, this::startFight);
+        this.combat = new CombatRules(random);
         // MapDef is immutable, so this never changes - build it once instead of
         // rebuilding the whole collision grid on every player's arrival.
         this.mapDto = new MapDto(map.id(), map.name(), map.width(), map.height(),
@@ -174,6 +205,9 @@ public final class MapRunner implements Runnable {
                 resolvePendingPaths();
                 advanceMobs();
                 advanceMovement();
+                engageApproachingTargets();
+                resolveFights();
+                respawnTheFallen();
                 reapExpiredActors();
                 saveDirtyActors();
                 flush();
@@ -214,6 +248,8 @@ public final class MapRunner implements Runnable {
                 case Command.Detach detach -> handleDetach(detach);
                 case Command.MoveTo move -> handleMove(move);
                 case Command.Chat message -> handleChat(message);
+                case Command.Attack attack -> handleAttack(attack);
+                case Command.Flee flee -> handleFlee(flee);
             }
         }
     }
@@ -243,6 +279,7 @@ public final class MapRunner implements Runnable {
         byClient.put(join.client(), actor);
         joined.add(toDto(actor));
         sendInit(actor, join.client());
+        sendYou(actor);
     }
 
     private void attach(Actor actor, Command.Join join) {
@@ -258,6 +295,7 @@ public final class MapRunner implements Runnable {
         if (!replayFrom(join.since(), join.client())) {
             sendInit(actor, join.client());
         }
+        sendYou(actor);
     }
 
     /**
@@ -281,6 +319,15 @@ public final class MapRunner implements Runnable {
         if (usable) {
             actor.dir = saved.dir();
         }
+        actor.level = Math.max(1, saved.level());
+        actor.xp = Math.max(0, saved.xp());
+        actor.weakenedUntil = saved.weakenedUntil();
+        // -1 means "as healthy as this level allows", which is how a new
+        // character and every row predating combat is stored.
+        actor.hp = saved.hp() < 0 ? actor.maxHp() : Math.min(saved.hp(), actor.maxHp());
+        if (actor.hp <= 0) {
+            actor.hp = actor.maxHp(); // never let someone log in already dead
+        }
         return actor;
     }
 
@@ -302,6 +349,12 @@ public final class MapRunner implements Runnable {
         if (actor == null) {
             return;
         }
+        if (actor.inFight()) {
+            // A fight holds you where you stand. Without this the whole model
+            // collapses: you would simply walk away from every losing round.
+            return;
+        }
+        actor.approaching = 0;
         // Remember the request; do not search yet. Pathfinding is the most
         // expensive thing a client can ask for, and resolving once per tick caps
         // what one socket can spend no matter how fast it clicks.
@@ -326,6 +379,32 @@ public final class MapRunner implements Runnable {
             // entered before turning. Re-pathing must not buy a free step.
         }
         pendingMoves.clear();
+    }
+
+    private void handleAttack(Command.Attack attack) {
+        Actor actor = byClient.get(attack.client());
+        Actor target = actors.get(attack.targetId());
+        if (actor == null || target == null || actor.inFight() || !target.isAlive()) {
+            return;
+        }
+        if (!target.isMob()) {
+            sendError(actor, "Na razie można walczyć tylko z potworami.");
+            return;
+        }
+        // The server walks you there. Making the player line themselves up first
+        // would be an interface chore pretending to be a rule of the game.
+        actor.approaching = target.id;
+        actor.pendingMove = new int[]{target.x, target.y};
+        if (!pendingMoves.contains(actor)) {
+            pendingMoves.add(actor);
+        }
+    }
+
+    private void handleFlee(Command.Flee flee) {
+        Actor actor = byClient.get(flee.client());
+        if (actor != null && actor.inFight()) {
+            actor.fight.wantsToFlee(actor.id);
+        }
     }
 
     private void handleChat(Command.Chat message) {
@@ -388,6 +467,228 @@ public final class MapRunner implements Runnable {
     }
 
     // ------------------------------------------------------------------
+    // combat
+    // ------------------------------------------------------------------
+
+    /** A creature waiting to be put back where it was killed. */
+    private record PendingRespawn(MobDef def, int x, int y, long atTick) {
+    }
+
+    /** Anyone who walked to a target and has arrived starts swinging. */
+    private void engageApproachingTargets() {
+        for (Actor actor : actors.values()) {
+            if (actor.approaching == 0 || actor.inFight()) {
+                continue;
+            }
+            Actor target = actors.get(actor.approaching);
+            if (target == null || !target.isAlive()) {
+                actor.approaching = 0;
+                continue;
+            }
+            if (adjacent(actor, target)) {
+                actor.approaching = 0;
+                startFight(actor, target);
+            }
+        }
+    }
+
+    /**
+     * Puts two actors into a fight, or draws one into a fight already happening.
+     * A creature that wanders in joins rather than opening a second fight, so a
+     * player never ends up in two at once.
+     */
+    void startFight(Actor player, Actor mob) {
+        if (player.isMob() == mob.isMob()) {
+            return; // PvE only, for now
+        }
+        Actor person = player.isMob() ? mob : player;
+        Actor creature = player.isMob() ? player : mob;
+
+        if (person.fight != null) {
+            person.fight.addMob(creature.id);
+            creature.fight = person.fight;
+        } else if (creature.fight != null) {
+            creature.fight.addPlayer(person.id);
+            person.fight = creature.fight;
+        } else {
+            Fight fight = new Fight(person.id, creature.id, tick + ROUND_TICKS);
+            fights.add(fight);
+            person.fight = fight;
+            creature.fight = fight;
+        }
+
+        person.path.clear();
+        creature.path.clear();
+        fightChanges.add(new FightDto(person.id, true));
+        fightChanges.add(new FightDto(creature.id, true));
+        sendYou(person);
+    }
+
+    private void resolveFights() {
+        for (Fight fight : new ArrayList<>(fights)) {
+            if (fight.isRoundDue(tick)) {
+                fight.scheduleNextRound(tick + ROUND_TICKS);
+                resolveRound(fight);
+            }
+        }
+    }
+
+    private void resolveRound(Fight fight) {
+        // Anyone trying to leave settles that first: succeeding means no blow is
+        // struck at them this round, failing means they lose their own.
+        for (int playerId : new ArrayList<>(fight.players())) {
+            if (!fight.isFleeing(playerId)) {
+                continue;
+            }
+            Actor runner = actors.get(playerId);
+            if (runner == null) {
+                continue;
+            }
+            // The flag stays up until the round is over: clearing it here would
+            // make a failed escape free, and the loop below would let the same
+            // actor swing as though it had never tried to run.
+            if (combat.escapes()) {
+                leaveFight(runner, fight);
+                chat.add(new ChatDto(runner.id, runner.name, "* ucieka z walki *"));
+            }
+        }
+
+        for (int actorId : fight.everyone()) {
+            Actor attacker = actors.get(actorId);
+            if (attacker == null || !attacker.isAlive() || !fight.has(actorId)) {
+                continue;
+            }
+            if (fight.players().contains(actorId) && fight.isFleeing(actorId)) {
+                continue; // spent the round trying to get away
+            }
+            Actor target = pickTarget(fight, attacker);
+            if (target == null) {
+                continue;
+            }
+            strike(attacker, target, fight);
+        }
+
+        fight.clearFleeRequests();
+        endIfOver(fight);
+    }
+
+    private Actor pickTarget(Fight fight, Actor attacker) {
+        List<Integer> opponents = attacker.isMob() ? fight.players() : fight.mobs();
+        for (int id : opponents) {
+            Actor candidate = actors.get(id);
+            if (candidate != null && candidate.isAlive()) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private void strike(Actor attacker, Actor target, Fight fight) {
+        int dealt = combat.damage(attacker.attack(), target.armor());
+        target.hp = Math.max(0, target.hp - dealt);
+        damage.add(new DamageDto(attacker.id, target.id, dealt, target.hp));
+
+        if (!target.isMob()) {
+            sendYou(target);
+        }
+        if (target.isAlive()) {
+            return;
+        }
+        if (target.isMob()) {
+            killCreature(target, attacker, fight);
+        } else {
+            killPlayer(target, fight);
+        }
+    }
+
+    private void killCreature(Actor creature, Actor killer, Fight fight) {
+        died.add(creature.id);
+        fight.remove(creature.id);
+        creature.fight = null;
+        actors.remove(creature.id);
+
+        if (creature.respawns) {
+            respawning.add(new PendingRespawn(creature.mob, creature.homeX, creature.homeY,
+                    tick + secondsToTicks(creature.mob.respawnSeconds())));
+        }
+
+        if (killer != null && !killer.isMob()) {
+            awardExperience(killer, creature);
+        }
+    }
+
+    private void killPlayer(Actor player, Fight fight) {
+        died.add(player.id);
+        leaveFight(player, fight);
+
+        player.x = map.spawnX();
+        player.y = map.spawnY();
+        player.fromX = player.x;
+        player.fromY = player.y;
+        player.path.clear();
+        player.hp = player.maxHp();
+        player.weakenedUntil = System.currentTimeMillis() + CombatRules.WEAKENED_SECONDS * 1000L;
+        player.dirty = true;
+
+        // Everyone needs to see them vanish from where they fell and reappear at
+        // the spawn; a plain move would have them walk the whole way back.
+        joined.add(toDto(player));
+        sendYou(player);
+        chat.add(new ChatDto(player.id, player.name, "* ginie *"));
+    }
+
+    private void awardExperience(Actor player, Actor creature) {
+        long reward = CombatRules.xpReward(creature.mob);
+        int before = player.level;
+        player.xp += reward;
+        player.level = CombatRules.levelForXp(player.xp);
+        if (player.level > before) {
+            player.hp = player.maxHp(); // a level is worth a full recovery
+            chat.add(new ChatDto(player.id, player.name, "* osiąga poziom " + player.level + " *"));
+        }
+        player.dirty = true;
+        sendYou(player);
+    }
+
+    private void leaveFight(Actor actor, Fight fight) {
+        fight.remove(actor.id);
+        actor.fight = null;
+        actor.approaching = 0;
+        fightChanges.add(new FightDto(actor.id, false));
+        endIfOver(fight);
+    }
+
+    private void endIfOver(Fight fight) {
+        if (!fight.isOver()) {
+            return;
+        }
+        for (int id : fight.everyone()) {
+            Actor actor = actors.get(id);
+            if (actor != null) {
+                actor.fight = null;
+                actor.approaching = 0;
+                fightChanges.add(new FightDto(id, false));
+            }
+        }
+        fights.remove(fight);
+    }
+
+    /** Puts killed creatures back at their posts once their timer runs out. */
+    private void respawnTheFallen() {
+        respawning.removeIf(pending -> {
+            if (tick < pending.atTick()) {
+                return false;
+            }
+            spawn(pending.def(), pending.x(), pending.y(), true);
+            return true;
+        });
+    }
+
+    private static boolean adjacent(Actor a, Actor b) {
+        return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) <= 1;
+    }
+
+    // ------------------------------------------------------------------
     // creatures
     // ------------------------------------------------------------------
 
@@ -412,13 +713,18 @@ public final class MapRunner implements Runnable {
                 log.error("Map '{}' wants unknown mob '{}'", map.id(), point.mobId());
                 continue;
             }
-            spawn(def, point.x(), point.y());
+            spawn(def, point.x(), point.y(), true);
         }
         log.info("Map '{}' spawned {} creature(s)", map.id(), actors.size());
     }
 
-    private Actor spawn(MobDef def, int x, int y) {
-        Actor mob = new Actor(nextActorId++, def, x, y);
+    /**
+     * @param respawns whether killing it should put another one here later. A
+     *                 creature at a marked post comes back; an elite that simply
+     *                 turned up does not - the next one arrives by its own roll.
+     */
+    private Actor spawn(MobDef def, int x, int y, boolean respawns) {
+        Actor mob = new Actor(nextActorId++, def, x, y, respawns);
         actors.put(mob.id, mob);
         joined.add(toDto(mob));
         return mob;
@@ -473,19 +779,34 @@ public final class MapRunner implements Runnable {
         if (elite == null || tile == null) {
             return;
         }
-        Actor spawned = spawn(elite, tile[0], tile[1]);
+        Actor spawned = spawn(elite, tile[0], tile[1], false);
         log.info("Elite '{}' appeared on '{}' at {},{}", elite.name(), map.id(), tile[0], tile[1]);
 
         MobDef escort = roaming.escortMobId() == null ? null : mobDefs.get(roaming.escortMobId());
         if (escort == null) {
             return;
         }
-        for (int i = 0; i < roaming.escortCount(); i++) {
+        // Only the shortfall. An escort that survived the last elite is still a
+        // wolf on this map, and counting it is the difference between a pack of
+        // a fixed size and a map that grows two wolves every appearance for as
+        // long as the server is up.
+        int living = countEscorts(escort.id());
+        for (int i = living; i < roaming.escortCount(); i++) {
             int[] beside = freeTileNear(spawned.x, spawned.y);
             if (beside != null) {
-                spawn(escort, beside[0], beside[1]);
+                spawn(escort, beside[0], beside[1], false).escort = true;
             }
         }
+    }
+
+    private int countEscorts(String mobId) {
+        int count = 0;
+        for (Actor actor : actors.values()) {
+            if (actor.escort && actor.isMob() && actor.mob.id().equals(mobId)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private boolean isAlive(String mobId) {
@@ -497,18 +818,44 @@ public final class MapRunner implements Runnable {
         return false;
     }
 
-    /** @return a walkable tile, or null if a bounded search could not find one. */
+    /**
+     * A walkable tile well away from where players arrive, or null if a bounded
+     * search could not find one.
+     *
+     * <p>The clearance is not decoration: an elite and its pack placed on the
+     * spawn tile means every character that logs in is attacked before it can
+     * take a step, and a character that dies there is attacked again the moment
+     * it comes back.
+     */
     private int[] randomFreeTile() {
-        for (int attempt = 0; attempt < 64; attempt++) {
-            int x = random.nextInt(map.width());
-            int y = random.nextInt(map.height());
-            if (map.walkable(x, y)) {
-                return new int[]{x, y};
+        // Two passes, because the clearance is a courtesy and not an invariant:
+        // a map smaller than the clearance has no such tile to offer, and
+        // refusing to place anything at all would be the worse answer.
+        for (int pass = 0; pass < 2; pass++) {
+            int clearance = pass == 0 ? clearanceFor(map) : 0;
+            for (int attempt = 0; attempt < 64; attempt++) {
+                int x = random.nextInt(map.width());
+                int y = random.nextInt(map.height());
+                if (map.walkable(x, y) && distance(x, y, map.spawnX(), map.spawnY()) >= clearance) {
+                    return new int[]{x, y};
+                }
             }
         }
         return null;
     }
 
+    private static int distance(int x, int y, int toX, int toY) {
+        return Math.abs(x - toX) + Math.abs(y - toY);
+    }
+
+    /**
+     * A walkable tile within two steps of the given one.
+     *
+     * <p>No clearance check of its own: an escort is placed beside an elite that
+     * already keeps its distance, so it inherits all but those two steps. Making
+     * the escort keep the full clearance as well leaves packs short-handed on a
+     * small map, where few tiles satisfy both conditions at once.
+     */
     private int[] freeTileNear(int x, int y) {
         for (int attempt = 0; attempt < 16; attempt++) {
             int nx = x + random.nextInt(5) - 2;
@@ -520,6 +867,11 @@ public final class MapRunner implements Runnable {
         return null;
     }
 
+    /** Zero on a map too small to offer the clearance, as in randomFreeTile. */
+    private static int clearanceFor(MapDef map) {
+        return map.width() + map.height() > SPAWN_CLEARANCE * 2 ? SPAWN_CLEARANCE : 0;
+    }
+
     private static long secondsToTicks(int seconds) {
         return seconds * 1000L / TICK_MS;
     }
@@ -529,17 +881,23 @@ public final class MapRunner implements Runnable {
     // ------------------------------------------------------------------
 
     private void flush() {
-        if (joined.isEmpty() && left.isEmpty() && moved.isEmpty() && chat.isEmpty() && presence.isEmpty()) {
+        if (joined.isEmpty() && left.isEmpty() && moved.isEmpty() && chat.isEmpty()
+                && presence.isEmpty() && damage.isEmpty() && died.isEmpty() && fightChanges.isEmpty()) {
+            flushPrivateFrames(); // a level-up on a tick where nothing else moved
             return;
         }
         version++;
         Delta delta = new Delta(version, List.copyOf(joined), List.copyOf(left),
-                List.copyOf(moved), List.copyOf(chat), List.copyOf(presence));
+                List.copyOf(moved), List.copyOf(chat), List.copyOf(presence),
+                List.copyOf(damage), List.copyOf(died), List.copyOf(fightChanges));
         joined.clear();
         left.clear();
         moved.clear();
         chat.clear();
         presence.clear();
+        damage.clear();
+        died.clear();
+        fightChanges.clear();
 
         history.addLast(delta);
         while (history.size() > HISTORY_TICKS) {
@@ -548,6 +906,7 @@ public final class MapRunner implements Runnable {
 
         String frame = serialise(delta);
         if (frame == null) {
+            flushPrivateFrames();
             return;
         }
         for (Actor actor : actors.values()) {
@@ -555,6 +914,18 @@ public final class MapRunner implements Runnable {
                 actor.client.send(frame);
             }
         }
+        flushPrivateFrames();
+    }
+
+    /** Own-character frames, after the delta they belong to and never before it. */
+    private void flushPrivateFrames() {
+        for (int id : pendingYou) {
+            Actor actor = actors.get(id);
+            if (actor != null) {
+                sendYouNow(actor);
+            }
+        }
+        pendingYou.clear();
     }
 
     private void sendInit(Actor self, Client client) {
@@ -637,13 +1008,53 @@ public final class MapRunner implements Runnable {
         // A copy, never the live actor: anything handed across threads must not
         // be something the tick is still writing to.
         persistence.save(new ActorSnapshot(actor.nameKey, actor.name, map.id(),
-                actor.x, actor.y, actor.dir.name()));
+                actor.x, actor.y, actor.dir.name(),
+                actor.level, actor.xp, actor.hp, actor.weakenedUntil));
     }
 
     private ActorDto toDto(Actor actor) {
         return new ActorDto(actor.id, actor.name, actor.x, actor.y, actor.dir.name(),
                 actor.isMob() || actor.online(),
                 actor.kind.name(),
-                actor.isMob() ? actor.mob.tier().name() : null);
+                actor.isMob() ? actor.mob.tier().name() : null,
+                actor.level, actor.hp, actor.maxHp(), actor.inFight());
+    }
+
+    private void sendError(Actor actor, String message) {
+        if (actor.client != null) {
+            String frame = serialise(new ServerMessages.Error(message));
+            if (frame != null) {
+                actor.client.send(frame);
+            }
+        }
+    }
+
+    /**
+     * The player's own state, to that player alone.
+     *
+     * <p>Experience deliberately never travels in a delta: deltas go to everyone
+     * on the map, and one player's progress is nobody else's business.
+     */
+    private void sendYou(Actor actor) {
+        if (actor.isMob() || actor.client == null) {
+            return;
+        }
+        // Queued rather than sent. A "you" frame written mid-tick overtakes the
+        // delta that explains it, so a client learns it is dead and weakened
+        // while its character is still standing where it fell.
+        pendingYou.add(actor.id);
+    }
+
+    private void sendYouNow(Actor actor) {
+        if (actor.isMob() || actor.client == null) {
+            return;
+        }
+        long floor = CombatRules.xpForLevel(actor.level);
+        long ceiling = CombatRules.xpForLevel(actor.level + 1);
+        String frame = serialise(new ServerMessages.You(actor.hp, actor.maxHp(), actor.level,
+                actor.xp, actor.xp - floor, ceiling - floor, actor.weakenedUntil, !actor.isAlive()));
+        if (frame != null) {
+            actor.client.send(frame);
+        }
     }
 }

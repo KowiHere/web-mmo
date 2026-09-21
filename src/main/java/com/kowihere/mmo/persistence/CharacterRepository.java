@@ -30,7 +30,8 @@ public class CharacterRepository {
     }
 
     private static final String SELECT =
-            "SELECT name_key, name, map_id, x, y, dir FROM game_character";
+            "SELECT name_key, name, map_id, x, y, dir, level, xp, hp, weakened_until"
+                    + " FROM game_character";
 
     public Optional<SavedCharacter> find(String nameKey) {
         return jdbc.query(SELECT + " WHERE name_key = ?", CharacterRepository::read, nameKey)
@@ -54,21 +55,28 @@ public class CharacterRepository {
 
     /** @throws org.springframework.dao.DuplicateKeyException if the name is taken */
     public void create(long accountId, SavedCharacter character) {
-        jdbc.update("INSERT INTO game_character (name_key, name, map_id, x, y, dir, last_seen, account_id)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        jdbc.update("INSERT INTO game_character"
+                        + " (name_key, name, map_id, x, y, dir, last_seen, account_id, level, xp, hp)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 character.nameKey(), character.name(), character.mapId(),
                 character.x(), character.y(), character.dir().name(),
-                Timestamp.from(Instant.now()), accountId);
+                Timestamp.from(Instant.now()), accountId,
+                character.level(), character.xp(), character.hp());
     }
 
     private static SavedCharacter read(java.sql.ResultSet rs, int row) throws java.sql.SQLException {
+        Timestamp weakened = rs.getTimestamp("weakened_until");
         return new SavedCharacter(
                 rs.getString("name_key"),
                 rs.getString("name"),
                 rs.getString("map_id"),
                 rs.getInt("x"),
                 rs.getInt("y"),
-                direction(rs.getString("dir")));
+                direction(rs.getString("dir")),
+                rs.getInt("level"),
+                rs.getLong("xp"),
+                rs.getInt("hp"),
+                weakened == null ? 0L : weakened.getTime());
     }
 
     /**
@@ -79,10 +87,14 @@ public class CharacterRepository {
      */
     public void save(ActorSnapshot snapshot) {
         int updated = jdbc.update(
-                "UPDATE game_character SET map_id = ?, x = ?, y = ?, dir = ?, last_seen = ?"
+                "UPDATE game_character SET map_id = ?, x = ?, y = ?, dir = ?, last_seen = ?,"
+                        + " level = ?, xp = ?, hp = ?, weakened_until = ?"
                         + " WHERE name_key = ?",
                 snapshot.mapId(), snapshot.x(), snapshot.y(), snapshot.dir(),
-                Timestamp.from(Instant.now()), snapshot.nameKey());
+                Timestamp.from(Instant.now()),
+                snapshot.level(), snapshot.xp(), snapshot.hp(),
+                snapshot.weakenedUntil() <= 0 ? null : new Timestamp(snapshot.weakenedUntil()),
+                snapshot.nameKey());
         if (updated == 0) {
             log.warn("No character row for '{}'; its position was not saved", snapshot.nameKey());
         }

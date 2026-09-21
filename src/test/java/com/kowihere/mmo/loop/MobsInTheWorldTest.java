@@ -105,7 +105,10 @@ class MobsInTheWorldTest {
     void aCreatureWalksTowardsAPlayerWhoComesClose() throws Exception {
         SpawnPoint post = MAP.spawns().get(0);
         MobDef guard = MOBS.get(post.mobId());
-        int[] playerTile = {post.x() + guard.aggroRadius() - 1, post.y()};
+        // At the very edge of what the creature notices, so it has ground to
+        // cover. A tile closer would already be adjacent to a short-sighted
+        // creature, and "closed in" would have nothing left to mean.
+        int[] playerTile = {post.x() + guard.aggroRadius(), post.y()};
         FakeClient client = join("Ala", playerTile[0], playerTile[1]);
 
         int guardId = creatureAt(client.await("\"type\":\"init\""), post.x(), post.y());
@@ -226,7 +229,7 @@ class MobsInTheWorldTest {
     private FakeClient join(String name, int x, int y) {
         FakeClient client = new FakeClient();
         runner.submit(new Command.Join(client, ACCOUNT,
-                new SavedCharacter(PlayerNames.key(name), name, MAP.id(), x, y, Direction.DOWN), 0));
+                SavedCharacter.fresh(PlayerNames.key(name), name, MAP.id(), x, y, Direction.DOWN), 0));
         assertThat(client.await(f -> f.contains("\"type\":\"init\""))).isTrue();
         return client;
     }

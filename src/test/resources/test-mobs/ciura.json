@@ -1,0 +1,13 @@
+{
+  "id": "ciura",
+  "name": "Ciura",
+  "tier": "MOB",
+  "level": 1,
+  "hp": 12,
+  "attack": 1,
+  "armor": 0,
+  "stepTicks": 8,
+  "aggroRadius": 0,
+  "leashRadius": 2,
+  "respawnSeconds": 1
+}

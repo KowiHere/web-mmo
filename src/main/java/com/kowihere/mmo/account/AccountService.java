@@ -145,7 +145,7 @@ public class AccountService {
         }
 
         MapRunner map = world.defaultMap();
-        SavedCharacter character = new SavedCharacter(PlayerNames.key(name), name,
+        SavedCharacter character = SavedCharacter.fresh(PlayerNames.key(name), name,
                 map.mapId(), map.spawnX(), map.spawnY(), Direction.DOWN);
         try {
             characters.create(accountId, character);

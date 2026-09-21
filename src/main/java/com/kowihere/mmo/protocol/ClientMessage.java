@@ -20,6 +20,7 @@ public record ClientMessage(
         Long since,
         Integer x,
         Integer y,
-        String text
+        String text,
+        Integer targetId
 ) {
 }

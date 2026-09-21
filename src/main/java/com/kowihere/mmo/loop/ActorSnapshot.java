@@ -7,5 +7,6 @@ package com.kowihere.mmo.loop;
  * the live {@link Actor} would let another thread read fields while the tick is
  * writing them, which is exactly the single-writer rule the loop is built on.
  */
-public record ActorSnapshot(String nameKey, String name, String mapId, int x, int y, String dir) {
+public record ActorSnapshot(String nameKey, String name, String mapId, int x, int y, String dir,
+                            int level, long xp, int hp, long weakenedUntil) {
 }

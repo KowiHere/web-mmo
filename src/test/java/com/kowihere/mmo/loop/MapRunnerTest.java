@@ -167,7 +167,7 @@ class MapRunnerTest {
     @Test
     void aStoredPositionFromAnotherMapIsIgnored() {
         FakeClient client = new FakeClient();
-        SavedCharacter elsewhere = new SavedCharacter("ala", "Ala", "some-other-map", 3, 1, Direction.LEFT);
+        SavedCharacter elsewhere = SavedCharacter.fresh("ala", "Ala", "some-other-map", 3, 1, Direction.LEFT);
 
         runner.submit(new Command.Join(client, ACCOUNT, elsewhere, 0));
 
@@ -290,7 +290,7 @@ class MapRunnerTest {
     }
 
     private static SavedCharacter character(String name, int x, int y) {
-        return new SavedCharacter(PlayerNames.key(name), name, MAP.id(), x, y, Direction.DOWN);
+        return SavedCharacter.fresh(PlayerNames.key(name), name, MAP.id(), x, y, Direction.DOWN);
     }
 
     private FakeClient join(String name) {

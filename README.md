@@ -112,6 +112,11 @@ The last two exist in the enum and the loader **refuses to start** on a
 definition using one, rather than accepting a creature that would silently never
 appear. They need instances and parties, which are a milestone of their own.
 
+An elite appears well away from the spawn and its escort is only ever brought up
+to strength, never doubled: escorts outlive the elite they arrived with, so
+spawning a fresh pair each time would quietly carpet the map in wolves over an
+afternoon.
+
 Creatures are never saved. They are derived from map data, so a restart brings
 them back by itself — and a creature has no account to own it, so writing one
 would violate the very foreign key that keeps characters honest.
@@ -123,6 +128,66 @@ dies. An **NPC** is something you interact with — dialogue, a shop, a quest �
 with no combat statistics, no respawn, and nothing to kill. Only mobs exist so
 far; NPCs arrive as their own kind of actor rather than as a mob with its
 aggression switched off.
+
+### Fighting
+
+A fight is an object owned by a map and settled in that map's tick — not a
+thread, not a queue of its own. You send `attack <id>` and the **server walks
+your character over** and starts the fight when it arrives; requiring you to
+line yourself up first would be an interface chore pretending to be a rule.
+
+Rounds resolve every 1.5 seconds. Everyone still standing strikes once, in a
+fixed order by actor id so the same line-up always resolves the same way. The
+client predicts nothing and is handed the result — which is the whole reason a
+turn-based fight suits this engine: **it is indifferent to latency**.
+
+```
+reduction = armour / (armour + 20)
+damage    = max(1, round(attack * random(0.85..1.15) * (1 - reduction)))
+```
+
+Armour reduces by a fraction rather than subtracting, because subtraction leaves
+only two outcomes — armour that does nothing and armour that stops everything —
+with nothing in between to tune. The floor of 1 guarantees every fight ends.
+
+**Movement is refused while you are fighting.** `flee` is settled at the start of
+the next round: succeed and the fight is over, fail and you lose your own blow
+while your opponent strikes normally.
+
+Statistics are **derived from your level and never stored beside it**:
+
+```
+maxHp  = 50 + 15 * level
+attack =  5 +  2 * level
+armour =  1 +      level
+```
+
+so the database holds `level`, `xp` and current `hp`, and there is nothing that
+can drift out of agreement with anything else. A level heals you to full.
+
+**Experience is private.** Deltas go to everyone on the map, so progress travels
+in a separate `you` frame addressed to one client — sent *after* the delta it
+belongs to, so a character is never told it is dead while still being drawn
+where it fell.
+
+Kill a creature and it leaves the world; its spawn point counts down
+`respawnSeconds` and puts it back. An elite has no spawn point, so it dies for
+good and the next one arrives on the ordinary roll.
+
+Die and you wake at the spawn with full health and **weakened** — halved attack
+and armour for a minute, stored as an expiry timestamp so that restarting the
+server is not a way to shake off the penalty.
+
+Two consequences worth stating plainly, because both look like bugs the first
+time:
+
+- **Closing the tab does not end a fight.** Your character stands in the world
+  for the disconnect grace period, and a fight it is in goes on without you — so
+  you can come back dead. The alternative is worse: the most effective combat
+  tactic in the game would be closing the browser.
+- **Nothing will attack you within four tiles of the spawn.** Every character
+  appears there and returns there after dying, already weakened; without a truce
+  on that ground one death becomes a loop a new character cannot break.
 
 ### Disconnecting is not leaving
 
@@ -182,8 +247,15 @@ cd e2e && npm install && npm test
 ```
 
 That covers what unit tests cannot — two people seeing each other move, the
-server refusing an illegal destination, and a dropped socket resuming the same
-character.
+server refusing an illegal destination, a dropped socket resuming the same
+character, and a fight fought from the browser: one attack command, health bars
+falling, a kill paying experience, and a death putting the character back at the
+spawn weakened.
+
+The combat checks are deliberately written as "something was wounded, something
+died" rather than naming a particular creature. The map hunts back, so which
+fight a character ends up in is not the script's to decide, and a check that
+insists on one is testing the dice.
 
 One check needs the server stopped and started around it, so it runs itself:
 
@@ -223,9 +295,18 @@ Client to server:
 | -------- | -------------- | -------------------------------------- |
 | `hello`  | name, token, since | join, or resume the character behind `token` |
 | `move`   | x, y           | request a path to this tile            |
+| `attack` | targetId       | go to that creature and fight it       |
+| `flee`   | —              | try to leave the fight next round      |
 | `chat`   | text           | say something on this map              |
 
-Server to client: `init` (the whole world once), `delta` (what changed), `error`.
+Server to client: `init` (the whole world once), `delta` (what changed), `you`
+(your own character, to your socket only), `error`.
+
+A delta carries arrivals, departures, movement, chat, presence, blows struck,
+deaths and changes of fight state. Its consumer applies arrivals and departures
+*last*: a delta says what happened and then what the world looks like now, and a
+death is both at once — the fatal blow and the re-announcement of a character
+already back at the spawn travel together.
 
 Two limits apply to anything a client sends, both there to stop one socket from
 degrading the map for everyone on it. A socket may send 30 frames per second and
@@ -235,26 +316,28 @@ pathfinding.
 
 ## What is not here yet
 
-**No combat**, which is the honest limit of the creatures above: nothing can be
-killed, so their statistics are carried but unread, their respawn timers never
-fire, and the difference between a mob and an elite is for now how it arrives
-and how it looks rather than how it fights. Loot tables are deliberately absent
-until items exist — a table pointing at a registry that does not exist cannot
-even be validated.
+**No items and no loot**, which is the honest limit of the fighting above: you
+can kill a creature and be paid in experience for it, and that is the whole of
+the reward. Loot tables stay absent until items exist — a table pointing at a
+registry that does not exist cannot even be validated.
 
-Also missing: items, interactive NPCs, more than one map, and instances with
-parties. No password reset or email confirmation either — both need to send
-mail, which means a service to run.
+**No skills**: a fight is an exchange of ordinary blows, and saying so plainly
+is better than letting the word "combat" promise more than it delivers. **No
+PvP** either; `attack` refuses anything that is not a creature.
 
-Roughly in order: turn-based combat on timers, items with rolled statistics and
-loot, interactive NPCs, then instances and parties, which is what heroes and
-colossi are waiting on.
+Also missing: interactive NPCs, more than one map, and instances with parties.
+No password reset or email confirmation either — both need to send mail, which
+means a service to run.
+
+Roughly in order: items with rolled statistics and loot, interactive NPCs, then
+instances and parties, which is what heroes and colossi are waiting on.
 
 ## Layout
 
 ```
 world/       maps and creature definitions — immutable, shared
 path/        A* over the collision grid    — server-side only
+combat/      damage, experience, escape — pure functions, injected randomness
 loop/        the game loop, commands, creature behaviour — no Spring below this line
 account/     registration, login, sessions — passwords never reach the loop
 net/         WebSocket transport           — authenticates, then decides nothing

@@ -59,7 +59,7 @@ class CharacterRepositoryTest {
     void savingMovesTheCharacterWithoutCreatingASecond() {
         characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
 
-        characters.save(new ActorSnapshot("ala", "Ala", "starter", 9, 4, "UP"));
+        characters.save(new ActorSnapshot("ala", "Ala", "starter", 9, 4, "UP", 3, 450L, 27, 0L));
 
         SavedCharacter found = characters.find("ala").orElseThrow();
         assertThat(found.x()).isEqualTo(9);
@@ -72,7 +72,7 @@ class CharacterRepositoryTest {
     void savingACharacterThatIsNotThereCreatesNothing() {
         // The world must not be able to invent a character with no owner, even
         // if one is deleted while it is being played.
-        characters.save(new ActorSnapshot("widmo", "Widmo", "starter", 1, 1, "DOWN"));
+        characters.save(new ActorSnapshot("widmo", "Widmo", "starter", 1, 1, "DOWN", 1, 0L, 10, 0L));
 
         assertThat(characters.find("widmo")).isEmpty();
     }
@@ -129,7 +129,7 @@ class CharacterRepositoryTest {
     }
 
     private static SavedCharacter character(String name, int x, int y, Direction dir) {
-        return new SavedCharacter(name.toLowerCase().replace('ł', 'l'), name, "starter", x, y, dir);
+        return SavedCharacter.fresh(name.toLowerCase().replace('ł', 'l'), name, "starter", x, y, dir);
     }
 
     private long account(String loginKey) {
