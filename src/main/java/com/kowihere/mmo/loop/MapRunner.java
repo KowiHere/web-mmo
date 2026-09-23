@@ -688,6 +688,17 @@ public final class MapRunner implements Runnable {
             if (adjacent(actor, target)) {
                 actor.approaching = 0;
                 startFight(actor, target);
+                continue;
+            }
+            // The path was worked out when the attack was ordered, and creatures
+            // wander. Without this, walking after something that moves takes you
+            // to where it used to be, and leaves you standing on empty ground
+            // wondering why nothing happened.
+            if (actor.path.isEmpty() && actor.pendingMove == null) {
+                actor.pendingMove = new int[]{target.x, target.y};
+                if (!pendingMoves.contains(actor)) {
+                    pendingMoves.add(actor);
+                }
             }
         }
     }

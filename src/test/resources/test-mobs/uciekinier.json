@@ -1,0 +1,13 @@
+{
+  "id": "uciekinier",
+  "name": "Uciekinier",
+  "tier": "MOB",
+  "level": 1,
+  "hp": 300,
+  "attack": 1,
+  "armor": 0,
+  "stepTicks": 2,
+  "aggroRadius": 0,
+  "leashRadius": 12,
+  "respawnSeconds": 1
+}

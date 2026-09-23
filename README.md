@@ -150,6 +150,11 @@ Armour reduces by a fraction rather than subtracting, because subtraction leaves
 only two outcomes — armour that does nothing and armour that stops everything —
 with nothing in between to tune. The floor of 1 guarantees every fight ends.
 
+You are walked to whatever you told the server to attack, and **kept walking if
+it wanders off** — otherwise ordering an attack on something that moves lands
+you on the tile it used to occupy, which from your side looks like the order
+quietly not working.
+
 **Movement is refused while you are fighting.** `flee` is settled at the start of
 the next round: succeed and the fight is over, fail and you lose your own blow
 while your opponent strikes normally.
