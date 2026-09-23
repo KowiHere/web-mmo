@@ -91,7 +91,7 @@ final class MobBehaviour {
         int bestDistance = Integer.MAX_VALUE;
 
         for (Actor other : everyone) {
-            if (other.isMob() || !other.online() || !other.isAlive() || other.inFight()) {
+            if (!other.isPlayer() || !other.online() || !other.isAlive() || other.inFight()) {
                 continue;
             }
             if (distance(other.x, other.y, map.spawnX(), map.spawnY()) <= SAFE_RADIUS) {

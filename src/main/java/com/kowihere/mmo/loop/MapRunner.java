@@ -646,7 +646,7 @@ public final class MapRunner implements Runnable {
             actor.x = next[0];
             actor.y = next[1];
             actor.nextStepTick = tick + actor.stepTicks;
-            actor.dirty = !actor.isMob(); // a mob's position is never worth keeping
+            actor.dirty = actor.isPlayer(); // only a character's position is worth keeping
             moved.add(new MoveDto(actor.id, actor.fromX, actor.fromY, actor.x, actor.y,
                     actor.dir.name(), actor.stepTicks * TICK_MS));
         }
@@ -657,7 +657,7 @@ public final class MapRunner implements Runnable {
             // A mob has no socket, so by the player rules it looks permanently
             // disconnected and would be swept away thirty seconds after the map
             // starts. It leaves the world only when something kills it.
-            if (actor.isMob() || actor.online() || tick - actor.offlineSinceTick < graceTicks) {
+            if (!actor.isPlayer() || actor.online() || tick - actor.offlineSinceTick < graceTicks) {
                 return false;
             }
             byNameKey.remove(actor.nameKey);
@@ -805,7 +805,7 @@ public final class MapRunner implements Runnable {
     private void chargeEnergy(Fight fight) {
         for (int playerId : fight.players()) {
             Actor player = actors.get(playerId);
-            if (player == null || player.isMob()) {
+            if (player == null || !player.isPlayer()) {
                 continue;
             }
             int before = player.energy;
@@ -909,7 +909,7 @@ public final class MapRunner implements Runnable {
         target.hp = Math.max(0, target.hp - dealt);
         damage.add(new DamageDto(attacker.id, target.id, dealt, target.hp));
 
-        if (!target.isMob()) {
+        if (target.isPlayer()) {
             sendYou(target);
         }
         if (target.isAlive()) {
@@ -934,7 +934,7 @@ public final class MapRunner implements Runnable {
                     tick + secondsToTicks(creature.mob.respawnSeconds())));
         }
 
-        if (killer != null && !killer.isMob()) {
+        if (killer != null && killer.isPlayer()) {
             awardExperience(killer, creature);
             awardLoot(killer, creature);
         }
@@ -1013,7 +1013,7 @@ public final class MapRunner implements Runnable {
         actor.energy = 0; // it belongs to the fight, and the fight is over for them
         actor.pendingSkill = null;
         fightChanges.add(new FightDto(actor.id, false));
-        if (!actor.isMob()) {
+        if (actor.isPlayer()) {
             sendYou(actor);
         }
         endIfOver(fight);
@@ -1031,7 +1031,7 @@ public final class MapRunner implements Runnable {
                 actor.energy = 0;
                 actor.pendingSkill = null;
                 fightChanges.add(new FightDto(id, false));
-                if (!actor.isMob()) {
+                if (actor.isPlayer()) {
                     sendYou(actor);
                 }
             }
@@ -1381,7 +1381,7 @@ public final class MapRunner implements Runnable {
         // Creatures come from the map definition, so they respawn by themselves
         // after a restart. Saving one would also mean writing a row with a
         // foreign key to an account it does not have.
-        if (actor.isMob() || !actor.dirty) {
+        if (!actor.isPlayer() || !actor.dirty) {
             return;
         }
         actor.dirty = false;
@@ -1403,7 +1403,7 @@ public final class MapRunner implements Runnable {
 
     private ActorDto toDto(Actor actor) {
         return new ActorDto(actor.id, actor.name, actor.x, actor.y, actor.dir.name(),
-                actor.isMob() || actor.online(),
+                !actor.isPlayer() || actor.online(),
                 actor.kind.name(),
                 actor.isMob() ? actor.mob.tier().name() : null,
                 actor.level, actor.hp, actor.maxHp(), actor.inFight());
@@ -1425,7 +1425,7 @@ public final class MapRunner implements Runnable {
      * on the map, and one player's progress is nobody else's business.
      */
     private void sendYou(Actor actor) {
-        if (actor.isMob() || actor.client == null) {
+        if (!actor.isPlayer() || actor.client == null) {
             return;
         }
         // Queued rather than sent. A "you" frame written mid-tick overtakes the
@@ -1435,7 +1435,7 @@ public final class MapRunner implements Runnable {
     }
 
     private void sendYouNow(Actor actor) {
-        if (actor.isMob() || actor.client == null) {
+        if (!actor.isPlayer() || actor.client == null) {
             return;
         }
         long floor = CombatRules.xpForLevel(actor.level);
@@ -1460,14 +1460,14 @@ public final class MapRunner implements Runnable {
     }
 
     private void sendSkills(Actor actor) {
-        if (actor.isMob() || actor.client == null) {
+        if (!actor.isPlayer() || actor.client == null) {
             return;
         }
         pendingSkills.add(actor.id);
     }
 
     private void sendSkillsNow(Actor actor) {
-        if (actor.isMob() || actor.client == null) {
+        if (!actor.isPlayer() || actor.client == null) {
             return;
         }
         String classId = actor.characterClass == null ? null : actor.characterClass.id();
@@ -1485,14 +1485,14 @@ public final class MapRunner implements Runnable {
 
     /** Queued like {@code you}, and for the same reason: after the delta. */
     private void sendBag(Actor actor) {
-        if (actor.isMob() || actor.client == null) {
+        if (!actor.isPlayer() || actor.client == null) {
             return;
         }
         pendingBag.add(actor.id);
     }
 
     private void sendBagNow(Actor actor) {
-        if (actor.isMob() || actor.client == null) {
+        if (!actor.isPlayer() || actor.client == null) {
             return;
         }
         List<ServerMessages.ItemDto> carried = new ArrayList<>();

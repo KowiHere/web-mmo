@@ -177,6 +177,18 @@ final class Actor {
         return kind == Kind.MOB;
     }
 
+    /**
+     * The other question, and not the negation of the first one once there is a
+     * third kind of actor. "Not a creature" and "a character somebody is
+     * playing" were the same sentence for as long as there were only two kinds;
+     * everything that saves, reaps, pays experience to or sends a private frame
+     * to an actor means this one, and would quietly start doing it to
+     * signposts if it went on asking the other.
+     */
+    boolean isPlayer() {
+        return kind == Kind.PLAYER;
+    }
+
     boolean isAlive() {
         return hp > 0;
     }

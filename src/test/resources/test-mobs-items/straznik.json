@@ -1,0 +1,13 @@
+{
+  "id": "straznik",
+  "name": "Straznik",
+  "tier": "MOB",
+  "level": 1,
+  "hp": 900,
+  "attack": 1,
+  "armor": 0,
+  "stepTicks": 8,
+  "aggroRadius": 0,
+  "leashRadius": 2,
+  "respawnSeconds": 1
+}

@@ -153,11 +153,17 @@ class EquipmentInTheWorldTest {
     void changingClothesIsRefusedInTheMiddleOfAFight() throws Exception {
         // The same reasoning that refuses movement: otherwise the best combat
         // tactic in the game would be getting changed between rounds.
+        //
+        // The opponent is the one with nine hundred health, not the one that
+        // drops the sword. Against the latter this used to pass or fail
+        // depending on the damage roll: two good blows ended the fight before
+        // the equip command was drained, and the refusal it is waiting for
+        // never came because by then there was nothing to refuse.
         FakeClient client = join("Ala", "probny-miecz");
         String sword = idOf("probny-miecz");
-        int skarbek = creatureNamed(client.await("\"type\":\"init\""), "Skarbek");
+        int guard = creatureNamed(client.await("\"type\":\"init\""), "Straznik");
 
-        runner.submit(new Command.Attack(client, skarbek));
+        runner.submit(new Command.Attack(client, guard));
         assertThat(client.await(f -> f.contains("\"damage\""))).isTrue();
         runner.submit(new Command.Equip(client, sword));
         sleep(400);

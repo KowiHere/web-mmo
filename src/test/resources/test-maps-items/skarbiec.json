@@ -15,7 +15,8 @@
     "############"
   ],
   "spawns": [
-    { "mob": "skarbek", "x": 2, "y": 2 }
+    { "mob": "skarbek", "x": 2, "y": 2 },
+    { "mob": "straznik", "x": 9, "y": 6 }
   ],
   "roaming": []
 }
