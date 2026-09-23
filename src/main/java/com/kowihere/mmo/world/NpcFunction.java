@@ -18,8 +18,11 @@ public enum NpcFunction {
     /** Talks, in a tree of nodes and options. The only one that works today. */
     DIALOGUE(true, null),
 
-    /** Restores health for nothing. Next in line. */
-    HEALER(false, "leczenie u NPC to osobny etap"),
+    /**
+     * Restores health for nothing. The one cure in the game: nothing regenerates
+     * on its own, and dying no longer heals either.
+     */
+    HEALER(true, null),
 
     /** A second bag, kept in one place. */
     STORAGE(false, "skład wymaga drugiego pojemnika i migracji"),

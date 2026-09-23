@@ -43,10 +43,42 @@ const here = () => page.evaluate(() => {
     return {
         x: self.x, y: self.y, name: self.name, worn, ranks,
         classId: state.you.classId,
+        hp: state.you.hp,
+        maxHp: state.you.maxHp,
         // Recorded so the second half can check it is *not* carried across.
         energy: state.you.energy,
     };
 });
+
+/** Picks a fight and runs from it, so the character is carrying a wound. */
+async function getHurt() {
+    const until = Date.now() + 90_000;
+    while (Date.now() < until) {
+        const state0 = await page.evaluate(() => ({
+            hp: state.you.hp,
+            maxHp: state.you.maxHp,
+            inFight: !!(state.actors.get(state.selfId) || {}).inFight,
+        }));
+        if (state0.hp < state0.maxHp) {
+            // Out of the fight, or dying would mend nothing and cost the wound
+            // the point of being recorded.
+            while (await page.evaluate(() => !!(state.actors.get(state.selfId) || {}).inFight)) {
+                await page.evaluate(() => state.ws.send(JSON.stringify({ type: 'flee' })));
+                await page.waitForTimeout(1_200);
+            }
+            return true;
+        }
+        if (!state0.inFight) {
+            const prey = await page.evaluate(() =>
+                [...state.actors.values()].find((a) => a.kind === 'MOB') || null);
+            if (!prey) return false;
+            await page.evaluate((id) =>
+                state.ws.send(JSON.stringify({ type: 'attack', targetId: id })), prey.id);
+        }
+        await page.waitForTimeout(1_200);
+    }
+    return false;
+}
 
 /** Kills whatever is nearest until something is in the bag, then wears it. */
 async function findAndWearSomething() {
@@ -121,6 +153,16 @@ if (mode === 'record') {
         process.exit(1);
     }
 
+    // Hurt, and left hurt. Nothing in this game mends on its own, so a wound
+    // is now a fact about a character that has to survive the process - and a
+    // character recorded at full health would prove nothing, since that is
+    // what a freshly created one would come back as anyway.
+    const hurt = await getHurt();
+    if (!hurt) {
+        console.error('FAIL - nothing ever landed a blow; there is no wound to keep');
+        process.exit(1);
+    }
+
     const at = await here();
     writeFileSync(file, JSON.stringify({ ...account, character, ...at }));
     console.log(`recorded ${at.name} the ${at.classId} at ${at.x},${at.y}`
@@ -155,6 +197,13 @@ if (mode === 'record') {
         console.log(`ok   - and still knowing ${at.ranks.join(', ')}`);
     } else {
         console.error(`FAIL - forgotten across the restart: ${forgotten.join(', ')}`);
+        exitCode = 1;
+    }
+
+    if (at.hp === account.hp) {
+        console.log(`ok   - and still carrying the same wound (${at.hp}/${at.maxHp})`);
+    } else {
+        console.error(`FAIL - came back on ${at.hp} health, was left on ${account.hp}`);
         exitCode = 1;
     }
 

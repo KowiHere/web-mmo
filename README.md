@@ -141,7 +141,7 @@ Folding them together produces a `SHOPKEEPER` who cannot also give a quest, and
 then a `SHOPKEEPER_WITH_QUEST`. A noticeboard talks; a blacksmith sells, repairs
 and talks; neither is a different kind of thing from the other because of it.
 
-Only `DIALOGUE` works today. Every other function says so and **stops the
+`DIALOGUE` and `HEALER` work today. Every other function says so and **stops the
 server** when content names it, exactly as an unspawnable mob tier does —
 `SHOP` because this world has no currency of any kind, `TELEPORT` because there
 is one map, `QUEST` because there is nowhere to keep a progress. Content that
@@ -154,6 +154,19 @@ and a node that cannot be reached from the start. Where a player has got to is
 held **on the server**, and the client answers by the index of the option it was
 offered — never by naming a node, which would let it jump straight to whatever
 is at the bottom of the tree.
+
+An option says where the conversation goes — to another node, or to the end of
+it — and may carry a **deed** besides. "Patch me up" both heals and gets an
+answer; splitting that into two clicks would be an interface chore pretending to
+be a rule. `END` is the one action that is itself somewhere to go, so it is the
+only one allowed to have no `goto` beside it.
+
+The one NPC the game ships with is a herbalist who **talks and heals**, which is
+the design being tested rather than a shortage of imagination: a function is a
+list, so one person does two things without ever becoming a kind of thing that
+does both. Every deed is checked against that list in both directions — a healer
+nobody can ask to heal, and healing offered by somebody who is not listed as a
+healer, are each refused at startup.
 
 ### Fighting
 
@@ -197,9 +210,14 @@ Kill a creature and it leaves the world, paying experience and whatever its loot
 table rolls; its spawn point counts down `respawnSeconds` and puts it back. An elite has no spawn point, so it dies for
 good and the next one arrives on the ordinary roll.
 
-Die and you wake at the spawn with full health and **weakened** — halved attack
-and armour for a minute, stored as an expiry timestamp so that restarting the
-server is not a way to shake off the penalty.
+Die and you wake at the spawn on **one point of health** and **weakened** —
+halved attack and armour for a minute, stored as an expiry timestamp so that
+restarting the server is not a way to shake off the penalty.
+
+That single point is the rule the rest of the game hangs off: **nothing
+regenerates.** Health comes back from a healer, and from nothing else. Waking up
+mended, which is what used to happen, made dying the only cure in the game — so
+the best thing a hurt character could do was find a wolf and lose to it.
 
 Two consequences worth stating plainly, because both look like bugs the first
 time:
@@ -209,8 +227,10 @@ time:
   you can come back dead. The alternative is worse: the most effective combat
   tactic in the game would be closing the browser.
 - **Nothing will attack you within four tiles of the spawn.** Every character
-  appears there and returns there after dying, already weakened; without a truce
-  on that ground one death becomes a loop a new character cannot break.
+  appears there and returns there after dying, already weakened and on one point
+  of health; without a truce on that ground one death becomes a loop a new
+  character cannot break. A healer has to stand inside that ring for the same
+  reason, and a test on the shipped content refuses one that does not.
 
 ### What a character is made of
 
@@ -557,8 +577,17 @@ is the most obvious thing left crooked.
 on the ground**, no trading and no shops: a reward goes straight into the bag.
 **No PvP**; `attack` refuses anything that is not a creature.
 
-**NPCs only talk.** Healing, storage, training, shops, teleports and quests are
-all declared and all refused at startup — see above. They arrive one at a time.
+**NPCs talk and heal, and nothing else yet.** Storage, training, shops,
+teleports and quests are all declared and all refused at startup — see above.
+They arrive one at a time.
+
+**Healing is free and has no cost of any kind.** Potions to buy and items that
+may mend you after a fight are both planned; the first needs currency and the
+second needs a new shape of bonus on an item.
+
+**Dying costs a minute of weakness and nothing else.** The intended rule is a
+wait before the character can be played again, and how long that is has not been
+decided — so the minute of halved attack and armour stands in for it.
 
 **There is no money.** Not one currency and not several. When trade arrives it
 will be a registry of currencies in content and a table of character-by-currency,
@@ -569,9 +598,9 @@ Also missing: more than one map, and instances with parties. No password reset
 or email confirmation either — both need to send mail, which means a service to
 run.
 
-Roughly in order: the remaining NPC functions one by one — a healer first, then
-storage — then currency and trade, then instances and parties, which is what
-heroes and colossi are waiting on.
+Roughly in order: potions, then currency and trade, then the wait after dying,
+then the remaining NPC functions one by one — storage next. Instances and
+parties last, which is what heroes and colossi are waiting on.
 
 ## Layout
 

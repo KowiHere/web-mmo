@@ -23,6 +23,7 @@ import com.kowihere.mmo.world.Content;
 import com.kowihere.mmo.world.ItemDef;
 import com.kowihere.mmo.world.ItemSlot;
 import com.kowihere.mmo.world.LootEntry;
+import com.kowihere.mmo.world.DialogueAction;
 import com.kowihere.mmo.world.Dialogue;
 import com.kowihere.mmo.world.DialogueNode;
 import com.kowihere.mmo.world.DialogueOption;
@@ -677,12 +678,45 @@ public final class MapRunner implements Runnable {
             sendError(actor, "Nie ma tu takiej odpowiedzi.");
             return;
         }
+        // The deed first, then the reply: the node it leads to is what somebody
+        // says about what just happened, so it has to have happened by then.
+        doDeed(actor, npc, picked.deed());
         if (!picked.leadsSomewhere()) {
             endConversation(actor);
             return;
         }
         actor.atNode = picked.goTo();
         sendDialogue(actor, npc, dialogue.node(actor.atNode));
+    }
+
+    private void doDeed(Actor actor, Actor npc, DialogueAction deed) {
+        if (deed == null) {
+            return;
+        }
+        switch (deed) {
+            case HEAL -> heal(actor, npc);
+            // END is somewhere to go rather than something to do, and never
+            // arrives here - the loader refuses it as a deed.
+            case END -> { }
+        }
+    }
+
+    /**
+     * The one cure in the game. Nothing regenerates and dying no longer heals,
+     * so this is where health comes back - which is also why it is free and why
+     * the healer stands within the tiles nothing may attack in.
+     *
+     * <p>Weakness is deliberately left alone. It is the price of having died,
+     * not a wound, and a healer who wiped it would make dying cost nothing.
+     */
+    private void heal(Actor actor, Actor npc) {
+        if (actor.hp >= actor.maxHp()) {
+            return; // nothing to do, and nothing worth saying about it
+        }
+        actor.hp = actor.maxHp();
+        actor.dirty = true;
+        chat.add(new ChatDto(npc.id, npc.name, "* opatruje rany: " + actor.name + " *"));
+        sendYou(actor);
     }
 
     private void handleStopTalking(Command.StopTalking stop) {
@@ -1117,7 +1151,7 @@ public final class MapRunner implements Runnable {
         player.fromX = player.x;
         player.fromY = player.y;
         player.path.clear();
-        player.hp = player.maxHp();
+        player.hp = CombatRules.HEALTH_AFTER_DEATH;
         player.weakenedUntil = System.currentTimeMillis() + CombatRules.WEAKENED_SECONDS * 1000L;
         player.dirty = true;
 

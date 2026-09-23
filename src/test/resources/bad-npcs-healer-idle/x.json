@@ -1,0 +1,3 @@
+{ "id": "niby-znachor", "name": "Niby-znachor", "kind": "PERSON", "functions": ["DIALOGUE", "HEALER"],
+  "dialogue": { "start": "a", "nodes": {
+    "a": { "text": "Ladna pogoda.", "options": [ { "text": "Faktycznie.", "action": "END" } ] } } } }

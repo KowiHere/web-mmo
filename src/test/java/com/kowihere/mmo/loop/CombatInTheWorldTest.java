@@ -147,7 +147,7 @@ class CombatInTheWorldTest {
     }
 
     @Test
-    void aPlayerWhoDiesWakesUpAtTheSpawnAndWeakened() throws Exception {
+    void aPlayerWhoDiesWakesUpAtTheSpawnHurtAndWeakened() throws Exception {
         FakeClient client = join("Ala", 5, 5);
         int killer = creatureNamed(client.await("\"type\":\"init\""), "Zabojca");
 
@@ -162,6 +162,13 @@ class CombatInTheWorldTest {
         assertThat(inFight(client))
                 .as("a fight you lost is a fight you are out of")
                 .isFalse();
+
+        // The part that matters more than either. Nothing in this game
+        // regenerates, so a death that healed you was the only cure in it -
+        // and the best thing a hurt character could do was lose a fight.
+        assertThat(numberIn(latestYou(client), "hp"))
+                .as("waking up should leave you barely standing, not fully healed")
+                .isEqualTo(CombatRules.HEALTH_AFTER_DEATH);
     }
 
     @Test
@@ -361,6 +368,25 @@ class CombatInTheWorldTest {
             }
         }
         return blows;
+    }
+
+    /** The most recent own-state frame: health changes several times a fight. */
+    private String latestYou(FakeClient client) {
+        List<String> frames = client.frames();
+        for (int i = frames.size() - 1; i >= 0; i--) {
+            if (frames.get(i).contains("\"type\":\"you\"")) {
+                return frames.get(i);
+            }
+        }
+        throw new AssertionError("no own-state frame was ever sent");
+    }
+
+    private static int numberIn(String frame, String field) {
+        try {
+            return JSON.readTree(frame).path(field).asInt();
+        } catch (Exception e) {
+            throw new AssertionError("unreadable frame " + frame, e);
+        }
     }
 
     private static int creatureNamed(String initFrame, String name) throws Exception {

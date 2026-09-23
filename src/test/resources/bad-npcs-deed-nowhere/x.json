@@ -1,0 +1,5 @@
+{ "id": "znachor", "name": "Znachor", "kind": "PERSON", "functions": ["DIALOGUE", "HEALER"],
+  "dialogue": { "start": "a", "nodes": {
+    "a": { "text": "Opatrzyc?", "options": [
+      { "text": "Tak.", "action": "HEAL" },
+      { "text": "Nie.", "action": "END" } ] } } } }

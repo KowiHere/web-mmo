@@ -2,6 +2,7 @@ package com.kowihere.mmo.loop;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.world.Content;
 import com.kowihere.mmo.world.Direction;
 import com.kowihere.mmo.world.MapDef;
@@ -42,10 +43,12 @@ class TalkingToNpcsTest {
 
     private MapRunner runner;
     private Thread thread;
+    private RecordingPersistence saved;
 
     @BeforeEach
     void startMap() {
-        runner = new MapRunner(PEN, JSON, WorldPersistence.NONE, Content.EMPTY, 20);
+        saved = new RecordingPersistence();
+        runner = new MapRunner(PEN, JSON, saved, Content.EMPTY, 20);
         thread = new Thread(runner, "test-pen");
         thread.setDaemon(true);
         thread.start();
@@ -78,7 +81,7 @@ class TalkingToNpcsTest {
 
         JsonNode said = JSON.readTree(client.await("\"type\":\"dialogue\""));
         assertThat(said.path("text").asText()).isEqualTo("Witaj.");
-        assertThat(said.path("options")).hasSize(2);
+        assertThat(said.path("options")).hasSize(3);
         assertThat(said.path("options").get(0).path("index").asInt())
                 .as("the client answers by index, so the index has to be on the wire")
                 .isZero();
@@ -90,12 +93,12 @@ class TalkingToNpcsTest {
         runner.submit(new Command.Talk(client, idOf(client, "Zielarka")));
         client.await("\"Witaj.\"");
 
-        runner.submit(new Command.Choose(client, 0));
+        runner.submit(new Command.Choose(client, optionSaying(client, "Co tu rosnie?")));
 
         assertThat(client.await(f -> f.contains("Krwawnik"))).isTrue();
 
         // And back again: a tree that only goes downwards is a list.
-        runner.submit(new Command.Choose(client, 0));
+        runner.submit(new Command.Choose(client, optionSaying(client, "Wroce.")));
         assertThat(client.await(f -> f.contains("\"dialogue\"") && f.contains("Witaj.")
                 && client.frames().indexOf(f) > 0)).isTrue();
     }
@@ -106,7 +109,7 @@ class TalkingToNpcsTest {
         runner.submit(new Command.Talk(client, idOf(client, "Zielarka")));
         client.await("\"Witaj.\"");
 
-        runner.submit(new Command.Choose(client, 1));
+        runner.submit(new Command.Choose(client, optionSaying(client, "Bywaj.")));
 
         assertThat(client.await(f -> f.contains("\"dialogue\"") && !f.contains("\"text\"")))
                 .as("a frame with nothing said is how the window is told to close")
@@ -157,6 +160,97 @@ class TalkingToNpcsTest {
     }
 
     @Test
+    void theHerbalistPutsACharacterBackTogether() throws Exception {
+        // The one cure in the game: nothing regenerates on its own, and dying
+        // no longer heals either.
+        FakeClient client = joinHurt("Ala", 5, 5, 4);
+        runner.submit(new Command.Talk(client, idOf(client, "Zielarka")));
+        client.await("\"Witaj.\"");
+
+        runner.submit(new Command.Choose(client, optionSaying(client, "Opatrz mnie.")));
+
+        assertThat(client.await(f -> f.contains("\"type\":\"you\"")
+                && numberIn(f, "hp") == numberIn(f, "maxHp")))
+                .as("being patched up should fill the bar, and say so to its owner")
+                .isTrue();
+    }
+
+    @Test
+    void beingHealedAlsoGetsAnAnswer() throws Exception {
+        // A deed and a reply in one click. If healing had to end the
+        // conversation, asking twice would mean walking away and back.
+        FakeClient client = joinHurt("Ala", 5, 5, 4);
+        runner.submit(new Command.Talk(client, idOf(client, "Zielarka")));
+        client.await("\"Witaj.\"");
+
+        runner.submit(new Command.Choose(client, optionSaying(client, "Opatrz mnie.")));
+
+        assertThat(client.await(f -> f.contains("\"dialogue\"") && f.contains("Juz po wszystkim")))
+                .isTrue();
+    }
+
+    @Test
+    void healingDoesNotWipeThePriceOfHavingDied() throws Exception {
+        // Weakness is what dying costs, not a wound. A healer who cleared it
+        // would make dying free - and dying is already a free trip home.
+        long weakened = System.currentTimeMillis() + 60_000;
+        FakeClient client = join(hurtAndWeakened("Ala", 5, 5, 4, weakened));
+        runner.submit(new Command.Talk(client, idOf(client, "Zielarka")));
+        client.await("\"Witaj.\"");
+
+        runner.submit(new Command.Choose(client, optionSaying(client, "Opatrz mnie.")));
+        assertThat(client.await(f -> f.contains("\"type\":\"you\"")
+                && numberIn(f, "hp") == numberIn(f, "maxHp"))).isTrue();
+
+        assertThat(latestYou(client))
+                .as("the wound is mended; the penalty is not")
+                .doesNotContain("\"weakenedUntil\":0");
+    }
+
+    @Test
+    void beingMendedIsWrittenDown() throws Exception {
+        // Health is the one thing a healer changes, so if healing did not mark
+        // the character as worth saving, the mending would last until the next
+        // login and no further - and nothing else would report that.
+        FakeClient client = joinHurt("Ala", 5, 5, 4);
+        runner.submit(new Command.Talk(client, idOf(client, "Zielarka")));
+        client.await("\"Witaj.\"");
+        runner.submit(new Command.Choose(client, optionSaying(client, "Opatrz mnie.")));
+        client.await(f -> f.contains("Juz po wszystkim"));
+
+        // Logging out, not stopping the map: shutting a map down flushes
+        // everybody whether or not anything changed, so it would have saved
+        // this character just as happily with the mending thrown away.
+        runner.submit(new Command.Detach(client));
+        sleep(500);
+
+        assertThat(saved.snapshots)
+                .as("healing and logging straight out has to keep the healing")
+                .anySatisfy(snapshot -> {
+                    assertThat(snapshot.nameKey()).isEqualTo("ala");
+                    assertThat(snapshot.hp()).isGreaterThan(4);
+                });
+    }
+
+    @Test
+    void thereIsNoBeingHealedFromAcrossTheMap() throws Exception {
+        // The range check on talking is what stops this, and it has to keep
+        // stopping it: every function added later inherits the same door.
+        FakeClient client = joinHurt("Ala", 1, 1, 4);
+        runner.submit(new Command.Talk(client, idOf(client, "Zielarka")));
+        client.await(f -> f.contains("bliżej"));
+
+        // Answering a question that was never asked, from the far end of the
+        // map - so the number is written out here, because no frame offered one.
+        runner.submit(new Command.Choose(client, 1));
+        sleep(400);
+
+        assertThat(client.frames())
+                .noneMatch(f -> f.contains("\"type\":\"you\"")
+                        && numberIn(f, "hp") == numberIn(f, "maxHp"));
+    }
+
+    @Test
     void anNpcCannotBeAttacked() throws Exception {
         // True today by accident, because nothing that is not a creature may be
         // attacked. Pinned here so that it stays true on purpose.
@@ -194,11 +288,64 @@ class TalkingToNpcsTest {
     }
 
     private FakeClient join(String name, int x, int y) {
+        return join(SavedCharacter.fresh(PlayerNames.key(name), name, PEN.id(), x, y, Direction.DOWN));
+    }
+
+    /** Somebody who has been in a fight and come out of it badly. */
+    private FakeClient joinHurt(String name, int x, int y, int hp) {
+        return join(hurtAndWeakened(name, x, y, hp, 0L));
+    }
+
+    private static SavedCharacter hurtAndWeakened(String name, int x, int y, int hp, long until) {
+        return new SavedCharacter(PlayerNames.key(name), name, PEN.id(), x, y, Direction.DOWN,
+                1, 0L, hp, until, Attributes.FRESH, 0, List.of(), null, 1, List.of());
+    }
+
+    private FakeClient join(SavedCharacter character) {
         FakeClient client = new FakeClient();
-        runner.submit(new Command.Join(client, 1L,
-                SavedCharacter.fresh(PlayerNames.key(name), name, PEN.id(), x, y, Direction.DOWN), 0));
+        runner.submit(new Command.Join(client, 1L, character, 0));
         assertThat(client.await(f -> f.contains("\"type\":\"init\""))).isTrue();
         return client;
+    }
+
+    /**
+     * The number the server offered for that answer.
+     *
+     * <p>Written out by hand these were 0, 1 and 2 - until an option was added
+     * in the middle of the greeting and three tests started answering a
+     * different question from the one they meant. The index belongs on the
+     * wire; it does not belong in a test's head.
+     */
+    private int optionSaying(FakeClient client, String text) throws Exception {
+        JsonNode said = JSON.readTree(latest(client, "\"type\":\"dialogue\""));
+        for (JsonNode option : said.path("options")) {
+            if (text.equals(option.path("text").asText())) {
+                return option.path("index").asInt();
+            }
+        }
+        throw new AssertionError("nothing on offer says " + text + ": " + said);
+    }
+
+    private String latestYou(FakeClient client) {
+        return latest(client, "\"type\":\"you\"");
+    }
+
+    private String latest(FakeClient client, String needle) {
+        List<String> frames = client.frames();
+        for (int i = frames.size() - 1; i >= 0; i--) {
+            if (frames.get(i).contains(needle)) {
+                return frames.get(i);
+            }
+        }
+        throw new AssertionError("no frame containing " + needle + " was ever sent");
+    }
+
+    private static int numberIn(String frame, String field) {
+        try {
+            return JSON.readTree(frame).path(field).asInt();
+        } catch (Exception e) {
+            throw new AssertionError("unreadable frame " + frame, e);
+        }
     }
 
     private static void sleep(long ms) {
@@ -206,6 +353,16 @@ class TalkingToNpcsTest {
             Thread.sleep(ms);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    private static final class RecordingPersistence implements WorldPersistence {
+
+        private final List<ActorSnapshot> snapshots = new CopyOnWriteArrayList<>();
+
+        @Override
+        public void save(ActorSnapshot snapshot) {
+            snapshots.add(snapshot);
         }
     }
 

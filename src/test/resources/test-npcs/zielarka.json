@@ -2,7 +2,7 @@
   "id": "zielarka",
   "name": "Zielarka",
   "kind": "PERSON",
-  "functions": ["DIALOGUE"],
+  "functions": ["DIALOGUE", "HEALER"],
   "dialogue": {
     "start": "powitanie",
     "nodes": {
@@ -10,12 +10,17 @@
         "text": "Witaj.",
         "options": [
           { "text": "Co tu rosnie?", "goto": "ziola" },
+          { "text": "Opatrz mnie.", "action": "HEAL", "goto": "po-leczeniu" },
           { "text": "Bywaj.", "action": "END" }
         ]
       },
       "ziola": {
         "text": "Krwawnik i dziurawiec.",
         "options": [ { "text": "Wroce.", "goto": "powitanie" } ]
+      },
+      "po-leczeniu": {
+        "text": "Juz po wszystkim.",
+        "options": [ { "text": "Dziekuje.", "goto": "powitanie" } ]
       }
     }
   }

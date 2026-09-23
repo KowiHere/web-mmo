@@ -42,6 +42,17 @@ public final class CombatRules {
     public static final double WEAKENED_MULTIPLIER = 0.5;
     public static final long WEAKENED_SECONDS = 60;
 
+    /**
+     * What a character wakes up with.
+     *
+     * <p>One, not a full bar: nothing in this game regenerates, so a death that
+     * healed you was the only cure in it - and the best thing a hurt character
+     * could do was find a wolf and lose to it. One rather than zero because the
+     * loop reads no health as dead, and a corpse that is standing up is a class
+     * of bug nobody needs.
+     */
+    public static final int HEALTH_AFTER_DEATH = 1;
+
     private final Random random;
 
     public CombatRules(Random random) {

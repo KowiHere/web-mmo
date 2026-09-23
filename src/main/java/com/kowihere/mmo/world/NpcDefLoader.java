@@ -34,6 +34,10 @@ public class NpcDefLoader {
 
     private static final String LOCATION = "classpath:npcs/*.json";
 
+    /** Which deed in a conversation belongs to which declared function. */
+    private static final Map<DialogueAction, NpcFunction> DEEDS =
+            Map.of(DialogueAction.HEAL, NpcFunction.HEALER);
+
     private final ObjectMapper mapper = new ObjectMapper();
     private final String location;
 
@@ -94,7 +98,41 @@ public class NpcDefLoader {
                     + "' has a \"dialogue\" but does not list DIALOGUE among its functions,"
                     + " so nobody could ever start it.");
         }
+        checkDeedsMatchFunctions(functions, dialogue, where, id);
         return new NpcDef(id, name, kind, functions, dialogue);
+    }
+
+    /**
+     * The same pair of questions as DIALOGUE against its tree, asked of every
+     * deed a conversation can do. A function listed and never offered is a
+     * promise the NPC does not keep; a deed offered by somebody who does not
+     * list the function is a list of functions that lies about them.
+     */
+    private static void checkDeedsMatchFunctions(Set<NpcFunction> functions, Dialogue dialogue,
+                                                 String where, String id) {
+        Set<DialogueAction> offered = EnumSet.noneOf(DialogueAction.class);
+        if (dialogue != null) {
+            for (DialogueNode node : dialogue.nodes().values()) {
+                for (DialogueOption option : node.options()) {
+                    if (option.deed() != null) {
+                        offered.add(option.deed());
+                    }
+                }
+            }
+        }
+        for (Map.Entry<DialogueAction, NpcFunction> pair : DEEDS.entrySet()) {
+            boolean does = functions.contains(pair.getValue());
+            boolean says = offered.contains(pair.getKey());
+            if (does && !says) {
+                throw new IllegalStateException(where + ": '" + id + "' is a " + pair.getValue()
+                        + " but no option anywhere does " + pair.getKey()
+                        + ", so nobody could ever get it to.");
+            }
+            if (says && !does) {
+                throw new IllegalStateException(where + ": '" + id + "' offers " + pair.getKey()
+                        + " but does not list " + pair.getValue() + " among its functions.");
+            }
+        }
     }
 
     private static Set<NpcFunction> functions(JsonNode root, String where, String id) {
@@ -182,11 +220,24 @@ public class NpcDefLoader {
             }
         }
         boolean leads = goTo != null && !goTo.isBlank();
-        if (leads == (action != null)) {
+        // One rule, in both directions: every option has to say where the talk
+        // goes. END is the one action that is itself somewhere to go; anything
+        // else happens and the conversation carries on, so it still needs a
+        // "goto" - without one it would heal and leave the window on nothing.
+        if (!leads && action == null) {
             throw new IllegalStateException(where + ": '" + id + "' node '" + nodeId
-                    + "' has the option \"" + said + "\" with "
-                    + (leads ? "both a \"goto\" and an \"action\"" : "neither \"goto\" nor \"action\"")
-                    + "; it needs exactly one.");
+                    + "' has the option \"" + said + "\" with neither \"goto\" nor \"action\";"
+                    + " it has to lead somewhere or end.");
+        }
+        if (!leads && !action.isDestination()) {
+            throw new IllegalStateException(where + ": '" + id + "' node '" + nodeId
+                    + "' has the option \"" + said + "\" doing " + action
+                    + " and then going nowhere; give it a \"goto\".");
+        }
+        if (leads && action != null && action.isDestination()) {
+            throw new IllegalStateException(where + ": '" + id + "' node '" + nodeId
+                    + "' has the option \"" + said + "\" both ending the talk and leading to '"
+                    + goTo + "'; " + action + " goes nowhere.");
         }
         return new DialogueOption(said, leads ? goTo : null, action);
     }

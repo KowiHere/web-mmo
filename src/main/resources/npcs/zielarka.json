@@ -2,15 +2,23 @@
   "id": "zielarka",
   "name": "Zielarka Miłka",
   "kind": "PERSON",
-  "functions": ["DIALOGUE"],
+  "functions": ["DIALOGUE", "HEALER"],
   "dialogue": {
     "start": "powitanie",
     "nodes": {
       "powitanie": {
         "text": "Nie schodź z polany, dziecko. Wilki nie pytają o poziom.",
         "options": [
+          { "text": "Opatrz mnie, proszę.", "action": "HEAL", "goto": "po-leczeniu" },
           { "text": "Co tu rośnie?", "goto": "ziola" },
           { "text": "Widziałaś wilczycę?", "goto": "wilczyca" },
+          { "text": "Bywaj.", "action": "END" }
+        ]
+      },
+      "po-leczeniu": {
+        "text": "No już, już. Krwawnik na ranę, dziurawiec na resztę. Ze zmęczenia po śmierci sama się otrząśniesz — na to zielska nie mam.",
+        "options": [
+          { "text": "Dziękuję.", "goto": "powitanie" },
           { "text": "Bywaj.", "action": "END" }
         ]
       },

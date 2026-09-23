@@ -118,6 +118,44 @@ const pickFreeDirection = (page) => page.evaluate(() => {
  * character in a fight refuses to walk, which is correct behaviour reported as
  * a failure. Fleeing is a roll, so this asks more than once.
  */
+/**
+ * Walks to the herbalist and is patched up, if there is anything to patch.
+ *
+ * <p>This exists because the milestone that added her also stopped death from
+ * healing, and a character on one point of health loses every fight it starts.
+ * Half this script stopped working the moment that landed - which is the loop
+ * the game now has, not a quirk of the script: fight, lose, walk over, fight
+ * again.
+ */
+async function mendIfHurt(page, below = 1) {
+    const now = await page.evaluate(() => (state.you ? { hp: state.you.hp, maxHp: state.you.maxHp } : null));
+    if (!now || now.hp >= now.maxHp * below) return true;
+
+    await escapeAnyFight(page);
+    const healer = await page.evaluate(() =>
+        [...state.actors.values()].find((a) => a.kind === 'NPC') || null);
+    if (!healer) return false;
+
+    await page.evaluate((them) => {
+        const spot = besideThem(them);
+        state.walkingUpTo = them.id;
+        requestMove(spot.x, spot.y);
+    }, healer);
+    const opened = await page
+        .waitForSelector('#dialogue:not([hidden])', { timeout: 30_000 })
+        .then(() => true)
+        .catch(() => false);
+    if (!opened) return false;
+
+    await page.click('#dialogue-options button:text-is("Opatrz mnie, proszę.")');
+    const mended = await page
+        .waitForFunction(() => state.you.hp === state.you.maxHp, null, { timeout: 8_000 })
+        .then(() => true)
+        .catch(() => false);
+    await page.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+    return mended;
+}
+
 async function escapeAnyFight(page) {
     for (let attempt = 0; attempt < 12; attempt++) {
         const fighting = await page.evaluate(() => {
@@ -359,7 +397,8 @@ try {
     // Kept up until something is actually in the bag, not merely until
     // something died: only the boar drops every time, and a wolf that dies
     // without leaving anything is the loot table working rather than failing.
-    const huntUntil = Date.now() + 150_000;
+    // Longer than it was: a trip to the herbalist is now part of hunting.
+    const huntUntil = Date.now() + 240_000;
     while (Date.now() < huntUntil && !(killed && looted)) {
         // No fleeing here: a fight already under way is as likely to end in a
         // kill as a fresh one, and running from it wastes a round every time.
@@ -368,6 +407,10 @@ try {
             return !!(self && self.inFight);
         });
         if (!busy) {
+            // Nobody picks a fight on their last point of health, and since
+            // this milestone nobody survives one either. Going to be mended is
+            // part of hunting now, exactly as it is for a player.
+            await mendIfHurt(ala, 0.4);
             const prey = await nearestCreature(ala);
             if (!prey) break;
             await ala.evaluate((id) => state.ws.send(JSON.stringify({ type: 'attack', targetId: id })), prey.id);
@@ -437,8 +480,41 @@ try {
         home.at[0] === start.x && home.at[1] === start.y
             ? ok('and put it back where it first appeared')
             : fail(`death left the character at ${home.at}, expected ${[start.x, start.y]}`);
+
+        // And barely standing. Nothing in this game regenerates, so a death
+        // that healed you was the only cure in it.
+        const afterDeath = await ala.evaluate(() => ({ hp: state.you.hp, maxHp: state.you.maxHp }));
+        afterDeath.hp === 1
+            ? ok('and left it on one point of health rather than fully mended')
+            : fail(`waking up gave ${afterDeath.hp}/${afterDeath.maxHp}, expected 1`);
     } else {
         fail('the character never died, or died without a penalty');
+    }
+
+    // ---- so the first thing anybody does next is go and get mended --------
+    // This is the loop the game now has: fight, lose, walk to the herbalist,
+    // fight again. Nothing below this line would work on one point of health,
+    // which is the point of the whole milestone rather than a quirk of the
+    // script's order.
+    {
+        const hurt = await ala.evaluate(() => ({ hp: state.you.hp, maxHp: state.you.maxHp }));
+        hurt.hp < hurt.maxHp
+            ? ok(`the character is hurt (${hurt.hp}/${hurt.maxHp}) and nothing mends on its own`)
+            : fail('nothing hurt the character, so there is nothing to heal');
+
+        const weakBefore = await ala.evaluate(() => state.you.weakenedUntil);
+        const mended = await mendIfHurt(ala);
+        mended
+            ? ok('the herbalist put the character back together')
+            : fail(`healing left ${await ala.evaluate(() => state.you.hp)} health`);
+
+        // The wound is mended; the price of having died is not.
+        const weakAfter = await ala.evaluate(() => state.you.weakenedUntil);
+        weakAfter === weakBefore
+            ? ok('and left the death penalty exactly where it was')
+            : fail('healing moved the death penalty, which is not a wound');
+
+        await ala.screenshot({ path: 'leczenie.png' });
     }
 
     // ---- loot, and putting it on -----------------------------------------
@@ -530,13 +606,14 @@ try {
 
     let charged = false;
     let cast = false;
-    const untilCast = Date.now() + 90_000;
+    const untilCast = Date.now() + 150_000;
     while (Date.now() < untilCast && !cast) {
         const busy = await ala.evaluate(() => {
             const self = state.actors.get(state.selfId);
             return !!(self && self.inFight);
         });
         if (!busy) {
+            await mendIfHurt(ala, 0.4);
             // A wolf for preference: a boar is dead in three rounds, and a mage
             // cannot charge thirty energy in three rounds. That is the design
             // working - long fights suit skills, short ones suit swinging - but
@@ -618,7 +695,9 @@ try {
 
         if (opened) {
             const first = await ala.textContent('#dialogue-text');
-            await ala.click('#dialogue-options button:first-child');
+            // Picked by what it says. Written as :first-child this quietly
+            // became "heal me" the day an option was added to the greeting.
+            await ala.click('#dialogue-options button:text-is("Co tu rośnie?")');
             const moved = await ala
                 .waitForFunction((was) =>
                     document.querySelector('#dialogue-text').textContent !== was,

@@ -38,7 +38,12 @@ final class MobBehaviour {
      * not had a chance to take a step, and a death near the spawn becomes a
      * death loop. It costs nothing: a player who wants a fight walks four tiles.
      */
-    private static final int SAFE_RADIUS = 4;
+    /**
+     * Tiles around the map spawn in which nothing may pick a fight. Not private:
+     * content has to be able to be checked against it - a healer outside this
+     * ring is a walk that a character with one point of health does not survive.
+     */
+    static final int SAFE_RADIUS = 4;
 
     private static final int[] DX = {0, 0, -1, 1};
     private static final int[] DY = {-1, 1, 0, 0};

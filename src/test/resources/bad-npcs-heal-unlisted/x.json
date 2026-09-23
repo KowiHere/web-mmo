@@ -1,0 +1,6 @@
+{ "id": "samozwaniec", "name": "Samozwaniec", "kind": "PERSON", "functions": ["DIALOGUE"],
+  "dialogue": { "start": "a", "nodes": {
+    "a": { "text": "Opatrze cie.", "options": [
+      { "text": "Prosze.", "action": "HEAL", "goto": "b" },
+      { "text": "Nie trzeba.", "action": "END" } ] },
+    "b": { "text": "Juz.", "options": [ { "text": "Dzieki.", "action": "END" } ] } } } }

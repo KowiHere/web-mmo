@@ -35,9 +35,9 @@ class NpcDefLoaderTest {
         Dialogue dialogue = npcs.get("zielarka").dialogue();
 
         assertThat(dialogue.start().text()).isEqualTo("Witaj.");
-        assertThat(dialogue.start().options()).hasSize(2);
+        assertThat(dialogue.start().options()).hasSize(3);
         assertThat(dialogue.start().option(0).goTo()).isEqualTo("ziola");
-        assertThat(dialogue.start().option(1).action()).isEqualTo(DialogueAction.END);
+        assertThat(dialogue.start().option(2).action()).isEqualTo(DialogueAction.END);
         assertThat(dialogue.node("ziola").option(0).goTo())
                 .as("a branch has to lead back, or the conversation is a list")
                 .isEqualTo("powitanie");
@@ -47,7 +47,7 @@ class NpcDefLoaderTest {
     void anOptionThatWasNeverOfferedIsNotAnOption() {
         DialogueNode start = npcs.get("zielarka").dialogue().start();
 
-        assertThat(start.option(2)).isNull();
+        assertThat(start.option(3)).isNull();
         assertThat(start.option(-1))
                 .as("the index comes off the wire, so it may be anything at all")
                 .isNull();
@@ -110,10 +110,85 @@ class NpcDefLoaderTest {
     }
 
     @Test
-    void refusesAnOptionThatBothLeadsAndActs() {
+    void refusesAnOptionThatEndsTheTalkAndAlsoLeadsSomewhere() {
+        // Every option has to say where the conversation goes. END is itself
+        // somewhere to go, so it cannot also point at a node.
         assertThatThrownBy(() -> new NpcDefLoader("classpath:bad-npcs-both/*.json").loadAll())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("exactly one");
+                .hasMessageContaining("goes nowhere");
+    }
+
+    @Test
+    void refusesAnOptionThatNeitherLeadsNorActs() {
+        // A button that does nothing at all. This guard had no fixture of its
+        // own until it was deleted and every test stayed green.
+        assertThatThrownBy(() ->
+                new NpcDefLoader("classpath:bad-npcs-mute-option/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("lead somewhere or end");
+    }
+
+    @Test
+    void refusesADeedThatLeavesTheConversationOnNothing() {
+        // Healing and then having nowhere to go leaves the window open on a
+        // node that was never sent. A deed happens; it is not a destination.
+        assertThatThrownBy(() ->
+                new NpcDefLoader("classpath:bad-npcs-deed-nowhere/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("HEAL");
+    }
+
+    @Test
+    void refusesAHealerWhoCannotBeAskedToHeal() {
+        // The function is listed, no option anywhere does it, and the NPC would
+        // stand there being a healer at nobody.
+        assertThatThrownBy(() ->
+                new NpcDefLoader("classpath:bad-npcs-healer-idle/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("HEALER");
+    }
+
+    @Test
+    void refusesHealingFromSomebodyWhoIsNotAHealer() {
+        // The other direction, and the one that matters: the list of functions
+        // is what everything else in the game will ask, so it may not lie.
+        assertThatThrownBy(() ->
+                new NpcDefLoader("classpath:bad-npcs-heal-unlisted/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("HEALER");
+    }
+
+    @Test
+    void oneNpcCanDoTwoThings() {
+        // The whole point of keeping what an NPC is apart from what it does. If
+        // this needed a new kind, or a HEALING_TALKER, the last milestone was
+        // designed wrong.
+        NpcDef herbalist = npcs.get("zielarka");
+
+        assertThat(herbalist.does(NpcFunction.DIALOGUE)).isTrue();
+        assertThat(herbalist.does(NpcFunction.HEALER)).isTrue();
+        assertThat(herbalist.kind()).isEqualTo(NpcKind.PERSON);
+    }
+
+    @Test
+    void anOptionCanBothActAndLeadSomewhere() {
+        DialogueOption patchMeUp = npcs.get("zielarka").dialogue().start().option(1);
+
+        assertThat(patchMeUp.deed()).isEqualTo(DialogueAction.HEAL);
+        assertThat(patchMeUp.goTo())
+                .as("a deed gets an answer; splitting that into two clicks would be"
+                        + " an interface chore pretending to be a rule")
+                .isEqualTo("po-leczeniu");
+    }
+
+    @Test
+    void endingTheTalkIsNotADeed() {
+        DialogueOption goodbye = npcs.get("zielarka").dialogue().start().option(2);
+
+        assertThat(goodbye.action()).isEqualTo(DialogueAction.END);
+        assertThat(goodbye.deed())
+                .as("END is somewhere to go, so it must never arrive as something to do")
+                .isNull();
     }
 
     @Test
