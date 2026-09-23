@@ -1,0 +1,6 @@
+{
+  "id": "bard",
+  "name": "Bard",
+  "startingAttributes": { "strength": 5, "agility": 5, "intellect": 5 },
+  "damageFrom": "CHARISMA"
+}

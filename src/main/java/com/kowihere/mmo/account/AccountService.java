@@ -5,6 +5,8 @@ import com.kowihere.mmo.loop.PlayerNames;
 import com.kowihere.mmo.loop.SavedCharacter;
 import com.kowihere.mmo.loop.WorldService;
 import com.kowihere.mmo.persistence.CharacterRepository;
+import com.kowihere.mmo.world.ClassDef;
+import com.kowihere.mmo.world.ClassDefLoader;
 import com.kowihere.mmo.world.Direction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +23,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -51,15 +54,18 @@ public class AccountService {
     private final CharacterRepository characters;
     private final Passwords passwords;
     private final WorldService world;
+    private final Map<String, ClassDef> classes;
     private final SecureRandom random = new SecureRandom();
 
     public AccountService(AccountRepository accounts, SessionRepository sessions,
-                          CharacterRepository characters, Passwords passwords, WorldService world) {
+                          CharacterRepository characters, Passwords passwords, WorldService world,
+                          ClassDefLoader classLoader) {
         this.accounts = accounts;
         this.sessions = sessions;
         this.characters = characters;
         this.passwords = passwords;
         this.world = world;
+        this.classes = classLoader.loadAll();
     }
 
     // ------------------------------------------------------------------ register
@@ -69,14 +75,19 @@ public class AccountService {
      * character has nothing to do, and leaving the pair half-made would be a
      * state nothing else in the code expects.
      */
-    @Transactional
+    /** Registering without naming a class gets the one everybody falls back to. */
     public String register(String login, String password, String characterName) {
+        return register(login, password, characterName, null);
+    }
+
+    @Transactional
+    public String register(String login, String password, String characterName, String classId) {
         String loginKey = requireValidLogin(login);
         passwords.requireAcceptable(password);
         String name = requireValidCharacterName(characterName);
 
         long accountId = accounts.create(loginKey, login.strip(), passwords.hash(password));
-        createCharacter(accountId, name);
+        createCharacter(accountId, name, classId);
         log.info("Registered account '{}' with character '{}'", loginKey, name);
         return issueSession(accountId);
     }
@@ -139,14 +150,26 @@ public class AccountService {
     }
 
     public SavedCharacter createCharacter(long accountId, String rawName) {
+        return createCharacter(accountId, rawName, null);
+    }
+
+    /**
+     * @param rawClassId what the player picked. An unknown one is refused
+     *                   rather than quietly replaced: somebody who asked for a
+     *                   mage and was handed a warrior would not find out until
+     *                   the character was already several levels old.
+     */
+    public SavedCharacter createCharacter(long accountId, String rawName, String rawClassId) {
         String name = requireValidCharacterName(rawName);
         if (characters.findByAccount(accountId).size() >= MAX_CHARACTERS) {
             throw ApiException.badRequest("Masz już maksymalną liczbę postaci (" + MAX_CHARACTERS + ").");
         }
+        ClassDef chosen = requireValidClass(rawClassId);
 
         MapRunner map = world.defaultMap();
         SavedCharacter character = SavedCharacter.fresh(PlayerNames.key(name), name,
-                map.mapId(), map.spawnX(), map.spawnY(), Direction.DOWN);
+                map.mapId(), map.spawnX(), map.spawnY(), Direction.DOWN,
+                chosen.id(), chosen.startingAttributes());
         try {
             characters.create(accountId, character);
         } catch (DuplicateKeyException e) {
@@ -155,6 +178,22 @@ public class AccountService {
             throw ApiException.badRequest("Postać o tej nazwie już istnieje.");
         }
         return character;
+    }
+
+    /** The classes a player may choose between, in a fixed order. */
+    public List<ClassDef> classes() {
+        return List.copyOf(classes.values());
+    }
+
+    private ClassDef requireValidClass(String rawClassId) {
+        if (rawClassId == null || rawClassId.isBlank()) {
+            return classes.get(ClassDefLoader.FALLBACK_ID);
+        }
+        ClassDef chosen = classes.get(rawClassId.strip());
+        if (chosen == null) {
+            throw ApiException.badRequest("Nie ma takiej klasy postaci.");
+        }
+        return chosen;
     }
 
     public boolean owns(long accountId, String characterKey) {

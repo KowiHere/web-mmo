@@ -19,5 +19,6 @@ import java.util.List;
  */
 public record ActorSnapshot(String nameKey, String name, String mapId, int x, int y, String dir,
                             int level, long xp, int hp, long weakenedUntil,
-                            Attributes attributes, int unspentPoints, List<StoredItem> items) {
+                            Attributes attributes, int unspentPoints, List<StoredItem> items,
+                            String classId) {
 }

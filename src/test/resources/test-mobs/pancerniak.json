@@ -1,0 +1,13 @@
+{
+  "id": "pancerniak",
+  "name": "Pancerniak",
+  "tier": "MOB",
+  "level": 1,
+  "hp": 500,
+  "attack": 1,
+  "armor": 40,
+  "stepTicks": 10,
+  "aggroRadius": 0,
+  "leashRadius": 1,
+  "respawnSeconds": 1
+}

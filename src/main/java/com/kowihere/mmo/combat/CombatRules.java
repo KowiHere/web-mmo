@@ -80,7 +80,18 @@ public final class CombatRules {
     // ---- resolving a blow ---------------------------------------------------
 
     public int damage(int attack, int armor) {
-        double reduction = armor / (double) (armor + ARMOR_SOFTENING);
+        return damage(attack, armor, 0);
+    }
+
+    /**
+     * @param armorIgnored the fraction of the target's armour these blows pass
+     *                     through. It is what lets the frailest class be worth
+     *                     playing: against something in heavy armour it hits
+     *                     for what the armour does not stop.
+     */
+    public int damage(int attack, int armor, double armorIgnored) {
+        double effective = armor * (1 - Math.max(0, Math.min(1, armorIgnored)));
+        double reduction = effective / (effective + ARMOR_SOFTENING);
         double swing = MIN_SWING + random.nextDouble() * (MAX_SWING - MIN_SWING);
         return Math.max(MINIMUM_DAMAGE, (int) Math.round(attack * swing * (1 - reduction)));
     }

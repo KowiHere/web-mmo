@@ -3,6 +3,7 @@ package com.kowihere.mmo.loop;
 import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.combat.CombatRules;
 import com.kowihere.mmo.combat.Fight;
+import com.kowihere.mmo.world.ClassDef;
 import com.kowihere.mmo.world.Direction;
 import com.kowihere.mmo.world.MobDef;
 
@@ -49,6 +50,12 @@ final class Actor {
      * same thing, which is one too many.
      */
     Attributes attributes = Attributes.FRESH;
+    /**
+     * What kind of character this is. Null for a creature: a class decides
+     * which attribute a character's blows are made of, and a creature's blows
+     * are simply what its definition says.
+     */
+    ClassDef characterClass;
     /** Points earned by levelling and not yet spent. */
     int unspentPoints;
 
@@ -173,13 +180,26 @@ final class Actor {
     }
 
     int maxHp() {
-        return isMob() ? mob.hp() : totalAttributes().maxHp();
+        if (isMob()) {
+            return mob.hp();
+        }
+        return totalAttributes().maxHp() + (characterClass == null ? 0 : characterClass.hpBonus());
     }
 
     int attack() {
-        return applyWeakness(isMob()
-                ? mob.attack()
-                : totalAttributes().attack() + inventory.grantedAttack());
+        if (isMob()) {
+            return applyWeakness(mob.attack());
+        }
+        Attributes total = totalAttributes();
+        int fromClass = characterClass == null
+                ? total.attack()
+                : characterClass.attackFrom(total);
+        return applyWeakness(fromClass + inventory.grantedAttack());
+    }
+
+    /** How much of an opponent's armour this actor's blows pass through. */
+    double armorIgnored() {
+        return characterClass == null ? 0 : characterClass.armorIgnored();
     }
 
     int armor() {

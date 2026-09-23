@@ -364,6 +364,18 @@ function renderAttributes() {
         attributesEl.append(row);
     }
 
+    if (you.className) {
+        const row = document.createElement('li');
+        const name = document.createElement('span');
+        name.className = 'slot-name';
+        name.textContent = 'Klasa';
+        const value = document.createElement('span');
+        value.className = 'value';
+        value.textContent = you.className;
+        row.append(name, value);
+        attributesEl.prepend(row);
+    }
+
     pointsEl.hidden = you.unspentPoints <= 0;
     pointsEl.textContent = `Punkty do rozdania: ${you.unspentPoints}`;
 }
@@ -1014,6 +1026,7 @@ for (const tab of document.querySelectorAll('.tab')) {
  */
 function showAuth() {
     selectTab('login');
+    renderClassChoices(document.getElementById('register-classes'), 'register-class');
     show('auth');
 }
 
@@ -1035,6 +1048,67 @@ document.getElementById('login-form').addEventListener('submit', async (event) =
     }
 });
 
+// ------------------------------------------------------------- classes
+
+/**
+ * The classes on offer, fetched once and drawn into both places that ask for
+ * one. Served by the server rather than written into the page, so that adding
+ * a class is a content change and nothing else.
+ */
+let classesPromise = null;
+
+function classesOnOffer() {
+    if (!classesPromise) {
+        classesPromise = api('/api/characters/classes')
+            .then((body) => body.classes || [])
+            .catch(() => {
+                // The picker is a convenience: registering without one gets the
+                // default class, so a failure here must not block the form.
+                classesPromise = null;
+                return [];
+            });
+    }
+    return classesPromise;
+}
+
+async function renderClassChoices(fieldset, groupName) {
+    const classes = await classesOnOffer();
+    fieldset.hidden = classes.length === 0;
+    for (const existing of [...fieldset.querySelectorAll('label')]) existing.remove();
+
+    classes.forEach((klass, index) => {
+        const label = document.createElement('label');
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = groupName;
+        radio.value = klass.id;
+        radio.checked = index === 0;
+
+        const name = document.createElement('span');
+        name.className = 'class-name';
+        name.textContent = klass.name;
+
+        const about = document.createElement('span');
+        about.className = 'class-about';
+        about.textContent = `${klass.description} (siła ${klass.strength}, `
+            + `zwinność ${klass.agility}, inteligencja ${klass.intellect})`;
+
+        label.append(radio, name, about);
+        fieldset.append(label);
+    });
+}
+
+/** What a class is called, for a screen that has only its id. */
+async function nameOfClass(classId) {
+    const found = (await classesOnOffer()).find((klass) => klass.id === classId);
+    return found ? found.name : (classId || 'bez klasy');
+}
+
+const chosenClass = (groupName) => {
+    const picked = document.querySelector(`input[name="${groupName}"]:checked`);
+    return picked ? picked.value : null;
+};
+
 document.getElementById('register-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     showError(authError, '');
@@ -1045,6 +1119,7 @@ document.getElementById('register-form').addEventListener('submit', async (event
                 login: document.getElementById('register-login').value,
                 password: document.getElementById('register-password').value,
                 characterName: document.getElementById('register-character').value,
+                classId: chosenClass('register-class'),
             }),
         });
         document.getElementById('register-password').value = '';
@@ -1078,6 +1153,8 @@ async function returnToSelection() {
     state.actors.clear();
     showError(selectError, '');
 
+    renderClassChoices(document.getElementById('create-classes'), 'create-class');
+
     let characters;
     try {
         ({ characters } = await api('/api/characters'));
@@ -1099,7 +1176,8 @@ async function returnToSelection() {
         name.textContent = character.name;
         const where = document.createElement('span');
         where.className = 'character-where';
-        where.textContent = `${character.mapId} · ${character.x},${character.y}`;
+        const klass = await nameOfClass(character.classId);
+        where.textContent = `${klass}, poziom ${character.level} · ${character.mapId}`;
         button.append(name, where);
         button.addEventListener('click', () => {
             show('game');
@@ -1126,7 +1204,7 @@ document.getElementById('create-character').addEventListener('submit', async (ev
     try {
         await api('/api/characters', {
             method: 'POST',
-            body: JSON.stringify({ name: field.value }),
+            body: JSON.stringify({ name: field.value, classId: chosenClass('create-class') }),
         });
         field.value = '';
         await returnToSelection();

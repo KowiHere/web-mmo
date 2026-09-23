@@ -17,6 +17,7 @@ import com.kowihere.mmo.protocol.ServerMessages.MoveDto;
 import com.kowihere.mmo.protocol.ServerMessages.PresenceDto;
 import com.kowihere.mmo.world.Direction;
 import com.kowihere.mmo.world.MapDef;
+import com.kowihere.mmo.world.ClassDef;
 import com.kowihere.mmo.world.Content;
 import com.kowihere.mmo.world.ItemDef;
 import com.kowihere.mmo.world.ItemSlot;
@@ -336,6 +337,7 @@ public final class MapRunner implements Runnable {
         actor.level = Math.max(1, saved.level());
         actor.xp = Math.max(0, saved.xp());
         actor.weakenedUntil = saved.weakenedUntil();
+        actor.characterClass = content.classOrDefault(saved.classId());
         actor.attributes = saved.attributes();
         actor.unspentPoints = Math.max(0, saved.unspentPoints());
         actor.inventory.restore(saved.items(), content.items());
@@ -727,7 +729,7 @@ public final class MapRunner implements Runnable {
             return true;
         }
 
-        int dealt = combat.damage(attacker.attack(), target.armor());
+        int dealt = combat.damage(attacker.attack(), target.armor(), attacker.armorIgnored());
         target.hp = Math.max(0, target.hp - dealt);
         damage.add(new DamageDto(attacker.id, target.id, dealt, target.hp));
 
@@ -1198,7 +1200,8 @@ public final class MapRunner implements Runnable {
         persistence.save(new ActorSnapshot(actor.nameKey, actor.name, map.id(),
                 actor.x, actor.y, actor.dir.name(),
                 actor.level, actor.xp, actor.hp, actor.weakenedUntil,
-                actor.attributes, actor.unspentPoints, items));
+                actor.attributes, actor.unspentPoints, items,
+                actor.characterClass == null ? null : actor.characterClass.id()));
     }
 
     private ActorDto toDto(Actor actor) {
@@ -1241,7 +1244,10 @@ public final class MapRunner implements Runnable {
         long floor = CombatRules.xpForLevel(actor.level);
         long ceiling = CombatRules.xpForLevel(actor.level + 1);
         Attributes total = actor.totalAttributes();
+        ClassDef characterClass = actor.characterClass;
         String frame = serialise(new ServerMessages.You(
+                characterClass == null ? null : characterClass.id(),
+                characterClass == null ? null : characterClass.name(),
                 actor.hp, actor.maxHp(),
                 // Mana has no spender yet. It is here because intellect has to
                 // be worth something a player can see, and because a bar added

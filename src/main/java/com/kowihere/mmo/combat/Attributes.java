@@ -34,7 +34,7 @@ public record Attributes(int strength, int agility, int intellect) {
     private static final int BASE_HP = 40;
     private static final int HP_PER_STRENGTH = 5;
     private static final int BASE_ATTACK = 2;
-    private static final int ATTACK_PER_STRENGTH = 1;
+    private static final int ATTACK_PER_POINT = 1;
     private static final int BASE_ARMOR = 1;
     private static final int BASE_MANA = 10;
     private static final int MANA_PER_INTELLECT = 5;
@@ -67,8 +67,25 @@ public record Attributes(int strength, int agility, int intellect) {
         return BASE_HP + HP_PER_STRENGTH * strength;
     }
 
+    /**
+     * What a blow is worth for a character whose class fights on {@code value}
+     * points of its own attribute.
+     *
+     * <p>Every class uses the same curve. If a mage got more out of a point of
+     * intellect than a warrior gets out of a point of strength, the classes
+     * would differ in how fast they grow rather than in how they fight, and one
+     * of them would simply be the right answer.
+     */
+    public static int attackFrom(int value) {
+        return BASE_ATTACK + ATTACK_PER_POINT * value;
+    }
+
+    /**
+     * Attack for a character with no class - which is only ever a creature, or
+     * a character whose class could not be found.
+     */
     public int attack() {
-        return BASE_ATTACK + ATTACK_PER_STRENGTH * strength;
+        return attackFrom(strength);
     }
 
     /** Armour comes from what you are wearing; the body itself is worth one point. */
@@ -86,6 +103,15 @@ public record Attributes(int strength, int agility, int intellect) {
 
     public double secondBlowChance() {
         return Math.min(MAX_SECOND_BLOW, SECOND_BLOW_PER_AGILITY * agility);
+    }
+
+    /** How much of one attribute this is, chosen at runtime rather than in code. */
+    public int of(Attribute which) {
+        return switch (which) {
+            case STRENGTH -> strength;
+            case AGILITY -> agility;
+            case INTELLECT -> intellect;
+        };
     }
 
     /** This one with {@code amount} more of {@code which}. */

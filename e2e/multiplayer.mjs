@@ -36,7 +36,7 @@ if (process.env.CHROMIUM_PATH) launchOptions.executablePath = process.env.CHROMI
 const browser = await chromium.launch(launchOptions);
 
 /** Registers an account, then enters the world as its first character. */
-async function register(characterName) {
+async function register(characterName, playAs) {
     // A fresh context per player: sessions live in cookies now, and two players
     // sharing one cookie jar would be one player with two tabs.
     const context = await browser.newContext({ viewport: { width: 900, height: 620 } });
@@ -48,6 +48,11 @@ async function register(characterName) {
     await page.fill('#register-login', characterName.toLowerCase());
     await page.fill('#register-password', PASSWORD);
     await page.fill('#register-character', characterName);
+    if (playAs) {
+        // Picked rather than left to the default, so that what comes back can
+        // be checked against what was asked for.
+        await page.check(`#register-classes input[value="${playAs}"]`);
+    }
     await page.click('#register-form button[type="submit"]');
 
     await page.waitForSelector(`.character:has-text("${characterName}")`, { timeout: 10_000 });
@@ -181,8 +186,8 @@ const snapshot = (page) => page.evaluate(() => ({
 
 try {
     // ---- two accounts share one map --------------------------------------
-    const ala = await register(ALA);
-    const bob = await register(BOB);
+    const ala = await register(ALA, 'mag');
+    const bob = await register(BOB, 'lowca');
     await ala.waitForFunction(() => state.actors.size >= 2, null, { timeout: 10_000 });
 
     const alaView = await snapshot(ala);
@@ -199,6 +204,21 @@ try {
         ? ok('Bob sees both characters')
         : fail(`Bob sees ${JSON.stringify(bobView.actors.map((a) => a.name))}`);
     alaView.selfId !== bobView.selfId ? ok('each client owns a distinct actor') : fail('shared actor id');
+
+    // ---- the class asked for is the class played -------------------------
+    const played = await ala.evaluate(() => state.you && { id: state.you.classId, name: state.you.className });
+    played && played.id === 'mag'
+        ? ok(`the class chosen at registration is the one being played: ${played.name}`)
+        : fail(`asked for a mage, got ${JSON.stringify(played)}`);
+
+    // Two classes, the same level, different bodies: proof the choice reaches
+    // the numbers rather than stopping at a label.
+    const bobPlays = await bob.evaluate(() => ({ id: state.you.classId, maxHp: state.you.maxHp, attack: state.you.attack }));
+    const alaPlays = await ala.evaluate(() => ({ id: state.you.classId, maxHp: state.you.maxHp, attack: state.you.attack }));
+    alaPlays.maxHp !== bobPlays.maxHp
+        ? ok(`a ${alaPlays.id} and a ${bobPlays.id} are not the same character `
+            + `(${alaPlays.maxHp} vs ${bobPlays.maxHp} health)`)
+        : fail(`two different classes with identical health: ${JSON.stringify(alaPlays)}`);
 
     // ---- ONE ACCOUNT MAY NOT PLAY ANOTHER'S CHARACTER --------------------
     // Being logged in is not the same as being entitled to this character.

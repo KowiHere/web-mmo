@@ -1,0 +1,9 @@
+{
+  "id": "lowca",
+  "name": "Łowca",
+  "description": "Bije zwinnością, więc to samo, co go rani, pozwala mu unikać ciosów i bić dwa razy.",
+  "startingAttributes": { "strength": 4, "agility": 8, "intellect": 3 },
+  "damageFrom": "AGILITY",
+  "armorIgnored": 0.25,
+  "hpBonus": 0
+}

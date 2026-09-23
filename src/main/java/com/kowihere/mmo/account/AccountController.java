@@ -27,7 +27,7 @@ class AccountController {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record RegisterRequest(String login, String password, String characterName) {
+    record RegisterRequest(String login, String password, String characterName, String classId) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -36,7 +36,8 @@ class AccountController {
 
     @PostMapping("/register")
     ResponseEntity<Map<String, String>> register(@RequestBody RegisterRequest request) {
-        String token = accounts.register(request.login(), request.password(), request.characterName());
+        String token = accounts.register(request.login(), request.password(),
+                request.characterName(), request.classId());
         return ResponseEntity.ok()
                 .headers(SessionCookie.header(cookie.set(token)))
                 .body(Map.of("login", request.login().strip()));

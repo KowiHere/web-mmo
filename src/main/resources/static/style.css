@@ -432,3 +432,51 @@ label {
 }
 
 .bar-mana .bar-fill { background: linear-gradient(90deg, #3f6fd8, #6ea8fe); }
+
+/* ---- choosing a class ------------------------------------------------ */
+
+.classes {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin: 8px 0 0;
+    padding: 8px 10px 10px;
+    display: grid;
+    gap: 6px;
+}
+
+.classes legend {
+    padding: 0 4px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+}
+
+/* The whole row is the target, not the dot: a class is a decision, and a
+   decision should not need a steady hand. */
+.classes label {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px 8px;
+    align-items: baseline;
+    margin: 0;
+    padding: 6px 8px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 400;
+}
+
+.classes label:hover { border-color: var(--border); }
+.classes label:has(input:checked) {
+    border-color: var(--accent);
+    background: rgba(110, 168, 254, .08);
+}
+
+.classes input { width: auto; margin: 0; }
+.classes .class-name { font-weight: 600; }
+.classes .class-about {
+    grid-column: 2;
+    font-size: 11px;
+    color: var(--muted);
+}

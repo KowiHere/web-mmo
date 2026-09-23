@@ -35,7 +35,7 @@ public class CharacterRepository {
 
     private static final String SELECT =
             "SELECT name_key, name, map_id, x, y, dir, level, xp, hp, weakened_until,"
-                    + " strength, agility, intellect, unspent_points"
+                    + " strength, agility, intellect, unspent_points, class_id"
                     + " FROM game_character";
 
     /**
@@ -70,7 +70,7 @@ public class CharacterRepository {
         return new SavedCharacter(character.nameKey(), character.name(), character.mapId(),
                 character.x(), character.y(), character.dir(), character.level(), character.xp(),
                 character.hp(), character.weakenedUntil(), character.attributes(),
-                character.unspentPoints(), items);
+                character.unspentPoints(), items, character.classId());
     }
 
     /**
@@ -86,12 +86,15 @@ public class CharacterRepository {
     /** @throws org.springframework.dao.DuplicateKeyException if the name is taken */
     public void create(long accountId, SavedCharacter character) {
         jdbc.update("INSERT INTO game_character"
-                        + " (name_key, name, map_id, x, y, dir, last_seen, account_id, level, xp, hp)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        + " (name_key, name, map_id, x, y, dir, last_seen, account_id, level, xp,"
+                        + " hp, class_id, strength, agility, intellect)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 character.nameKey(), character.name(), character.mapId(),
                 character.x(), character.y(), character.dir().name(),
                 Timestamp.from(Instant.now()), accountId,
-                character.level(), character.xp(), character.hp());
+                character.level(), character.xp(), character.hp(), character.classId(),
+                character.attributes().strength(), character.attributes().agility(),
+                character.attributes().intellect());
     }
 
     private static SavedCharacter read(java.sql.ResultSet rs, int row) throws java.sql.SQLException {
@@ -109,7 +112,8 @@ public class CharacterRepository {
                 weakened == null ? 0L : weakened.getTime(),
                 new Attributes(rs.getInt("strength"), rs.getInt("agility"), rs.getInt("intellect")),
                 rs.getInt("unspent_points"),
-                List.of());
+                List.of(),
+                rs.getString("class_id"));
     }
 
     /**
@@ -123,14 +127,15 @@ public class CharacterRepository {
         int updated = jdbc.update(
                 "UPDATE game_character SET map_id = ?, x = ?, y = ?, dir = ?, last_seen = ?,"
                         + " level = ?, xp = ?, hp = ?, weakened_until = ?,"
-                        + " strength = ?, agility = ?, intellect = ?, unspent_points = ?"
+                        + " strength = ?, agility = ?, intellect = ?, unspent_points = ?,"
+                        + " class_id = ?"
                         + " WHERE name_key = ?",
                 snapshot.mapId(), snapshot.x(), snapshot.y(), snapshot.dir(),
                 Timestamp.from(Instant.now()),
                 snapshot.level(), snapshot.xp(), snapshot.hp(),
                 snapshot.weakenedUntil() <= 0 ? null : new Timestamp(snapshot.weakenedUntil()),
                 snapshot.attributes().strength(), snapshot.attributes().agility(),
-                snapshot.attributes().intellect(), snapshot.unspentPoints(),
+                snapshot.attributes().intellect(), snapshot.unspentPoints(), snapshot.classId(),
                 snapshot.nameKey());
         if (updated == 0) {
             log.warn("No character row for '{}'; its position was not saved", snapshot.nameKey());

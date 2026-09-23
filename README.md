@@ -192,19 +192,23 @@ chain got longer:
 level  →  points to spend  →  attributes + equipment  →  combat statistics
 ```
 
-Three attributes, five of each to start, **three points per level for the player
-to spend**:
+Three attributes. What a character starts with comes from its **class**, below;
+every level pays **three points for the player to spend**, on whatever they like.
 
 ```
 maxHp   = 40 + 5 * strength        dodge       = min(35%, 1% * agility)
-attack  =  2 +     strength        second blow = min(40%, 1.2% * agility)
-armour  =  1 + equipment           maxMana     = 10 + 5 * intellect
+attack  =  2 + the attribute       second blow = min(40%, 1.2% * agility)
+          your class fights with   maxMana     = 10 + 5 * intellect
+armour  =  1 + equipment
 ```
 
-The constants are chosen so a fresh character has exactly what it had before
-attributes existed — 65 health and 7 attack. That is not nostalgia: the
-creatures on the starter map were balanced against those numbers, and moving
-them would quietly have made the map unwinnable again, for new players only.
+The constants are chosen so that five of each — what a character had before
+classes decided otherwise — is still exactly 65 health and 7 attack. That is not
+nostalgia: the creatures on the starter map were balanced against those numbers,
+and moving them would quietly have made the map unwinnable again, for new
+players only. A test now checks that **each** class can beat the starter
+creatures and that none can beat an elite, because three classes fighting with
+three attributes means a change that suits one can ruin another.
 
 **Agility does not buy attack speed**, whatever the word suggests. A round is
 still a round and everybody still gets one turn in it; what agility buys is the
@@ -213,12 +217,52 @@ payoffs are capped, because a character that eventually cannot be hit is a
 character in a fight that never ends.
 
 **Intellect buys mana, and mana buys nothing yet.** There are no spells to pay
-for. The bar is on screen anyway, so that an item granting intellect visibly
-does something, and so the frame that will carry it does not have to change when
-skills arrive. Said plainly here because a resource that never moves looks
-broken rather than unfinished.
+for. It is not what makes a mage a mage either — that is the class, which draws
+its blows from intellect and sends them through armour. The bar is on screen so
+that a resource which will matter later is already visible, and said plainly
+here because a number that never moves looks broken rather than unfinished.
 
 Only attributes, points and what is worn are stored. Not one derived number is.
+
+### Classes
+
+A class is not a bundle of bonuses attached to an otherwise identical
+character. It decides two things that show up in every single fight:
+
+| | fights with | armour it ignores | health |
+| --- | --- | --- | --- |
+| Wojownik | siła | none | the most |
+| Łowca | zwinność | a quarter | ordinary |
+| Mag | inteligencja | most of it | the least |
+
+**Which attribute a character's blows are made of** is the important one.
+Without it every class would want strength and the other two attributes would
+be a tax — which is exactly what they were before classes existed. With it, a
+mage's intellect is its weapon, and that is what intellect was always meant to
+be.
+
+**How much armour those blows pass through** is what keeps the frailest class
+worth playing. A mage dies faster than anything else on the map and hits an
+armoured target for far more than a warrior does.
+
+Every class uses the same curve for turning its attribute into attack. If a
+mage got more out of a point of intellect than a warrior gets out of a point of
+strength, the classes would differ in how fast they grow rather than in how they
+fight, and one of them would simply be the right answer.
+
+**Points stay yours to spend.** A class says where a character starts and how it
+fights, not what it is allowed to become — so a strong mage is possible, and
+being possible is part of the point.
+
+The class is chosen when the character is created and stored beside it. A stored
+class the content no longer has falls back to the warrior rather than refusing
+to let anyone in: losing a character to a renamed file would be far worse than
+swinging a sword for an afternoon until somebody notices.
+
+**Mana is still spent by nothing.** A mage is not a mage because of mana — it is
+a mage because its blows are made of intellect and go through armour. Mana is
+waiting for skills, and this is the milestone that makes intellect worth having
+in the meantime.
 
 ### Items
 
@@ -372,8 +416,8 @@ Client to server:
 | `chat`   | text           | say something on this map              |
 
 Server to client: `init` (the whole world once), `delta` (what changed), `you`
-(your own character, to your socket only), `bag` (what it is wearing and
-carrying, likewise), `error`.
+(your own character and its class, to your socket only), `bag` (what it is
+wearing and carrying, likewise), `error`.
 
 `bag` is separate from `you` on purpose: `you` goes out at every scratch, and a
 bag that changes a few times an hour has no business riding along with it. It is
@@ -395,12 +439,10 @@ pathfinding.
 
 ## What is not here yet
 
-**No classes**, which is the honest limit of the attributes above: nothing yet
-stops a character putting every point into strength, because nothing yet says
-what kind of character it is. That is what the attributes were built for, and
-it is the next question rather than an oversight.
-
-**No skills and no spells**, so mana is a number with nothing to spend it on.
+**No skills and no spells**, so mana is a number with nothing to spend it on,
+and a class differs from another only in what its blows are made of. That is
+enough to make the three worth choosing between, and honestly less than the
+word "class" usually promises.
 **No rolled bonuses or rarities** — an item is exactly its definition. **No loot
 on the ground**, no trading and no shops: a reward goes straight into the bag.
 **No PvP**; `attack` refuses anything that is not a creature.
@@ -409,14 +451,14 @@ Also missing: interactive NPCs, more than one map, and instances with parties.
 No password reset or email confirmation either — both need to send mail, which
 means a service to run.
 
-Roughly in order: classes and skills, which is what mana and free points are
-waiting for, then interactive NPCs, then instances and parties, which is what
-heroes and colossi are waiting on.
+Roughly in order: skills, which is what mana is waiting for and what will give
+each class something to do beyond hitting harder, then interactive NPCs, then
+instances and parties, which is what heroes and colossi are waiting on.
 
 ## Layout
 
 ```
-world/       maps and creature definitions — immutable, shared
+world/       maps, creatures, items and classes — immutable, shared
 path/        A* over the collision grid    — server-side only
 combat/      attributes, damage, experience — pure functions, injected randomness
 loop/        the game loop, commands, creature behaviour — no Spring below this line

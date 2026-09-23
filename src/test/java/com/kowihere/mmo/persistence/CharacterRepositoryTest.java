@@ -64,7 +64,7 @@ class CharacterRepositoryTest {
         characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
 
         characters.save(new ActorSnapshot("ala", "Ala", "starter", 9, 4, "UP", 3, 450L, 27, 0L,
-                Attributes.FRESH, 6, null));
+                Attributes.FRESH, 6, null, "wojownik"));
 
         SavedCharacter found = characters.find("ala").orElseThrow();
         assertThat(found.x()).isEqualTo(9);
@@ -124,7 +124,7 @@ class CharacterRepositoryTest {
         characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
 
         characters.save(new ActorSnapshot("ala", "Ala", "starter", 7, 11, "LEFT", 4, 900L, 40, 0L,
-                new Attributes(11, 6, 5), 2, null));
+                new Attributes(11, 6, 5), 2, null, "mag"));
 
         SavedCharacter found = characters.find("ala").orElseThrow();
         assertThat(found.attributes()).isEqualTo(new Attributes(11, 6, 5));
@@ -146,7 +146,7 @@ class CharacterRepositoryTest {
 
     private static ActorSnapshot snapshot(String nameKey, List<StoredItem> items) {
         return new ActorSnapshot(nameKey, "Ala", "starter", 7, 11, "LEFT", 1, 0L, 20, 0L,
-                Attributes.FRESH, 0, items);
+                Attributes.FRESH, 0, items, "wojownik");
     }
 
     @Test
@@ -154,7 +154,7 @@ class CharacterRepositoryTest {
         // The world must not be able to invent a character with no owner, even
         // if one is deleted while it is being played.
         characters.save(new ActorSnapshot("widmo", "Widmo", "starter", 1, 1, "DOWN", 1, 0L, 10, 0L,
-                Attributes.FRESH, 0, null));
+                Attributes.FRESH, 0, null, "wojownik"));
 
         assertThat(characters.find("widmo")).isEmpty();
     }

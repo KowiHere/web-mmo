@@ -308,7 +308,8 @@ class EquipmentInTheWorldTest {
                 Direction.DOWN);
         SavedCharacter character = new SavedCharacter(fresh.nameKey(), fresh.name(), fresh.mapId(),
                 fresh.x(), fresh.y(), fresh.dir(), fresh.level(), fresh.xp(), fresh.hp(),
-                fresh.weakenedUntil(), fresh.attributes(), fresh.unspentPoints(), items);
+                fresh.weakenedUntil(), fresh.attributes(), fresh.unspentPoints(), items,
+                fresh.classId());
 
         FakeClient client = new FakeClient();
         runner.submit(new Command.Join(client, ACCOUNT, character, 0));

@@ -72,17 +72,19 @@ public final class ServerMessages {
      * another player's progress is nobody else's business, and a leak like that
      * is the kind nobody ever files a bug about.
      */
-    public record You(String type, int hp, int maxHp, int mana, int maxMana, int level, long xp,
+    public record You(String type, String classId, String className,
+                      int hp, int maxHp, int mana, int maxMana, int level, long xp,
                       long xpThisLevel, long xpForNextLevel, long weakenedUntil, boolean dead,
                       int strength, int agility, int intellect, int unspentPoints,
                       int attack, int armor, int dodgePercent, int secondBlowPercent) {
-        public You(int hp, int maxHp, int mana, int maxMana, int level, long xp, long xpThisLevel,
+        public You(String classId, String className,
+                   int hp, int maxHp, int mana, int maxMana, int level, long xp, long xpThisLevel,
                    long xpForNextLevel, long weakenedUntil, boolean dead,
                    int strength, int agility, int intellect, int unspentPoints,
                    int attack, int armor, int dodgePercent, int secondBlowPercent) {
-            this("you", hp, maxHp, mana, maxMana, level, xp, xpThisLevel, xpForNextLevel,
-                    weakenedUntil, dead, strength, agility, intellect, unspentPoints,
-                    attack, armor, dodgePercent, secondBlowPercent);
+            this("you", classId, className, hp, maxHp, mana, maxMana, level, xp, xpThisLevel,
+                    xpForNextLevel, weakenedUntil, dead, strength, agility, intellect,
+                    unspentPoints, attack, armor, dodgePercent, secondBlowPercent);
         }
     }
 

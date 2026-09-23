@@ -1,0 +1,7 @@
+{
+  "id": "berserk",
+  "name": "Berserk",
+  "startingAttributes": { "strength": 9, "agility": 4, "intellect": 2 },
+  "damageFrom": "STRENGTH",
+  "armorIgnored": 1.5
+}

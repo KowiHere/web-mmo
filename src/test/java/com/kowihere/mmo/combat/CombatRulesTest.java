@@ -1,5 +1,7 @@
 package com.kowihere.mmo.combat;
 
+import com.kowihere.mmo.world.ClassDef;
+import com.kowihere.mmo.world.ClassDefLoader;
 import com.kowihere.mmo.world.MobDef;
 import com.kowihere.mmo.world.MobDefLoader;
 import com.kowihere.mmo.world.MobTier;
@@ -124,6 +126,40 @@ class CombatRulesTest {
         assertThat(CombatRules.xpReward(alpha))
                 .as("an elite should be worth chasing")
                 .isGreaterThan(CombatRules.xpReward(wolf) * 4);
+    }
+
+    @Test
+    void everyClassCanBeatTheStarterCreaturesAndNoneCanBeatTheElite() {
+        // The most important test in the file. Three classes now fight with
+        // three different attributes against the same creatures, so a change
+        // that suits one of them can quietly ruin another - and the only way
+        // anybody would find out is by playing that class for an hour.
+        Map<String, MobDef> mobs = new MobDefLoader().loadAll();
+
+        for (ClassDef characterClass : new ClassDefLoader().loadAll().values()) {
+            assertThat(survives(characterClass, mobs.get("dzik")))
+                    .as("%s cannot beat a boar", characterClass.name())
+                    .isTrue();
+            assertThat(survives(characterClass, mobs.get("wilk")))
+                    .as("%s cannot beat a wolf", characterClass.name())
+                    .isTrue();
+            assertThat(survives(characterClass, mobs.get("wilczyca")))
+                    .as("%s beats an elite at level one, which makes the tier meaningless",
+                            characterClass.name())
+                    .isFalse();
+        }
+    }
+
+    /** Whether a level-one character of this class outlasts this creature. */
+    private static boolean survives(ClassDef characterClass, MobDef mob) {
+        CombatRules average = rollingExactly(0.5);
+        Attributes start = characterClass.startingAttributes();
+        int health = start.maxHp() + characterClass.hpBonus();
+
+        int dealt = average.damage(characterClass.attackFrom(start), mob.armor(),
+                characterClass.armorIgnored());
+        int rounds = (int) Math.ceil(mob.hp() / (double) dealt);
+        return rounds * average.damage(mob.attack(), start.armor()) < health;
     }
 
     @Test

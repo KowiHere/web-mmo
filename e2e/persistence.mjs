@@ -37,7 +37,7 @@ const character = account.character || `Trwalka-${account.login.split('-')[1]}`;
 const here = () => page.evaluate(() => {
     const self = state.actors.get(state.selfId);
     const worn = state.bag ? (state.bag.worn || []).map((item) => item.defId) : [];
-    return { x: self.x, y: self.y, name: self.name, worn };
+    return { x: self.x, y: self.y, name: self.name, worn, classId: state.you.classId };
 });
 
 /** Kills whatever is nearest until something is in the bag, then wears it. */
@@ -86,6 +86,10 @@ if (mode === 'record') {
     await page.fill('#register-login', account.login);
     await page.fill('#register-password', PASSWORD);
     await page.fill('#register-character', character);
+    // A mage rather than the default, so that "the class survived" cannot be
+    // confused with "everybody gets the fallback anyway".
+    await page.waitForSelector('#register-classes input[value="mag"]', { timeout: 10_000 });
+    await page.check('#register-classes input[value="mag"]');
     await page.click('#register-form button[type="submit"]');
     await enterWorld();
 
@@ -104,7 +108,8 @@ if (mode === 'record') {
 
     const at = await here();
     writeFileSync(file, JSON.stringify({ ...account, character, ...at }));
-    console.log(`recorded ${at.name} at ${at.x},${at.y} wearing ${at.worn.join(', ')}`);
+    console.log(`recorded ${at.name} the ${at.classId} at ${at.x},${at.y}`
+        + ` wearing ${at.worn.join(', ')}`);
 } else {
     // Logging in, not registering: the account has to have survived too.
     await page.fill('#login-name', account.login);
@@ -120,6 +125,13 @@ if (mode === 'record') {
         console.log(`ok   - ${at.name} logged back in at ${at.x},${at.y} after a server restart`);
     } else {
         console.error(`FAIL - expected ${account.x},${account.y} but found ${at.x},${at.y}`);
+        exitCode = 1;
+    }
+
+    if (at.classId === account.classId) {
+        console.log(`ok   - and still a ${at.classId}`);
+    } else {
+        console.error(`FAIL - was a ${account.classId}, came back a ${at.classId}`);
         exitCode = 1;
     }
 
