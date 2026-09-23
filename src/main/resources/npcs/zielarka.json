@@ -1,0 +1,46 @@
+{
+  "id": "zielarka",
+  "name": "Zielarka Miłka",
+  "kind": "PERSON",
+  "functions": ["DIALOGUE"],
+  "dialogue": {
+    "start": "powitanie",
+    "nodes": {
+      "powitanie": {
+        "text": "Nie schodź z polany, dziecko. Wilki nie pytają o poziom.",
+        "options": [
+          { "text": "Co tu rośnie?", "goto": "ziola" },
+          { "text": "Widziałaś wilczycę?", "goto": "wilczyca" },
+          { "text": "Bywaj.", "action": "END" }
+        ]
+      },
+      "ziola": {
+        "text": "Krwawnik pod brzozą, dziurawiec przy kamieniach. Zbierać będziesz, jak nauczysz się odróżniać jeden od drugiego.",
+        "options": [
+          { "text": "A po co mi one?", "goto": "ziola-po-co" },
+          { "text": "Wrócę do tego.", "goto": "powitanie" }
+        ]
+      },
+      "ziola-po-co": {
+        "text": "Na razie na nic. Ale przyjdzie taki dzień, że będziesz wolała mieć je w plecaku niż drugi miecz.",
+        "options": [
+          { "text": "Zapamiętam.", "goto": "powitanie" }
+        ]
+      },
+      "wilczyca": {
+        "text": "Chodzi po polanie, kiedy chce, i nie chodzi sama. Jak usłyszysz dwa wycia zamiast jednego, to już za blisko.",
+        "options": [
+          { "text": "Da się ją ubić?", "goto": "wilczyca-ubic" },
+          { "text": "Wrócę do tego.", "goto": "powitanie" }
+        ]
+      },
+      "wilczyca-ubic": {
+        "text": "Tobie? Jeszcze nie. Wróć, jak wilki przestaną cię straszyć.",
+        "options": [
+          { "text": "Zobaczymy.", "goto": "powitanie" },
+          { "text": "Bywaj.", "action": "END" }
+        ]
+      }
+    }
+  }
+}

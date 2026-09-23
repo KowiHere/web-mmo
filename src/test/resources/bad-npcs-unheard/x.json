@@ -1,0 +1,2 @@
+{ "id": "nieslyszany", "name": "Nieslyszany", "kind": "OBJECT", "functions": ["DIALOGUE"],
+  "dialogue": { "start": "brak", "nodes": { "a": { "text": "Hm.", "options": [ { "text": "Nic.", "action": "END" } ] } } } }

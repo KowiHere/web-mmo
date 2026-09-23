@@ -6,6 +6,7 @@ import com.kowihere.mmo.combat.Fight;
 import com.kowihere.mmo.world.ClassDef;
 import com.kowihere.mmo.world.Direction;
 import com.kowihere.mmo.world.MobDef;
+import com.kowihere.mmo.world.NpcDef;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -21,12 +22,17 @@ import java.util.Deque;
  */
 final class Actor {
 
-    /** What this actor is. Players and creatures share the loop but little else. */
-    enum Kind { PLAYER, MOB }
+    /**
+     * What this actor is. They share the loop, the tile grid and the delta, and
+     * almost nothing else.
+     */
+    enum Kind { PLAYER, MOB, NPC }
 
     final Kind kind;
     /** The creature this is a copy of, or null for a player. */
     final MobDef mob;
+    /** The person or thing this is a copy of, or null for anything else. */
+    final NpcDef npc;
     /** Where a creature came from, and where it returns to when it gives up a chase. */
     final int homeX;
     final int homeY;
@@ -135,9 +141,28 @@ final class Actor {
      */
     long nextChatTick;
 
+    /**
+     * Who this character is talking to, and where in that conversation they
+     * are. Both live on the server: given node ids, a client could answer a
+     * question it was never asked and arrive at whatever is at the bottom of
+     * the tree.
+     */
+    int talkingTo;
+    String atNode;
+
     /** A player. */
     Actor(int id, String name, String nameKey, long accountId, int x, int y, int stepTicks) {
-        this(Kind.PLAYER, null, id, name, nameKey, accountId, x, y, stepTicks, false);
+        this(Kind.PLAYER, null, null, id, name, nameKey, accountId, x, y, stepTicks, false);
+    }
+
+    /**
+     * Somebody, or something, that stands still and is talked to. It has no
+     * account, is never saved, never fights and never moves - so of everything
+     * above, it uses only a position and a name.
+     */
+    Actor(int id, NpcDef npc, int x, int y, Direction facing) {
+        this(Kind.NPC, null, npc, id, npc.name(), "npc:" + npc.id() + "#" + id, 0, x, y, 1, false);
+        this.dir = facing;
     }
 
     /**
@@ -145,17 +170,18 @@ final class Actor {
      * so it is never saved and never reaped for being offline.
      */
     Actor(int id, MobDef mob, int x, int y, boolean respawns) {
-        this(Kind.MOB, mob, id, mob.name(), "mob:" + mob.id() + "#" + id, 0, x, y,
+        this(Kind.MOB, mob, null, id, mob.name(), "mob:" + mob.id() + "#" + id, 0, x, y,
                 mob.stepTicks(), respawns);
         this.level = mob.level();
         this.hp = mob.hp();
     }
 
-    private Actor(Kind kind, MobDef mob, int id, String name, String nameKey, long accountId,
-                  int x, int y, int stepTicks, boolean respawns) {
+    private Actor(Kind kind, MobDef mob, NpcDef npc, int id, String name, String nameKey,
+                  long accountId, int x, int y, int stepTicks, boolean respawns) {
         this.respawns = respawns;
         this.kind = kind;
         this.mob = mob;
+        this.npc = npc;
         this.homeX = x;
         this.homeY = y;
         this.stepTicks = stepTicks;
@@ -189,6 +215,10 @@ final class Actor {
         return kind == Kind.PLAYER;
     }
 
+    boolean isNpc() {
+        return kind == Kind.NPC;
+    }
+
     boolean isAlive() {
         return hp > 0;
     }
@@ -207,6 +237,11 @@ final class Actor {
     }
 
     int maxHp() {
+        if (isNpc()) {
+            // Nothing can hurt them, so a health bar over their head would be a
+            // bar that is always full: decoration that says something untrue.
+            return 0;
+        }
         if (isMob()) {
             return mob.hp();
         }

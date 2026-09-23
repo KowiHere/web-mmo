@@ -21,10 +21,11 @@ public final class MapDef {
     private final List<String> collisionRows;
     private final List<SpawnPoint> spawns;
     private final List<RoamingSpawn> roaming;
+    private final List<NpcPlacement> npcs;
 
     MapDef(String id, String name, int width, int height, int tileSize,
            int spawnX, int spawnY, BitSet blocked, List<String> collisionRows,
-           List<SpawnPoint> spawns, List<RoamingSpawn> roaming) {
+           List<SpawnPoint> spawns, List<RoamingSpawn> roaming, List<NpcPlacement> npcs) {
         this.id = id;
         this.name = name;
         this.width = width;
@@ -36,6 +37,7 @@ public final class MapDef {
         this.collisionRows = List.copyOf(collisionRows);
         this.spawns = List.copyOf(spawns);
         this.roaming = List.copyOf(roaming);
+        this.npcs = List.copyOf(npcs);
     }
 
     public String id() { return id; }
@@ -54,6 +56,9 @@ public final class MapDef {
 
     /** Elites that appear on their own schedule, somewhere unpredictable. */
     public List<RoamingSpawn> roaming() { return roaming; }
+
+    /** People and things that stand where they were put and stay there. */
+    public List<NpcPlacement> npcs() { return npcs; }
 
     public boolean inBounds(int x, int y) {
         return x >= 0 && y >= 0 && x < width && y < height;

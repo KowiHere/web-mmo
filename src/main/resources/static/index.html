@@ -87,6 +87,15 @@
     <div id="skillbar" hidden></div>
     <button type="button" id="panel-toggle" class="quiet">Postać (i)</button>
 
+    <!-- What somebody is saying, and everything that may be said back. The
+         options are built from the frame rather than written here: the server
+         decides what is on offer, and the numbers it sends are what goes back. -->
+    <div id="dialogue" hidden>
+        <h2 id="dialogue-who"></h2>
+        <p id="dialogue-text"></p>
+        <div id="dialogue-options"></div>
+    </div>
+
     <div id="panel" hidden>
         <section class="panel-block">
             <h2>Atrybuty</h2>

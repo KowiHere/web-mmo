@@ -26,6 +26,7 @@ public class MapDefLoader {
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final MobDefLoader mobs;
+    private final NpcDefLoader npcs;
     private final String location;
 
     public MapDefLoader() {
@@ -38,17 +39,23 @@ public class MapDefLoader {
 
     /** Where the maps live. Content need not sit at the default path. */
     public MapDefLoader(MobDefLoader mobs, String location) {
+        this(mobs, new NpcDefLoader(), location);
+    }
+
+    public MapDefLoader(MobDefLoader mobs, NpcDefLoader npcs, String location) {
         this.mobs = mobs;
+        this.npcs = npcs;
         this.location = location;
     }
 
     public Map<String, MapDef> loadAll() {
         Map<String, MobDef> creatures = mobs.loadAll();
+        Map<String, NpcDef> people = npcs.loadAll();
         var resolver = new PathMatchingResourcePatternResolver();
         var loaded = new LinkedHashMap<String, MapDef>();
         try {
             for (Resource resource : resolver.getResources(location)) {
-                MapDef def = parse(resource, creatures);
+                MapDef def = parse(resource, creatures, people);
                 if (loaded.putIfAbsent(def.id(), def) != null) {
                     throw new IllegalStateException("Duplicate map id: " + def.id());
                 }
@@ -62,7 +69,8 @@ public class MapDefLoader {
         return Map.copyOf(loaded);
     }
 
-    private MapDef parse(Resource resource, Map<String, MobDef> creatures) throws IOException {
+    private MapDef parse(Resource resource, Map<String, MobDef> creatures,
+                         Map<String, NpcDef> people) throws IOException {
         JsonNode root;
         try (InputStream in = resource.getInputStream()) {
             root = mapper.readTree(in);
@@ -108,10 +116,11 @@ public class MapDefLoader {
         // Built once without its creatures purely so the spawn validation below
         // can ask walkable() instead of re-deriving collision from the bitset.
         MapDef map = new MapDef(id, name, width, height, tileSize, spawnX, spawnY, blocked, rows,
-                List.of(), List.of());
+                List.of(), List.of(), List.of());
         return new MapDef(id, name, width, height, tileSize, spawnX, spawnY, blocked, rows,
                 spawnPoints(root, map, creatures, where),
-                roamingSpawns(root, creatures, where));
+                roamingSpawns(root, creatures, where),
+                npcPlacements(root, map, people, where));
     }
 
     /**
@@ -157,6 +166,44 @@ public class MapDefLoader {
             roaming.add(new RoamingSpawn(mobId, everySeconds, chance, escortId, escortCount));
         }
         return roaming;
+    }
+
+    /**
+     * People and things, placed by hand. Validated exactly as a spawn is - an
+     * NPC inside a wall is somebody the player can see and never reach, which
+     * is a worse bug than a server that refuses to start.
+     */
+    private static List<NpcPlacement> npcPlacements(JsonNode root, MapDef map,
+                                                    Map<String, NpcDef> people, String where) {
+        List<NpcPlacement> placements = new ArrayList<>();
+        for (JsonNode node : root.path("npcs")) {
+            String npcId = node.path("npc").asText(null);
+            NpcDef def = npcId == null ? null : people.get(npcId);
+            if (def == null) {
+                throw new IllegalStateException(where + ": unknown NPC '" + npcId
+                        + "'. Known: " + people.keySet());
+            }
+            int x = node.path("x").asInt(-1);
+            int y = node.path("y").asInt(-1);
+            if (!map.walkable(x, y)) {
+                throw new IllegalStateException(where + ": '" + npcId + "' stands at " + x + ","
+                        + y + ", which is not a tile anything can stand on");
+            }
+            if (x == map.spawnX() && y == map.spawnY()) {
+                // Everybody arrives on that tile, and two actors on one tile is
+                // a rendering question nobody has answered yet.
+                throw new IllegalStateException(where + ": '" + npcId
+                        + "' stands on the tile players arrive at");
+            }
+            String rawFacing = node.path("dir").asText("DOWN");
+            Direction facing = Direction.parse(rawFacing);
+            if (facing == null) {
+                throw new IllegalStateException(
+                        where + ": '" + npcId + "' faces '" + rawFacing + "', which is not a direction");
+            }
+            placements.add(new NpcPlacement(def, x, y, facing));
+        }
+        return placements;
     }
 
     private static String requireKnownMob(JsonNode node, String field,

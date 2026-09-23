@@ -547,3 +547,57 @@ label {
     padding: 0;
     line-height: 20px;
 }
+
+
+/* The conversation window. Bottom-left, opposite the skill buttons and the
+   character panel: nothing that matters in a fight should ever be underneath
+   it, and a conversation cannot start in one anyway. */
+#dialogue {
+    position: absolute;
+    left: 12px;
+    bottom: 60px;
+    z-index: 6;
+    width: min(420px, calc(100% - 24px));
+    padding: 14px 16px;
+    border: 1px solid #2b3550;
+    border-radius: 10px;
+    background: rgba(16, 20, 30, .95);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .45);
+}
+
+#dialogue h2 {
+    margin: 0 0 6px;
+    font-size: 13px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: #9fd9bd;
+}
+
+#dialogue p {
+    margin: 0 0 12px;
+    line-height: 1.45;
+    color: #dfe5f1;
+}
+
+#dialogue-options {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+#dialogue-options button {
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+    border: 1px solid #2b3550;
+    border-radius: 6px;
+    background: #171d2b;
+    color: #cfe0ff;
+    cursor: pointer;
+    font: inherit;
+}
+
+#dialogue-options button:hover {
+    border-color: #4f8f74;
+    background: #1d2534;
+}

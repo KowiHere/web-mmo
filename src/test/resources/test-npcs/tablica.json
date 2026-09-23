@@ -1,0 +1,15 @@
+{
+  "id": "tablica",
+  "name": "Tablica ogloszen",
+  "kind": "OBJECT",
+  "functions": ["DIALOGUE"],
+  "dialogue": {
+    "start": "ogloszenie",
+    "nodes": {
+      "ogloszenie": {
+        "text": "Uwaga na wilki.",
+        "options": [ { "text": "Odejdz.", "action": "END" } ]
+      }
+    }
+  }
+}

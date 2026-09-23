@@ -1,0 +1,4 @@
+{ "id": "sekret", "name": "Sekret", "kind": "PERSON", "functions": ["DIALOGUE"],
+  "dialogue": { "start": "a", "nodes": {
+    "a": { "text": "Hm.", "options": [ { "text": "Koniec.", "action": "END" } ] },
+    "skarb": { "text": "Masz zloto!", "options": [ { "text": "Dzieki.", "action": "END" } ] } } } }

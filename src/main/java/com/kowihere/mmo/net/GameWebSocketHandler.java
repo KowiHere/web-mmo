@@ -114,6 +114,17 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                     map.submit(new Command.Learn(client, message.skillId()));
                 }
             }
+            case "talk" -> {
+                if (message.npcId() != null) {
+                    map.submit(new Command.Talk(client, message.npcId()));
+                }
+            }
+            case "choose" -> {
+                if (message.option() != null) {
+                    map.submit(new Command.Choose(client, message.option()));
+                }
+            }
+            case "endTalk" -> map.submit(new Command.StopTalking(client));
             default -> log.debug("Unknown message type '{}' from {}", message.type(), session.getId());
         }
     }

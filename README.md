@@ -124,10 +124,36 @@ would violate the very foreign key that keeps characters honest.
 ### Mobs and NPCs are different things
 
 A **mob** is hostile: combat statistics, behaviour, a respawn timer, loot. It
-dies. An **NPC** is something you interact with — dialogue, a shop, a quest —
-with no combat statistics, no respawn, and nothing to kill. Only mobs exist so
-far; NPCs arrive as their own kind of actor rather than as a mob with its
-aggression switched off.
+dies. An **NPC** is something you interact with, and is its own kind of actor
+rather than a mob with its aggression switched off — so `attack` refuses one for
+the same reason it refuses a player, and nothing had to be added to make that
+true.
+
+What an NPC **is** and what it **does** are kept apart, and this is the whole
+design:
+
+| | means | values |
+| --- | --- | --- |
+| kind (`NpcKind`) | how it presents itself | `PERSON`, `OBJECT` |
+| function (`NpcFunction`) | what it does — a list | `DIALOGUE`, `HEALER`, … |
+
+Folding them together produces a `SHOPKEEPER` who cannot also give a quest, and
+then a `SHOPKEEPER_WITH_QUEST`. A noticeboard talks; a blacksmith sells, repairs
+and talks; neither is a different kind of thing from the other because of it.
+
+Only `DIALOGUE` works today. Every other function says so and **stops the
+server** when content names it, exactly as an unspawnable mob tier does —
+`SHOP` because this world has no currency of any kind, `TELEPORT` because there
+is one map, `QUEST` because there is nowhere to keep a progress. Content that
+names one would otherwise load an NPC who opens, offers nothing, and looks to
+every player like a bug in the client.
+
+A conversation is a tree of nodes, each with the options out of it, and the
+loader refuses a `goto` to a node that does not exist, a node with no way out,
+and a node that cannot be reached from the start. Where a player has got to is
+held **on the server**, and the client answers by the index of the option it was
+offered — never by naming a node, which would let it jump straight to whatever
+is at the bottom of the tree.
 
 ### Fighting
 
@@ -400,7 +426,9 @@ Register on first visit, then pick a character from the list.
 | key | does |
 | --- | --- |
 | `WASD` / arrows | walk one tile, held to keep walking |
-| click | walk to that tile |
+| click | walk to that tile — or, on a creature, go and fight it; on an NPC, go and talk |
+| `i` | the character panel: attributes, equipment, bag, skills |
+| skill buttons | bottom right during a fight, greyed out while the energy is short |
 | `Enter` | chat; sending returns the keyboard to the game |
 | `Esc` | leave the chat box |
 | `F3` | frame rate, delta rate, world version, buffer depth |
@@ -481,12 +509,17 @@ Client to server:
 | `spend`  | attribute      | spend one earned point                 |
 | `use`    | skillId        | use a skill in the coming round        |
 | `learn`  | skillId        | put one earned point into a skill      |
+| `talk`   | npcId          | start talking to somebody next to you  |
+| `choose` | option         | answer, by the index you were offered  |
+| `endTalk`| —              | close the conversation                 |
 | `chat`   | text           | say something on this map              |
 
 Server to client: `init` (the whole world once), `delta` (what changed), `you`
 (your own character, its class and its energy, to your socket only), `bag` (what
 it is wearing and carrying, likewise), `skills` (what it has learned, likewise),
-`error`.
+`dialogue` (what somebody is saying to you, likewise — one with no text is the
+conversation closing, which happens by walking away as often as by saying
+goodbye), `error`.
 
 Notably **not** in the `skills` frame: whether each skill can be afforded right
 now. That changes every round while the frame is sent a few times an hour, so it
@@ -524,13 +557,21 @@ is the most obvious thing left crooked.
 on the ground**, no trading and no shops: a reward goes straight into the bag.
 **No PvP**; `attack` refuses anything that is not a creature.
 
-Also missing: interactive NPCs, more than one map, and instances with parties.
-No password reset or email confirmation either — both need to send mail, which
-means a service to run.
+**NPCs only talk.** Healing, storage, training, shops, teleports and quests are
+all declared and all refused at startup — see above. They arrive one at a time.
 
-Roughly in order: more skills and skills that do more than damage, then
-interactive NPCs, then instances and parties, which is what heroes and colossi
-are waiting on.
+**There is no money.** Not one currency and not several. When trade arrives it
+will be a registry of currencies in content and a table of character-by-currency,
+never a `gold` column: NPCs dealing in different currencies are planned, and a
+single column would have to be undone the day the second one appears.
+
+Also missing: more than one map, and instances with parties. No password reset
+or email confirmation either — both need to send mail, which means a service to
+run.
+
+Roughly in order: the remaining NPC functions one by one — a healer first, then
+storage — then currency and trade, then instances and parties, which is what
+heroes and colossi are waiting on.
 
 ## Layout
 

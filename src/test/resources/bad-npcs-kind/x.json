@@ -1,0 +1,2 @@
+{ "id": "duch", "name": "Duch", "kind": "ZJAWA", "functions": ["DIALOGUE"],
+  "dialogue": { "start": "a", "nodes": { "a": { "text": "Buu.", "options": [ { "text": "Uciekaj.", "action": "END" } ] } } } }

@@ -33,6 +33,9 @@
     { "mob": "wilk", "x": 26, "y": 17 },
     { "mob": "wilk", "x": 13, "y": 2 }
   ],
+  "npcs": [
+    { "npc": "zielarka", "x": 12, "y": 16, "dir": "DOWN" }
+  ],
   "roaming": [
     {
       "mob": "wilczyca",

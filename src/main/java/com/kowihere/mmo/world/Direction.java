@@ -1,5 +1,7 @@
 package com.kowihere.mmo.world;
 
+import java.util.Locale;
+
 /**
  * Four-way movement, as in the games this engine takes after. Diagonals are
  * deliberately absent: they complicate collision around corners and buy nothing
@@ -17,6 +19,18 @@ public enum Direction {
     Direction(int dx, int dy) {
         this.dx = dx;
         this.dy = dy;
+    }
+
+    /** @return the direction, or null when content names one that does not exist */
+    public static Direction parse(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return valueOf(raw.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     public static Direction between(int fromX, int fromY, int toX, int toY) {

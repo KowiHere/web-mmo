@@ -18,12 +18,13 @@ public final class ServerMessages {
     }
 
     /**
-     * @param kind PLAYER or MOB - the client draws them differently
-     * @param tier only a mob has one; null for players and omitted from the wire
+     * @param kind PLAYER, MOB or NPC - the client draws them differently
+     * @param tier only a mob has one; null for the rest and omitted from the wire
+     * @param npcKind only an NPC has one; the same arrangement
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ActorDto(int id, String name, int x, int y, String dir, boolean online,
-                           String kind, String tier, int level, int hp, int maxHp,
+                           String kind, String tier, String npcKind, int level, int hp, int maxHp,
                            boolean inFight) {
     }
 
@@ -149,6 +150,33 @@ public final class ServerMessages {
     public record Bag(String type, int capacity, List<ItemDto> carried, List<ItemDto> worn) {
         public Bag(int capacity, List<ItemDto> carried, List<ItemDto> worn) {
             this("bag", capacity, carried, worn);
+        }
+    }
+
+    /**
+     * One thing the player may say, and the number to send back to say it.
+     *
+     * <p>An index rather than the node it leads to: the client answers the
+     * question it was asked, and cannot invent a different one.
+     */
+    public record OptionDto(int index, String text) {
+    }
+
+    /**
+     * What somebody is saying to you, sent only to the person they are saying
+     * it to. A frame with a null {@code text} closes the conversation - which
+     * happens by walking away as often as by saying goodbye.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Dialogue(String type, int npcId, String name, String text,
+                           List<OptionDto> options) {
+        public Dialogue(int npcId, String name, String text, List<OptionDto> options) {
+            this("dialogue", npcId, name, text, options);
+        }
+
+        /** The conversation is over, whoever ended it. */
+        public static Dialogue closed(int npcId) {
+            return new Dialogue(npcId, null, null, null);
         }
     }
 

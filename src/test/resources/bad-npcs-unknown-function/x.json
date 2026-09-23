@@ -1,0 +1,2 @@
+{ "id": "ktos", "name": "Ktos", "kind": "PERSON", "functions": ["GADANIE"],
+  "dialogue": { "start": "a", "nodes": { "a": { "text": "Hm.", "options": [ { "text": "Nic.", "action": "END" } ] } } } }

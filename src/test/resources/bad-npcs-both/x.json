@@ -1,0 +1,3 @@
+{ "id": "dwoisty", "name": "Dwoisty", "kind": "PERSON", "functions": ["DIALOGUE"],
+  "dialogue": { "start": "a", "nodes": {
+    "a": { "text": "Hm.", "options": [ { "text": "I tu, i tam.", "goto": "a", "action": "END" } ] } } } }

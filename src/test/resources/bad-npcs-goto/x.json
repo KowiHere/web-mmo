@@ -1,0 +1,2 @@
+{ "id": "zgubiony", "name": "Zgubiony", "kind": "PERSON", "functions": ["DIALOGUE"],
+  "dialogue": { "start": "a", "nodes": { "a": { "text": "Hm.", "options": [ { "text": "Dalej.", "goto": "bb" } ] } } } }

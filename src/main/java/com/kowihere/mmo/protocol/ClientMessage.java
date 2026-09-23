@@ -25,6 +25,8 @@ public record ClientMessage(
         String itemId,
         String slot,
         String attribute,
-        String skillId
+        String skillId,
+        Integer npcId,
+        Integer option
 ) {
 }

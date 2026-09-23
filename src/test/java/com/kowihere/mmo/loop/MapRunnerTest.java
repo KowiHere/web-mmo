@@ -243,8 +243,13 @@ class MapRunnerTest {
     @Test
     void leavingHandsThePositionToPersistence() {
         FakeClient client = join("Ala");
+        int self = selfId(client);
         runner.submit(new Command.MoveTo(client, MAP.spawnX() - 2, MAP.spawnY()));
-        assertThat(client.await(f -> f.contains("\"x\":" + (MAP.spawnX() - 2)))).isTrue();
+        // Ala's own arrival, not anybody's. Waiting on a bare "x":12 used to
+        // pass on the first frame, because somebody else was standing there -
+        // and the detach below then happened before she had taken a step.
+        assertThat(client.await(f -> f.contains("\"id\":" + self + ",\"fx\"")
+                && f.contains("\"x\":" + (MAP.spawnX() - 2) + ",\"y\":" + MAP.spawnY()))).isTrue();
 
         runner.submit(new Command.Detach(client));
         sleep(400);
@@ -284,13 +289,24 @@ class MapRunnerTest {
         }
     }
 
+    /**
+     * Characters, not everything with a name over its head. Counting names was
+     * the same number for as long as only players and creatures existed, and
+     * started counting the signposts the day an NPC stood on this map.
+     */
     private static int countActors(String initFrame) {
         int start = initFrame.indexOf("\"actors\":[");
-        return initFrame.substring(start).split("\"name\":", -1).length - 1;
+        return initFrame.substring(start).split("\"kind\":\"PLAYER\"", -1).length - 1;
     }
 
     private static SavedCharacter character(String name, int x, int y) {
         return SavedCharacter.fresh(PlayerNames.key(name), name, MAP.id(), x, y, Direction.DOWN);
+    }
+
+    private int selfId(FakeClient client) {
+        String init = client.frames().stream()
+                .filter(f -> f.contains("\"type\":\"init\"")).findFirst().orElseThrow();
+        return Integer.parseInt(extract(init, "\"selfId\":", ","));
     }
 
     private FakeClient join(String name) {

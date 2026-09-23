@@ -47,6 +47,16 @@ const MOB_STYLE = {
     COLOSSUS: { fill: '#a03c3c', stroke: '#e58686', label: '#e58686', radius: 14, ring: '#e58686' },
 };
 
+/**
+ * People and things. Drawn apart from both the other two: a creature is
+ * something to click on and fight, and an NPC has to read as the opposite of
+ * that before anybody clicks anything.
+ */
+const NPC_STYLE = {
+    PERSON: { fill: '#4f8f74', stroke: '#9fd9bd', label: '#9fd9bd', radius: 10 },
+    OBJECT: { fill: '#6b6250', stroke: '#c0b294', label: '#c0b294', radius: 8 },
+};
+
 const MOVEMENT_KEYS = {
     ArrowUp: [0, -1], w: [0, -1], W: [0, -1],
     ArrowDown: [0, 1], s: [0, 1], S: [0, 1],
@@ -58,6 +68,10 @@ const state = {
     ws: null,
     characterKey: null,
     leaving: false,
+    /** Who we are walking over to talk to, until we get there. */
+    walkingUpTo: null,
+    /** The last thing said to us, or null when nobody is talking. */
+    dialogue: null,
     version: 0,
     selfId: null,
     map: null,
@@ -95,6 +109,10 @@ const bagCountEl = document.getElementById('bag-count');
 const skillsEl = document.getElementById('skills');
 const skillPointsEl = document.getElementById('skill-points');
 const skillbarEl = document.getElementById('skillbar');
+const dialogueEl = document.getElementById('dialogue');
+const dialogueWhoEl = document.getElementById('dialogue-who');
+const dialogueTextEl = document.getElementById('dialogue-text');
+const dialogueOptionsEl = document.getElementById('dialogue-options');
 
 // ---------------------------------------------------------------- networking
 
@@ -130,6 +148,7 @@ function connect(characterKey) {
         else if (msg.type === 'you') applyYou(msg);
         else if (msg.type === 'bag') applyBag(msg);
         else if (msg.type === 'skills') applySkills(msg);
+        else if (msg.type === 'dialogue') applyDialogue(msg);
         else if (msg.type === 'error') logSystem(msg.message);
     };
 
@@ -267,6 +286,35 @@ function applyYou(msg) {
 function applyBag(msg) {
     state.bag = msg;
     renderPanel();
+}
+
+/**
+ * What somebody is saying. A frame with no text is the conversation ending -
+ * which happens by walking away at least as often as by saying goodbye, so the
+ * window has to be able to close without anybody having pressed anything.
+ */
+function applyDialogue(msg) {
+    if (!msg.text) {
+        state.dialogue = null;
+        dialogueEl.hidden = true;
+        dialogueOptionsEl.replaceChildren();
+        return;
+    }
+    state.dialogue = msg;
+    dialogueWhoEl.textContent = msg.name;
+    dialogueTextEl.textContent = msg.text;
+
+    const buttons = (msg.options || []).map((option) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = option.text;
+        // The index the server sent, handed straight back. The client answers
+        // the question it was asked and cannot invent a different one.
+        button.addEventListener('click', () => send({ type: 'choose', option: option.index }));
+        return button;
+    });
+    dialogueOptionsEl.replaceChildren(...buttons);
+    dialogueEl.hidden = false;
 }
 
 function applySkills(msg) {
@@ -661,6 +709,7 @@ function frame(now) {
     if (!state.map) return;
 
     repeatHeldMovement(now);
+    askWhenWeGetThere();
     for (const actor of state.actors.values()) advanceAnimation(actor, now);
 
     const { ox, oy } = cameraOrigin();
@@ -684,6 +733,26 @@ function frame(now) {
     drawFloaters(ox, oy, now);
 
     sampleStats(now);
+}
+
+/**
+ * Clicking somebody means "go and talk to them", the same way clicking a
+ * creature means "go and fight it". The difference is that the server walks you
+ * to a creature itself, and a conversation is asked for on arrival - so this
+ * waits until we are actually standing next to them before asking.
+ */
+function askWhenWeGetThere() {
+    if (state.walkingUpTo === null) return;
+    const self = state.actors.get(state.selfId);
+    const them = state.actors.get(state.walkingUpTo);
+    if (!self || !them) {
+        state.walkingUpTo = null;
+        return;
+    }
+    const distance = Math.max(Math.abs(self.x - them.x), Math.abs(self.y - them.y));
+    if (distance > 1) return;
+    send({ type: 'talk', npcId: them.id });
+    state.walkingUpTo = null;
 }
 
 function advanceAnimation(actor, now) {
@@ -780,7 +849,9 @@ function drawActor(actor, ox, oy, now) {
     const py = actor.ry * TILE - oy + TILE / 2 - bob;
     const isSelf = actor.id === state.selfId;
     const mob = actor.kind === 'MOB' ? (MOB_STYLE[actor.tier] || MOB_STYLE.MOB) : null;
-    const radius = mob ? mob.radius : 10;
+    const npc = actor.kind === 'NPC' ? (NPC_STYLE[actor.npcKind] || NPC_STYLE.PERSON) : null;
+    const look = mob || npc;
+    const radius = look ? look.radius : 10;
 
     ctx.globalAlpha = actor.online ? 1 : 0.4;
 
@@ -805,10 +876,10 @@ function drawActor(actor, ox, oy, now) {
 
     ctx.beginPath();
     ctx.arc(px, py, radius, 0, Math.PI * 2);
-    ctx.fillStyle = mob ? mob.fill : (isSelf ? '#6ea8fe' : `hsl(${(actor.id * 67) % 360} 45% 58%)`);
+    ctx.fillStyle = look ? look.fill : (isSelf ? '#6ea8fe' : `hsl(${(actor.id * 67) % 360} 45% 58%)`);
     ctx.fill();
     ctx.lineWidth = 2;
-    ctx.strokeStyle = mob ? mob.stroke : (isSelf ? '#e8f0ff' : 'rgba(0,0,0,.45)');
+    ctx.strokeStyle = look ? look.stroke : (isSelf ? '#e8f0ff' : 'rgba(0,0,0,.45)');
     ctx.stroke();
 
     // Which way the actor faces, as a notch on the rim.
@@ -823,7 +894,7 @@ function drawActor(actor, ox, oy, now) {
         ctx.textAlign = 'center';
         ctx.fillStyle = '#0f1116';
         ctx.fillText(actor.name, px + 1, py - radius - 5);
-        ctx.fillStyle = mob ? mob.label : (isSelf ? '#cfe0ff' : '#c2c9d6');
+        ctx.fillStyle = look ? look.label : (isSelf ? '#cfe0ff' : '#c2c9d6');
         ctx.fillText(actor.name, px, py - radius - 6);
     }
 
@@ -882,6 +953,9 @@ function drawFloaters(ox, oy, now) {
 
 /** Everything is named except a common creature standing far away. */
 function shouldName(actor, mob) {
+    if (actor.kind === 'NPC') {
+        return true; // somebody worth walking over to is somebody worth naming
+    }
     if (!mob || mob.ring) {
         return true; // players, and anything elite or above
     }
@@ -941,9 +1015,49 @@ canvas.addEventListener('click', (event) => {
         return;
     }
 
+    // Somebody to talk to. The server refuses from a distance, so walk over
+    // first and ask on arrival - the click means "go and talk", exactly as a
+    // click on a creature means "go and fight".
+    const person = npcAt(tile.x, tile.y);
+    if (person) {
+        // Up to them, not onto them. Their tile is walkable - nothing about an
+        // NPC blocks movement - so asking for it would end with the player
+        // standing inside the person they came to talk to.
+        const spot = besideThem(person);
+        state.marker = { x: spot.x, y: spot.y, at: performance.now() };
+        state.walkingUpTo = person.id;
+        requestMove(spot.x, spot.y);
+        return;
+    }
+    state.walkingUpTo = null;
+
     state.marker = { x: tile.x, y: tile.y, at: performance.now() };
     requestMove(tile.x, tile.y);
 });
+
+/** The free tile next to them that we are already closest to. */
+function besideThem(them) {
+    const self = state.actors.get(state.selfId);
+    const around = [[0, 1], [0, -1], [1, 0], [-1, 0]]
+        .map(([dx, dy]) => ({ x: them.x + dx, y: them.y + dy }))
+        .filter((spot) => !isBlocked(spot.x, spot.y));
+    if (!around.length || !self) {
+        return { x: them.x, y: them.y };
+    }
+    around.sort((a, b) =>
+        (Math.abs(a.x - self.x) + Math.abs(a.y - self.y))
+        - (Math.abs(b.x - self.x) + Math.abs(b.y - self.y)));
+    return around[0];
+}
+
+function npcAt(x, y) {
+    for (const actor of state.actors.values()) {
+        if (actor.kind === 'NPC' && actor.x === x && actor.y === y) {
+            return actor;
+        }
+    }
+    return null;
+}
 
 function creatureAt(x, y) {
     for (const actor of state.actors.values()) {

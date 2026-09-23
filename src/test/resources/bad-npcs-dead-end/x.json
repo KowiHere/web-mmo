@@ -1,0 +1,4 @@
+{ "id": "slepy", "name": "Slepy zaulek", "kind": "PERSON", "functions": ["DIALOGUE"],
+  "dialogue": { "start": "a", "nodes": {
+    "a": { "text": "Hm.", "options": [ { "text": "Dalej.", "goto": "b" } ] },
+    "b": { "text": "I nic.", "options": [] } } } }

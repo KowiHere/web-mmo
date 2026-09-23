@@ -590,6 +590,63 @@ try {
         ? ok('and the bar empties when the fight ends')
         : fail(`energy survived the fight: ${await ala.evaluate(() => state.you.energy)}`);
 
+    // ---- somebody to talk to ---------------------------------------------
+    await escapeAnyFight(ala);
+    const herbalist = await ala.evaluate(() =>
+        [...state.actors.values()].find((a) => a.kind === 'NPC') || null);
+
+    if (!herbalist) {
+        fail('there is nobody on the map to talk to');
+    } else {
+        ok(`${herbalist.name} is standing on the map`);
+
+        // Clicked, not messaged: what is under test is that walking over and
+        // asking on arrival works, which is the whole of the interface here.
+        await ala.evaluate((them) => {
+            const spot = besideThem(them);
+            state.walkingUpTo = them.id;
+            requestMove(spot.x, spot.y);
+        }, herbalist);
+
+        const opened = await ala
+            .waitForSelector('#dialogue:not([hidden])', { timeout: 20_000 })
+            .then(() => true)
+            .catch(() => false);
+        opened
+            ? ok('walking up to them opened the conversation')
+            : fail('the conversation never opened');
+
+        if (opened) {
+            const first = await ala.textContent('#dialogue-text');
+            await ala.click('#dialogue-options button:first-child');
+            const moved = await ala
+                .waitForFunction((was) =>
+                    document.querySelector('#dialogue-text').textContent !== was,
+                    first, { timeout: 8_000 })
+                .then(() => true)
+                .catch(() => false);
+            moved
+                ? ok('choosing an option led somewhere else in the tree')
+                : fail('the conversation did not move');
+
+            await ala.screenshot({ path: 'rozmowa.png' });
+
+            // Walking off has to close it, and nothing is sent when it does.
+            await ala.evaluate(() => requestMove(state.map.width - 2, 1));
+            // waitForSelector waits for a *visible* element by default, so
+            // asking it for the hidden window would wait for ever no matter
+            // what the server did. Ask the property instead.
+            const closed = await ala
+                .waitForFunction(() => document.querySelector('#dialogue').hidden,
+                    null, { timeout: 20_000 })
+                .then(() => true)
+                .catch(() => false);
+            closed
+                ? ok('walking away closed the conversation')
+                : fail('the conversation outlived being walked away from');
+        }
+    }
+
     // ---- a dropped socket resumes the same character ---------------------
     const previousActor = alaView.selfId;
     await ala.evaluate(() => state.ws.close());

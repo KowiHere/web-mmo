@@ -23,7 +23,12 @@ import com.kowihere.mmo.world.Content;
 import com.kowihere.mmo.world.ItemDef;
 import com.kowihere.mmo.world.ItemSlot;
 import com.kowihere.mmo.world.LootEntry;
+import com.kowihere.mmo.world.Dialogue;
+import com.kowihere.mmo.world.DialogueNode;
+import com.kowihere.mmo.world.DialogueOption;
 import com.kowihere.mmo.world.MobDef;
+import com.kowihere.mmo.world.NpcFunction;
+import com.kowihere.mmo.world.NpcPlacement;
 import com.kowihere.mmo.world.SkillDef;
 import com.kowihere.mmo.world.SkillDefLoader;
 import com.kowihere.mmo.world.RoamingSpawn;
@@ -213,6 +218,7 @@ public final class MapRunner implements Runnable {
     public void run() {
         log.info("Map '{}' running: {}x{} tiles, {} ms tick", map.id(), map.width(), map.height(), TICK_MS);
         spawnFixedMobs();
+        placeNpcs();
         long nextTickNanos = System.nanoTime();
         while (running) {
             try {
@@ -221,6 +227,7 @@ public final class MapRunner implements Runnable {
                 advanceMobs();
                 advanceMovement();
                 engageApproachingTargets();
+                endConversationsOutOfEarshot();
                 resolveFights();
                 respawnTheFallen();
                 reapExpiredActors();
@@ -270,6 +277,9 @@ public final class MapRunner implements Runnable {
                 case Command.Spend spend -> handleSpend(spend);
                 case Command.Use use -> handleUse(use);
                 case Command.Learn learn -> handleLearn(learn);
+                case Command.Talk talk -> handleTalk(talk);
+                case Command.Choose choose -> handleChoose(choose);
+                case Command.StopTalking stop -> handleStopTalking(stop);
             }
         }
     }
@@ -414,11 +424,19 @@ public final class MapRunner implements Runnable {
     private void handleAttack(Command.Attack attack) {
         Actor actor = byClient.get(attack.client());
         Actor target = actors.get(attack.targetId());
-        if (actor == null || target == null || actor.inFight() || !target.isAlive()) {
+        if (actor == null || target == null || actor.inFight()) {
             return;
         }
+        // Before the check on whether it is alive, not after: an NPC has no
+        // health at all, so by that test it is already a corpse and the click
+        // would be swallowed in silence rather than answered.
         if (!target.isMob()) {
-            sendError(actor, "Na razie można walczyć tylko z potworami.");
+            sendError(actor, target.isNpc()
+                    ? target.name + " nie jest tu po to, żeby się bić."
+                    : "Na razie można walczyć tylko z potworami.");
+            return;
+        }
+        if (!target.isAlive()) {
             return;
         }
         // The server walks you there. Making the player line themselves up first
@@ -605,6 +623,127 @@ public final class MapRunner implements Runnable {
         actor.skillsDirty = true;
         sendYou(actor);
         sendSkills(actor);
+    }
+
+    // ------------------------------------------------------------------
+    // talking
+    // ------------------------------------------------------------------
+
+    private void handleTalk(Command.Talk talk) {
+        Actor actor = byClient.get(talk.client());
+        Actor npc = actors.get(talk.npcId());
+        if (actor == null || npc == null || !npc.isNpc()) {
+            return;
+        }
+        if (actor.inFight()) {
+            sendError(actor, "W walce nie ma z kim rozmawiać.");
+            return;
+        }
+        if (!npc.npc.does(NpcFunction.DIALOGUE)) {
+            sendError(actor, npc.name + " nie ma ci nic do powiedzenia.");
+            return;
+        }
+        if (!adjacent(actor, npc)) {
+            // Checked here and nowhere else in the client's reach. Without it a
+            // player could hold a conversation from the far end of the map, and
+            // every later function - healing, a shop, a quest - would inherit
+            // that as a way of using an NPC without ever going to them.
+            sendError(actor, "Musisz podejść bliżej.");
+            return;
+        }
+        Dialogue dialogue = npc.npc.dialogue();
+        actor.talkingTo = npc.id;
+        actor.atNode = dialogue.startId();
+        sendDialogue(actor, npc, dialogue.start());
+    }
+
+    private void handleChoose(Command.Choose choose) {
+        Actor actor = byClient.get(choose.client());
+        if (actor == null || actor.talkingTo == 0) {
+            return;
+        }
+        Actor npc = actors.get(actor.talkingTo);
+        if (npc == null || !npc.isNpc() || !adjacent(actor, npc)) {
+            endConversation(actor);
+            return;
+        }
+        Dialogue dialogue = npc.npc.dialogue();
+        DialogueNode here = dialogue.node(actor.atNode);
+        DialogueOption picked = here == null ? null : here.option(choose.option());
+        if (picked == null) {
+            // Either a client out of step with the server, or one making choices
+            // up. Both get the same answer: the conversation is where the server
+            // says it is.
+            sendError(actor, "Nie ma tu takiej odpowiedzi.");
+            return;
+        }
+        if (!picked.leadsSomewhere()) {
+            endConversation(actor);
+            return;
+        }
+        actor.atNode = picked.goTo();
+        sendDialogue(actor, npc, dialogue.node(actor.atNode));
+    }
+
+    private void handleStopTalking(Command.StopTalking stop) {
+        Actor actor = byClient.get(stop.client());
+        if (actor != null) {
+            endConversation(actor);
+        }
+    }
+
+    /**
+     * A conversation ends when you walk away from it, and this is the only place
+     * that notices. Nothing else would: the player never sends anything, they
+     * simply click a tile - and would otherwise be left talking to somebody who
+     * is no longer on the screen.
+     */
+    private void endConversationsOutOfEarshot() {
+        for (Actor actor : actors.values()) {
+            if (actor.talkingTo == 0) {
+                continue;
+            }
+            Actor npc = actors.get(actor.talkingTo);
+            if (npc == null || !adjacent(actor, npc) || actor.inFight()) {
+                endConversation(actor);
+            }
+        }
+    }
+
+    private void endConversation(Actor actor) {
+        if (actor.talkingTo == 0) {
+            return;
+        }
+        int npcId = actor.talkingTo;
+        actor.talkingTo = 0;
+        actor.atNode = null;
+        if (actor.client != null) {
+            String frame = serialise(ServerMessages.Dialogue.closed(npcId));
+            if (frame != null) {
+                actor.client.send(frame);
+            }
+        }
+    }
+
+    /**
+     * Sent straight out rather than queued behind the delta, unlike {@code you}:
+     * everything it refers to - the NPC and where it stands - was in the frame
+     * the player was given on arrival, so there is no later delta for it to
+     * overtake.
+     */
+    private void sendDialogue(Actor actor, Actor npc, DialogueNode node) {
+        if (actor.client == null || node == null) {
+            return;
+        }
+        List<ServerMessages.OptionDto> options = new ArrayList<>(node.options().size());
+        for (int i = 0; i < node.options().size(); i++) {
+            options.add(new ServerMessages.OptionDto(i, node.options().get(i).text()));
+        }
+        String frame = serialise(
+                new ServerMessages.Dialogue(npc.id, npc.name, node.text(), options));
+        if (frame != null) {
+            actor.client.send(frame);
+        }
     }
 
     private void handleChat(Command.Chat message) {
@@ -1089,6 +1228,20 @@ public final class MapRunner implements Runnable {
      *                 creature at a marked post comes back; an elite that simply
      *                 turned up does not - the next one arrives by its own roll.
      */
+    /**
+     * Puts the map's people and things where the map says they stand. Separate
+     * from the creatures on purpose: a map with the creatures switched off - as
+     * most of the loop tests run - still has its signposts.
+     */
+    private void placeNpcs() {
+        for (NpcPlacement placement : map.npcs()) {
+            Actor npc = new Actor(nextActorId++, placement.npc(),
+                    placement.x(), placement.y(), placement.facing());
+            actors.put(npc.id, npc);
+            joined.add(toDto(npc));
+        }
+    }
+
     private Actor spawn(MobDef def, int x, int y, boolean respawns) {
         Actor mob = new Actor(nextActorId++, def, x, y, respawns);
         actors.put(mob.id, mob);
@@ -1406,6 +1559,7 @@ public final class MapRunner implements Runnable {
                 !actor.isPlayer() || actor.online(),
                 actor.kind.name(),
                 actor.isMob() ? actor.mob.tier().name() : null,
+                actor.isNpc() ? actor.npc.kind().name() : null,
                 actor.level, actor.hp, actor.maxHp(), actor.inFight());
     }
 

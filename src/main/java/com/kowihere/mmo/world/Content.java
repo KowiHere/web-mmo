@@ -12,7 +12,15 @@ import java.util.Map;
  * — the JSON the server was started with — so it travels as one thing.
  */
 public record Content(Map<String, MobDef> mobs, Map<String, ItemDef> items,
-                      Map<String, ClassDef> classes, Map<String, SkillDef> skills) {
+                      Map<String, ClassDef> classes, Map<String, SkillDef> skills,
+                      Map<String, NpcDef> npcs) {
+
+    public Content(Map<String, MobDef> mobs, Map<String, ItemDef> items,
+                   Map<String, ClassDef> classes, Map<String, SkillDef> skills) {
+        // NPCs reach a running map through its definition, where they are
+        // placed, so most callers have no reason to name them here.
+        this(mobs, items, classes, skills, Map.of());
+    }
 
     public Content(Map<String, MobDef> mobs, Map<String, ItemDef> items) {
         this(mobs, items, new ClassDefLoader().loadAll());

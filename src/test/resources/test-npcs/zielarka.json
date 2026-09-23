@@ -1,0 +1,22 @@
+{
+  "id": "zielarka",
+  "name": "Zielarka",
+  "kind": "PERSON",
+  "functions": ["DIALOGUE"],
+  "dialogue": {
+    "start": "powitanie",
+    "nodes": {
+      "powitanie": {
+        "text": "Witaj.",
+        "options": [
+          { "text": "Co tu rosnie?", "goto": "ziola" },
+          { "text": "Bywaj.", "action": "END" }
+        ]
+      },
+      "ziola": {
+        "text": "Krwawnik i dziurawiec.",
+        "options": [ { "text": "Wroce.", "goto": "powitanie" } ]
+      }
+    }
+  }
+}

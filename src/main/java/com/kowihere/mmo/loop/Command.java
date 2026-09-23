@@ -57,4 +57,22 @@ public sealed interface Command {
     /** Put one earned point into a skill. */
     record Learn(Client client, String skillId) implements Command {
     }
+
+    /** Start talking to somebody standing next to you. */
+    record Talk(Client client, int npcId) implements Command {
+    }
+
+    /**
+     * Answer the question just asked.
+     *
+     * @param option an index into the options last sent to this client, not a
+     *               node id - which is the difference between a conversation
+     *               and a list of nodes anybody may ask for by name.
+     */
+    record Choose(Client client, int option) implements Command {
+    }
+
+    /** Close the conversation. */
+    record StopTalking(Client client) implements Command {
+    }
 }
