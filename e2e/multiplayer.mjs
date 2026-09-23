@@ -355,8 +355,12 @@ try {
     // attempt proves nothing either way.
     let wounded = false;
     let killed = false;
-    const huntUntil = Date.now() + 120_000;
-    while (Date.now() < huntUntil && !killed) {
+    let looted = false;
+    // Kept up until something is actually in the bag, not merely until
+    // something died: only the boar drops every time, and a wolf that dies
+    // without leaving anything is the loot table working rather than failing.
+    const huntUntil = Date.now() + 150_000;
+    while (Date.now() < huntUntil && !(killed && looted)) {
         // No fleeing here: a fight already under way is as likely to end in a
         // kill as a fresh one, and running from it wastes a round every time.
         const busy = await ala.evaluate(() => {
@@ -373,10 +377,12 @@ try {
         const seen = await ala.evaluate((ids) => ({
             hurt: [...state.actors.values()].some((a) => a.kind === 'MOB' && a.hp < a.maxHp),
             gone: ids.some((id) => !state.actors.has(id)),
+            carrying: state.bag ? (state.bag.carried || []).length : 0,
         }), creaturesAtStart);
         if (seen.hurt && !wounded && shots) await ala.screenshot({ path: `${shots}/walka.png` });
         wounded = wounded || seen.hurt;
         killed = killed || seen.gone;
+        looted = looted || seen.carrying > 0;
     }
 
     wounded
@@ -443,11 +449,8 @@ try {
     const panelOpen = await ala.evaluate(() => !document.getElementById('panel').hidden);
     panelOpen ? ok('the character panel opens') : fail('the panel did not open');
 
-    const carried = await ala
-        .waitForFunction(() => (state.bag && state.bag.carried.length ? state.bag.carried : null),
-            null, { timeout: 30_000 })
-        .then((handle) => handle.jsonValue())
-        .catch(() => null);
+    const carried = await ala.evaluate(() =>
+        (state.bag && state.bag.carried.length ? state.bag.carried : null));
 
     if (!carried) {
         fail('nothing was ever looted, so there is nothing to wear');
@@ -506,6 +509,86 @@ try {
     stepWithPanel
         ? ok('the character still walks with the panel open')
         : fail('the open panel swallowed the movement keys');
+
+    // ---- energy fills, and buys something --------------------------------
+    // The bar that replaced mana. Mana was always full and bought nothing; the
+    // only interesting thing about energy is that it moves, so that is what
+    // this watches.
+    const startingEnergy = await ala.evaluate(() => state.you.energy);
+    startingEnergy === 0
+        ? ok('energy starts at nothing outside a fight')
+        : fail(`energy was ${startingEnergy} before a single blow`);
+
+    // Ala is a mage, so she spends her one point on her own skill.
+    await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'learn', skillId: 'blyskawica' })));
+    const learned = await ala
+        .waitForFunction(() => (state.skills.skills || []).some((s) => s.id === 'blyskawica' && s.rank > 0),
+            null, { timeout: 10_000 })
+        .then(() => true)
+        .catch(() => false);
+    learned ? ok('a skill point buys a rank') : fail('the point never went in');
+
+    let charged = false;
+    let cast = false;
+    const untilCast = Date.now() + 90_000;
+    while (Date.now() < untilCast && !cast) {
+        const busy = await ala.evaluate(() => {
+            const self = state.actors.get(state.selfId);
+            return !!(self && self.inFight);
+        });
+        if (!busy) {
+            // A wolf for preference: a boar is dead in three rounds, and a mage
+            // cannot charge thirty energy in three rounds. That is the design
+            // working - long fights suit skills, short ones suit swinging - but
+            // it does mean this has to pick a fight that lasts.
+            const prey = await ala.evaluate(() =>
+                [...state.actors.values()].find((a) => a.kind === 'MOB' && a.name === 'Wilk')
+                || [...state.actors.values()].find((a) => a.kind === 'MOB') || null);
+            if (!prey) break;
+            await ala.evaluate((id) => state.ws.send(JSON.stringify({ type: 'attack', targetId: id })), prey.id);
+        }
+        await ala.waitForTimeout(1_200);
+
+        const seen = await ala.evaluate(() => ({
+            energy: state.you.energy,
+            inFight: !!(state.actors.get(state.selfId) || {}).inFight,
+            bar: !document.getElementById('skillbar').hidden,
+            ready: !!document.querySelector('#skillbar button:not([disabled])'),
+        }));
+        if (seen.energy > 0 && seen.inFight) charged = true;
+        if (seen.bar && seen.ready) {
+            if (shots) await ala.screenshot({ path: `${shots}/energia.png` });
+            const before = seen.energy;
+            // Clicked inside the page rather than through the driver: a fight
+            // can end between resolving the button and pressing it, and then
+            // the driver is aiming at an element that no longer exists.
+            await ala.evaluate(() => {
+                const button = document.querySelector('#skillbar button:not([disabled])');
+                if (button) button.click();
+            });
+            cast = await ala
+                .waitForFunction((was) => state.you.energy < was, before, { timeout: 8_000 })
+                .then(() => true)
+                .catch(() => false);
+        }
+    }
+
+    charged
+        ? ok('energy charges round by round once a fight starts')
+        : fail('energy never moved during a fight');
+    cast
+        ? ok('a skill was thrown from the bar, and it cost energy')
+        : fail('the skill never went off');
+
+    // ---- and it is gone when the fight is --------------------------------
+    await escapeAnyFight(ala);
+    const afterwards = await ala
+        .waitForFunction(() => state.you.energy === 0, null, { timeout: 15_000 })
+        .then(() => true)
+        .catch(() => false);
+    afterwards
+        ? ok('and the bar empties when the fight ends')
+        : fail(`energy survived the fight: ${await ala.evaluate(() => state.you.energy)}`);
 
     // ---- a dropped socket resumes the same character ---------------------
     const previousActor = alaView.selfId;

@@ -104,6 +104,16 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             case "unequip" -> map.submit(new Command.Unequip(client, ItemSlot.parse(message.slot())));
             case "spend" -> map.submit(
                     new Command.Spend(client, Attributes.Attribute.parse(message.attribute())));
+            case "use" -> {
+                if (message.skillId() != null) {
+                    map.submit(new Command.Use(client, message.skillId()));
+                }
+            }
+            case "learn" -> {
+                if (message.skillId() != null) {
+                    map.submit(new Command.Learn(client, message.skillId()));
+                }
+            }
             default -> log.debug("Unknown message type '{}' from {}", message.type(), session.getId());
         }
     }

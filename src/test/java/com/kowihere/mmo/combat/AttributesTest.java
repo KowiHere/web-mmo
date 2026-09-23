@@ -25,15 +25,19 @@ class AttributesTest {
     }
 
     @Test
-    void intellectIsManaAndNothingElseYet() {
+    void intellectIsNotHealthAndNotAWarriorsAttack() {
+        // Intellect used to buy mana, and mana bought nothing. It is now what a
+        // mage's blows are made of - which means it does nothing at all for the
+        // two classes that fight with something else, and that is a real
+        // asymmetry rather than an oversight.
         Attributes plain = new Attributes(5, 5, 5);
         Attributes learned = new Attributes(5, 5, 20);
 
-        assertThat(learned.maxMana()).isGreaterThan(plain.maxMana());
-        // Deliberate: there are no spells to pay for, and an attribute that
-        // quietly improved a sword would be a lie about what it is for.
-        assertThat(learned.attack()).isEqualTo(plain.attack());
         assertThat(learned.maxHp()).isEqualTo(plain.maxHp());
+        assertThat(learned.attack()).isEqualTo(plain.attack());
+        assertThat(Attributes.attackFrom(learned.intellect()))
+                .as("but to whoever fights with it, it is the whole weapon")
+                .isGreaterThan(Attributes.attackFrom(plain.intellect()));
     }
 
     @Test

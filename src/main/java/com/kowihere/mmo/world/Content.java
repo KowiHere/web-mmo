@@ -1,5 +1,7 @@
 package com.kowihere.mmo.world;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -10,13 +12,29 @@ import java.util.Map;
  * — the JSON the server was started with — so it travels as one thing.
  */
 public record Content(Map<String, MobDef> mobs, Map<String, ItemDef> items,
-                      Map<String, ClassDef> classes) {
+                      Map<String, ClassDef> classes, Map<String, SkillDef> skills) {
 
     public Content(Map<String, MobDef> mobs, Map<String, ItemDef> items) {
         this(mobs, items, new ClassDefLoader().loadAll());
     }
 
+    public Content(Map<String, MobDef> mobs, Map<String, ItemDef> items,
+                   Map<String, ClassDef> classes) {
+        this(mobs, items, classes, new SkillDefLoader("classpath:skills/*.json", classes).loadAll());
+    }
+
     public static final Content EMPTY = new Content(Map.of(), Map.of());
+
+    /** Every skill this class may learn, in the order they are offered. */
+    public List<SkillDef> skillsFor(String classId) {
+        List<SkillDef> mine = new ArrayList<>();
+        for (SkillDef skill : skills.values()) {
+            if (skill.availableTo(classId)) {
+                mine.add(skill);
+            }
+        }
+        return List.copyOf(mine);
+    }
 
     /** Creatures with nothing to give. Most tests never look at an item. */
     public static Content ofMobs(Map<String, MobDef> mobs) {

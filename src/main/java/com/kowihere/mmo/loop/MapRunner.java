@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.combat.CombatRules;
+import com.kowihere.mmo.combat.Energy;
 import com.kowihere.mmo.combat.Fight;
 import com.kowihere.mmo.path.AStar;
 import com.kowihere.mmo.protocol.ServerMessages;
@@ -23,6 +24,8 @@ import com.kowihere.mmo.world.ItemDef;
 import com.kowihere.mmo.world.ItemSlot;
 import com.kowihere.mmo.world.LootEntry;
 import com.kowihere.mmo.world.MobDef;
+import com.kowihere.mmo.world.SkillDef;
+import com.kowihere.mmo.world.SkillDefLoader;
 import com.kowihere.mmo.world.RoamingSpawn;
 import com.kowihere.mmo.world.SpawnPoint;
 import org.slf4j.Logger;
@@ -104,6 +107,8 @@ public final class MapRunner implements Runnable {
     private final Set<Integer> pendingYou = new LinkedHashSet<>();
     /** The same, for what they are carrying. */
     private final Set<Integer> pendingBag = new LinkedHashSet<>();
+    /** And for what they have learned. */
+    private final Set<Integer> pendingSkills = new LinkedHashSet<>();
     private final Map<String, Long> nextRoamTick = new HashMap<>();
     private final List<Fight> fights = new ArrayList<>();
     private final List<PendingRespawn> respawning = new ArrayList<>();
@@ -263,6 +268,8 @@ public final class MapRunner implements Runnable {
                 case Command.Equip equip -> handleEquip(equip);
                 case Command.Unequip unequip -> handleUnequip(unequip);
                 case Command.Spend spend -> handleSpend(spend);
+                case Command.Use use -> handleUse(use);
+                case Command.Learn learn -> handleLearn(learn);
             }
         }
     }
@@ -294,6 +301,7 @@ public final class MapRunner implements Runnable {
         sendInit(actor, join.client());
         sendYou(actor);
         sendBag(actor);
+        sendSkills(actor);
     }
 
     private void attach(Actor actor, Command.Join join) {
@@ -311,6 +319,7 @@ public final class MapRunner implements Runnable {
         }
         sendYou(actor);
         sendBag(actor);
+        sendSkills(actor);
     }
 
     /**
@@ -341,6 +350,8 @@ public final class MapRunner implements Runnable {
         actor.attributes = saved.attributes();
         actor.unspentPoints = Math.max(0, saved.unspentPoints());
         actor.inventory.restore(saved.items(), content.items());
+        actor.skills.restore(saved.skills(), content.skills());
+        actor.skillPoints = Math.max(0, saved.skillPoints());
         // -1 means "as healthy as this level allows", which is how a new
         // character and every row predating combat is stored.
         actor.hp = saved.hp() < 0 ? actor.maxHp() : Math.min(saved.hp(), actor.maxHp());
@@ -527,6 +538,75 @@ public final class MapRunner implements Runnable {
         sendBag(actor);
     }
 
+    /**
+     * Asks to use a skill in the coming round.
+     *
+     * <p>Queued rather than resolved here, exactly like fleeing: a round is the
+     * unit in which everything in a fight happens, and a skill that landed the
+     * instant a key was pressed would be the one thing that did not wait for
+     * one.
+     */
+    private void handleUse(Command.Use use) {
+        Actor actor = byClient.get(use.client());
+        if (actor == null) {
+            return;
+        }
+        if (!actor.inFight()) {
+            sendError(actor, "Umiejętności przydają się dopiero w walce.");
+            return;
+        }
+        SkillDef skill = content.skills().get(use.skillId());
+        if (skill == null || !actor.skills.knows(skill.id())) {
+            return; // asking for something unlearned says nothing worth answering
+        }
+        if (skill.isPassive()) {
+            sendError(actor, skill.name() + " działa cały czas - nie da się jej użyć.");
+            return;
+        }
+        if (actor.energy < skill.cost()) {
+            sendError(actor, "Za mało energii na: " + skill.name()
+                    + " (" + actor.energy + "/" + skill.cost() + ").");
+            return;
+        }
+        actor.pendingSkill = skill.id();
+    }
+
+    /** Puts a point into a skill. Refused in a fight, like everything else. */
+    private void handleLearn(Command.Learn learn) {
+        Actor actor = byClient.get(learn.client());
+        if (actor == null) {
+            return;
+        }
+        if (actor.inFight()) {
+            sendError(actor, "Nauka poczeka do końca walki.");
+            return;
+        }
+        if (actor.skillPoints <= 0) {
+            sendError(actor, "Nie masz punktów umiejętności.");
+            return;
+        }
+        SkillDef skill = content.skills().get(learn.skillId());
+        if (skill == null) {
+            return;
+        }
+        String classId = actor.characterClass == null ? null : actor.characterClass.id();
+        if (!skill.availableTo(classId)) {
+            sendError(actor, skill.name() + " nie jest dla tej klasy.");
+            return;
+        }
+        if (actor.skills.rankOf(skill.id()) >= skill.maxRank()) {
+            sendError(actor, skill.name() + " jest już na najwyższej randze.");
+            return;
+        }
+
+        actor.skillPoints--;
+        actor.skills.raise(skill.id());
+        actor.dirty = true;
+        actor.skillsDirty = true;
+        sendYou(actor);
+        sendSkills(actor);
+    }
+
     private void handleChat(Command.Chat message) {
         Actor actor = byClient.get(message.client());
         if (actor == null || message.text() == null) {
@@ -639,6 +719,12 @@ public final class MapRunner implements Runnable {
 
         person.path.clear();
         creature.path.clear();
+        // Every fight starts from nothing. Carrying energy in would make the
+        // first round of the second fight worth more than the first round of
+        // the first, and the best opening move would be to pick a fight you did
+        // not want in order to arrive at the one you did already charged.
+        person.energy = 0;
+        person.pendingSkill = null;
         fightChanges.add(new FightDto(person.id, true));
         fightChanges.add(new FightDto(creature.id, true));
         sendYou(person);
@@ -654,6 +740,12 @@ public final class MapRunner implements Runnable {
     }
 
     private void resolveRound(Fight fight) {
+        // Energy first, so the round a character is about to fight is one it has
+        // already been paid for. Charging afterwards would mean the last round
+        // of every fight topping up an energy bar that is about to be thrown
+        // away.
+        chargeEnergy(fight);
+
         // Anyone trying to leave settles that first: succeeding means no blow is
         // struck at them this round, failing means they lose their own.
         for (int playerId : new ArrayList<>(fight.players())) {
@@ -692,6 +784,31 @@ public final class MapRunner implements Runnable {
         endIfOver(fight);
     }
 
+    /**
+     * One round's worth of energy for everyone still in the fight.
+     *
+     * <p>Creatures have none. Giving them energy would mean giving them skills
+     * to spend it on, and that is a milestone of its own rather than something
+     * to slip in here.
+     */
+    private void chargeEnergy(Fight fight) {
+        for (int playerId : fight.players()) {
+            Actor player = actors.get(playerId);
+            if (player == null || player.isMob()) {
+                continue;
+            }
+            int before = player.energy;
+            player.energy = Energy.charged(player.energy, regenerationRank(player));
+            if (player.energy != before) {
+                sendYou(player);
+            }
+        }
+    }
+
+    private int regenerationRank(Actor actor) {
+        return actor.skills.rankOf(SkillDefLoader.REGENERATION_ID);
+    }
+
     private Actor pickTarget(Fight fight, Actor attacker) {
         List<Integer> opponents = attacker.isMob() ? fight.players() : fight.mobs();
         for (int id : opponents) {
@@ -711,16 +828,56 @@ public final class MapRunner implements Runnable {
      * attack speed that fits a turn: sometimes you get two in.
      */
     private void strike(Actor attacker, Actor target, Fight fight) {
-        if (!swing(attacker, target, fight)) {
+        SkillDef skill = claimPendingSkill(attacker);
+        if (skill != null) {
+            // Paid for whether or not a single blow lands. An escape that gave
+            // the energy back would make using a skill free against anything
+            // quick enough to dodge, and using it every round the obvious play.
+            attacker.energy -= skill.cost();
+            sendYou(attacker);
+            chat.add(new ChatDto(attacker.id, attacker.name, "* " + skill.name() + " *"));
+            for (int blow = 0; blow < skill.blows(); blow++) {
+                if (!swing(attacker, target, fight, skill)) {
+                    return;
+                }
+            }
+            return;
+        }
+
+        if (!swing(attacker, target, fight, null)) {
             return; // the target is down; nothing left to hit
         }
         if (combat.landsSecondBlow(attacker.secondBlowChance())) {
-            swing(attacker, target, fight);
+            swing(attacker, target, fight, null);
         }
     }
 
-    /** @return true if the target is still standing and can be hit again */
-    private boolean swing(Actor attacker, Actor target, Fight fight) {
+    /**
+     * The skill this actor asked for, if it can still afford it, taking the
+     * request either way.
+     *
+     * <p>Cleared even when it cannot be paid for: a request belongs to the round
+     * it was made in, and one saved up would go off later, in a round the player
+     * was not thinking about.
+     */
+    private SkillDef claimPendingSkill(Actor actor) {
+        String asked = actor.pendingSkill;
+        actor.pendingSkill = null;
+        if (asked == null) {
+            return null;
+        }
+        SkillDef skill = content.skills().get(asked);
+        if (skill == null || skill.isPassive() || actor.energy < skill.cost()) {
+            return null;
+        }
+        return skill;
+    }
+
+    /**
+     * @param skill what is being struck with, or null for an ordinary blow
+     * @return true if the target is still standing and can be hit again
+     */
+    private boolean swing(Actor attacker, Actor target, Fight fight, SkillDef skill) {
         if (combat.dodges(target.dodgeChance())) {
             // Reported as a blow for zero, so the client can say "0" where it
             // would have said a number. A miss that shows nothing at all looks
@@ -729,7 +886,15 @@ public final class MapRunner implements Runnable {
             return true;
         }
 
-        int dealt = combat.damage(attacker.attack(), target.armor(), attacker.armorIgnored());
+        int attack = attacker.attack();
+        double armorIgnored = attacker.armorIgnored();
+        if (skill != null) {
+            attack = (int) Math.round(attack * skill.power());
+            if (skill.overridesArmorIgnored()) {
+                armorIgnored = skill.armorIgnored();
+            }
+        }
+        int dealt = combat.damage(attack, target.armor(), armorIgnored);
         target.hp = Math.max(0, target.hp - dealt);
         damage.add(new DamageDto(attacker.id, target.id, dealt, target.hp));
 
@@ -822,6 +987,7 @@ public final class MapRunner implements Runnable {
             // Points, not statistics. A level is worth what the player decides
             // it is worth, which is the whole reason attributes exist.
             player.unspentPoints += Attributes.POINTS_PER_LEVEL * (player.level - before);
+            player.skillPoints += player.level - before;
             player.hp = player.maxHp(); // a level is worth a full recovery
             chat.add(new ChatDto(player.id, player.name, "* osiąga poziom " + player.level + " *"));
         }
@@ -833,7 +999,12 @@ public final class MapRunner implements Runnable {
         fight.remove(actor.id);
         actor.fight = null;
         actor.approaching = 0;
+        actor.energy = 0; // it belongs to the fight, and the fight is over for them
+        actor.pendingSkill = null;
         fightChanges.add(new FightDto(actor.id, false));
+        if (!actor.isMob()) {
+            sendYou(actor);
+        }
         endIfOver(fight);
     }
 
@@ -846,7 +1017,12 @@ public final class MapRunner implements Runnable {
             if (actor != null) {
                 actor.fight = null;
                 actor.approaching = 0;
+                actor.energy = 0;
+                actor.pendingSkill = null;
                 fightChanges.add(new FightDto(id, false));
+                if (!actor.isMob()) {
+                    sendYou(actor);
+                }
             }
         }
         fights.remove(fight);
@@ -1112,6 +1288,13 @@ public final class MapRunner implements Runnable {
             }
         }
         pendingBag.clear();
+        for (int id : pendingSkills) {
+            Actor actor = actors.get(id);
+            if (actor != null) {
+                sendSkillsNow(actor);
+            }
+        }
+        pendingSkills.clear();
     }
 
     private void sendInit(Actor self, Client client) {
@@ -1195,13 +1378,16 @@ public final class MapRunner implements Runnable {
         // which is every save made by somebody simply walking across a map.
         List<StoredItem> items = actor.itemsDirty ? actor.inventory.stored() : null;
         actor.itemsDirty = false;
+        List<StoredSkill> skills = actor.skillsDirty ? actor.skills.stored() : null;
+        actor.skillsDirty = false;
         // A copy, never the live actor: anything handed across threads must not
         // be something the tick is still writing to.
         persistence.save(new ActorSnapshot(actor.nameKey, actor.name, map.id(),
                 actor.x, actor.y, actor.dir.name(),
                 actor.level, actor.xp, actor.hp, actor.weakenedUntil,
                 actor.attributes, actor.unspentPoints, items,
-                actor.characterClass == null ? null : actor.characterClass.id()));
+                actor.characterClass == null ? null : actor.characterClass.id(),
+                actor.skillPoints, skills));
     }
 
     private ActorDto toDto(Actor actor) {
@@ -1249,17 +1435,38 @@ public final class MapRunner implements Runnable {
                 characterClass == null ? null : characterClass.id(),
                 characterClass == null ? null : characterClass.name(),
                 actor.hp, actor.maxHp(),
-                // Mana has no spender yet. It is here because intellect has to
-                // be worth something a player can see, and because a bar added
-                // later would mean a protocol change for a feature that was
-                // always going to need it.
-                actor.maxMana(), actor.maxMana(),
+                actor.energy, Energy.MAX, Energy.perRound(regenerationRank(actor)),
                 actor.level, actor.xp, actor.xp - floor, ceiling - floor,
                 actor.weakenedUntil, !actor.isAlive(),
-                total.strength(), total.agility(), total.intellect(), actor.unspentPoints,
+                total.strength(), total.agility(), total.intellect(),
+                actor.unspentPoints, actor.skillPoints,
                 actor.attack(), actor.armor(),
                 (int) Math.round(actor.dodgeChance() * 100),
                 (int) Math.round(actor.secondBlowChance() * 100)));
+        if (frame != null) {
+            actor.client.send(frame);
+        }
+    }
+
+    private void sendSkills(Actor actor) {
+        if (actor.isMob() || actor.client == null) {
+            return;
+        }
+        pendingSkills.add(actor.id);
+    }
+
+    private void sendSkillsNow(Actor actor) {
+        if (actor.isMob() || actor.client == null) {
+            return;
+        }
+        String classId = actor.characterClass == null ? null : actor.characterClass.id();
+        List<ServerMessages.SkillDto> mine = new ArrayList<>();
+        for (SkillDef skill : content.skillsFor(classId)) {
+            int rank = actor.skills.rankOf(skill.id());
+            mine.add(new ServerMessages.SkillDto(skill.id(), skill.name(), skill.description(),
+                    rank, skill.maxRank(), skill.cost(), skill.isPassive()));
+        }
+        String frame = serialise(new ServerMessages.Skills(actor.skillPoints, mine));
         if (frame != null) {
             actor.client.send(frame);
         }

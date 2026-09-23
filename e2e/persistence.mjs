@@ -37,7 +37,15 @@ const character = account.character || `Trwalka-${account.login.split('-')[1]}`;
 const here = () => page.evaluate(() => {
     const self = state.actors.get(state.selfId);
     const worn = state.bag ? (state.bag.worn || []).map((item) => item.defId) : [];
-    return { x: self.x, y: self.y, name: self.name, worn, classId: state.you.classId };
+    const ranks = (state.skills ? state.skills.skills || [] : [])
+        .filter((skill) => skill.rank > 0)
+        .map((skill) => `${skill.id}:${skill.rank}`);
+    return {
+        x: self.x, y: self.y, name: self.name, worn, ranks,
+        classId: state.you.classId,
+        // Recorded so the second half can check it is *not* carried across.
+        energy: state.you.energy,
+    };
 });
 
 /** Kills whatever is nearest until something is in the bag, then wears it. */
@@ -100,6 +108,13 @@ if (mode === 'record') {
         await page.waitForTimeout(STEP_MS + 120);
     }
 
+    // A rank in something, so "the skill survived" is a real claim rather than
+    // one about a character that never learned anything.
+    await page.evaluate(() => state.ws.send(JSON.stringify({ type: 'learn', skillId: 'regeneracja' })));
+    await page.waitForFunction(
+        () => (state.skills.skills || []).some((s) => s.id === 'regeneracja' && s.rank > 0),
+        null, { timeout: 10_000 });
+
     const worn = await findAndWearSomething();
     if (!worn) {
         console.error('FAIL - could not find anything to wear; nothing to prove about items');
@@ -109,7 +124,7 @@ if (mode === 'record') {
     const at = await here();
     writeFileSync(file, JSON.stringify({ ...account, character, ...at }));
     console.log(`recorded ${at.name} the ${at.classId} at ${at.x},${at.y}`
-        + ` wearing ${at.worn.join(', ')}`);
+        + ` wearing ${at.worn.join(', ')} and knowing ${at.ranks.join(', ')}`);
 } else {
     // Logging in, not registering: the account has to have survived too.
     await page.fill('#login-name', account.login);
@@ -132,6 +147,23 @@ if (mode === 'record') {
         console.log(`ok   - and still a ${at.classId}`);
     } else {
         console.error(`FAIL - was a ${account.classId}, came back a ${at.classId}`);
+        exitCode = 1;
+    }
+
+    const forgotten = (account.ranks || []).filter((rank) => !at.ranks.includes(rank));
+    if (!forgotten.length) {
+        console.log(`ok   - and still knowing ${at.ranks.join(', ')}`);
+    } else {
+        console.error(`FAIL - forgotten across the restart: ${forgotten.join(', ')}`);
+        exitCode = 1;
+    }
+
+    // The other half of the claim: energy is deliberately *not* stored, because
+    // it belongs to a fight. Coming back charged would mean it had been.
+    if (at.energy === 0) {
+        console.log('ok   - and carrying no energy out of a fight it is no longer in');
+    } else {
+        console.error(`FAIL - came back holding ${at.energy} energy`);
         exitCode = 1;
     }
 

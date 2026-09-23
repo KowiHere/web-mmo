@@ -198,7 +198,7 @@ every level pays **three points for the player to spend**, on whatever they like
 ```
 maxHp   = 40 + 5 * strength        dodge       = min(35%, 1% * agility)
 attack  =  2 + the attribute       second blow = min(40%, 1.2% * agility)
-          your class fights with   maxMana     = 10 + 5 * intellect
+          your class fights with
 armour  =  1 + equipment
 ```
 
@@ -216,11 +216,12 @@ part of speed that fits a turn — sometimes the turn is two blows. Both of its
 payoffs are capped, because a character that eventually cannot be hit is a
 character in a fight that never ends.
 
-**Intellect buys mana, and mana buys nothing yet.** There are no spells to pay
-for. It is not what makes a mage a mage either — that is the class, which draws
-its blows from intellect and sends them through armour. The bar is on screen so
-that a resource which will matter later is already visible, and said plainly
-here because a number that never moves looks broken rather than unfinished.
+**Intellect is the mage's attribute and nobody else's.** Strength is health for
+everyone and agility is evasion for everyone, but intellect only does anything
+for the class whose blows are made of it. That is a real asymmetry rather than
+an oversight, and it is the next thing classes will have to answer for.
+
+It used to buy mana. Mana is gone: see **Energy**, below.
 
 Only attributes, points and what is worn are stored. Not one derived number is.
 
@@ -259,10 +260,68 @@ class the content no longer has falls back to the warrior rather than refusing
 to let anyone in: losing a character to a renamed file would be far worse than
 swinging a sword for an afternoon until somebody notices.
 
-**Mana is still spent by nothing.** A mage is not a mage because of mana — it is
-a mage because its blows are made of intellect and go through armour. Mana is
-waiting for skills, and this is the milestone that makes intellect worth having
-in the meantime.
+A mage is not a mage because of a resource — it is a mage because its blows are
+made of intellect and go through armour. What it spends is the same energy
+everybody spends; see below.
+
+### Energy and skills
+
+Energy belongs to a **fight**, not to a character:
+
+```
+ceiling    100, the same for everybody
+at the start of a fight   0
+each round +10, and +5 more for every rank of Regeneracja
+when the fight ends       0 again
+```
+
+This replaced mana, and the difference is the entire point. Mana was a bar that
+was always full, never moved and was spent by nothing — a decoration. Energy is
+empty when you walk into a fight and fills while you are in one, so the question
+it asks is a real one: swing now, or wait a round and throw something.
+
+**Nothing about energy is stored.** It always starts at zero, so a stored value
+could only ever read back as the one value it can have.
+
+The ceiling is flat on purpose: the **only** thing that decides how fast you can
+afford anything is how many points went into charging faster. One lever, in one
+place. Were the pool set by an attribute as well, the same thing would be tuned
+from two directions at once.
+
+A consequence worth saying out loud, because it looks like a broken skill the
+first time: **a boar dies before a mage can charge a spell.** Long fights suit
+skills, short ones suit swinging. That is the design, not a bug.
+
+Skills are content like everything else, in `src/main/resources/skills/*.json`,
+with one shape of effect — a multiplier on your attack, a number of blows, and
+optionally how much armour those blows pass through:
+
+| | | |
+| --- | --- | --- |
+| Wojownik | Potężny cios | one blow at double damage |
+| Łowca | Seria | three weaker ones, reusing agility's second-blow machinery |
+| Mag | Błyskawica | one blow that armour barely stops |
+| everyone | Regeneracja | passive: each rank charges you faster |
+
+Three numbers rather than three kinds of effect, so a new idea is a new file
+rather than new code. The loader refuses a skill belonging to a class that does
+not exist, one that is paid for and strikes nothing, one nobody could ever
+afford, and content with no `regeneracja` in it at all — that last one because
+otherwise everybody would charge at the base rate for ever and no point spent on
+it could do anything, which nothing else would report.
+
+**Skill points are separate from attribute points**, and there is one per level
+*including the first*, so a brand new character has a choice to make rather than
+a system it cannot see yet. Attribute points stay at three per level after the
+first. Two simple rules side by side read better than one rule with an exception.
+
+Using a skill is a request for the coming **round**, settled where fleeing is
+settled. It is paid for whether or not a single blow lands: energy returned by a
+dodge would make throwing it every round the obvious play. Too little energy and
+you are told so and swing normally, rather than losing the round to nothing.
+
+Creatures have no energy and no skills. Giving them either means giving them
+something to spend it on, which is a milestone of its own.
 
 ### Items
 
@@ -360,8 +419,8 @@ That covers what unit tests cannot — two people seeing each other move, the
 server refusing an illegal destination, a dropped socket resuming the same
 character, a fight fought from the browser — one attack command, health bars
 falling, a kill paying experience, and a death putting the character back at the
-spawn weakened — and the loot from that kill being worn from the character
-panel.
+spawn weakened — the loot from that kill being worn from the character panel,
+and energy filling round by round until a skill can be thrown with it.
 
 The combat checks are deliberately written as "something was wounded, something
 died" rather than naming a particular creature. The map hunts back, so which
@@ -377,8 +436,10 @@ e2e/restart-check.sh
 
 It registers an account, walks the character somewhere, kills something and puts
 on what it dropped, kills the server, starts it again, and then **logs in**
-rather than registering — so it fails unless the account, the character and the
-item all survived. Nothing inside a single process can prove that: a reconnect
+rather than registering — so it fails unless the account, the character, its
+class, its skill ranks and the item all survived. It also checks the opposite
+for energy: coming back holding any would mean it had been stored, and it is
+not meant to be. Nothing inside a single process can prove that: a reconnect
 within the grace period finds the character still standing in memory, so an item
 that "came back" there never went near the database.
 
@@ -413,11 +474,19 @@ Client to server:
 | `equip`  | itemId         | put on something from the bag          |
 | `unequip`| slot           | take off what is in that slot          |
 | `spend`  | attribute      | spend one earned point                 |
+| `use`    | skillId        | use a skill in the coming round        |
+| `learn`  | skillId        | put one earned point into a skill      |
 | `chat`   | text           | say something on this map              |
 
 Server to client: `init` (the whole world once), `delta` (what changed), `you`
-(your own character and its class, to your socket only), `bag` (what it is
-wearing and carrying, likewise), `error`.
+(your own character, its class and its energy, to your socket only), `bag` (what
+it is wearing and carrying, likewise), `skills` (what it has learned, likewise),
+`error`.
+
+Notably **not** in the `skills` frame: whether each skill can be afforded right
+now. That changes every round while the frame is sent a few times an hour, so it
+would be a stale answer to a question the client can settle itself, having the
+cost in that frame and the energy in every `you`.
 
 `bag` is separate from `you` on purpose: `you` goes out at every scratch, and a
 bag that changes a few times an hour has no business riding along with it. It is
@@ -439,10 +508,13 @@ pathfinding.
 
 ## What is not here yet
 
-**No skills and no spells**, so mana is a number with nothing to spend it on,
-and a class differs from another only in what its blows are made of. That is
-enough to make the three worth choosing between, and honestly less than the
-word "class" usually promises.
+**One skill each, and only one shape of skill.** Nothing heals, nothing shields,
+nothing lasts more than the round it happens in, and no skill requires another
+first. Every one of those is its own balance question; this milestone only had
+to show that a resource and the spending of it work at all.
+
+**Intellect still does nothing for two of the three classes** — see above. That
+is the most obvious thing left crooked.
 **No rolled bonuses or rarities** — an item is exactly its definition. **No loot
 on the ground**, no trading and no shops: a reward goes straight into the bag.
 **No PvP**; `attack` refuses anything that is not a creature.
@@ -451,16 +523,16 @@ Also missing: interactive NPCs, more than one map, and instances with parties.
 No password reset or email confirmation either — both need to send mail, which
 means a service to run.
 
-Roughly in order: skills, which is what mana is waiting for and what will give
-each class something to do beyond hitting harder, then interactive NPCs, then
-instances and parties, which is what heroes and colossi are waiting on.
+Roughly in order: more skills and skills that do more than damage, then
+interactive NPCs, then instances and parties, which is what heroes and colossi
+are waiting on.
 
 ## Layout
 
 ```
 world/       maps, creatures, items and classes — immutable, shared
 path/        A* over the collision grid    — server-side only
-combat/      attributes, damage, experience — pure functions, injected randomness
+combat/      attributes, energy, damage, experience — pure functions, injected randomness
 loop/        the game loop, commands, creature behaviour — no Spring below this line
 account/     registration, login, sessions — passwords never reach the loop
 net/         WebSocket transport           — authenticates, then decides nothing

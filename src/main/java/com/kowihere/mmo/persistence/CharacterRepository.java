@@ -4,6 +4,7 @@ import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.loop.ActorSnapshot;
 import com.kowihere.mmo.loop.SavedCharacter;
 import com.kowihere.mmo.loop.StoredItem;
+import com.kowihere.mmo.loop.StoredSkill;
 import com.kowihere.mmo.world.Direction;
 import com.kowihere.mmo.world.ItemSlot;
 import org.slf4j.Logger;
@@ -35,7 +36,7 @@ public class CharacterRepository {
 
     private static final String SELECT =
             "SELECT name_key, name, map_id, x, y, dir, level, xp, hp, weakened_until,"
-                    + " strength, agility, intellect, unspent_points, class_id"
+                    + " strength, agility, intellect, unspent_points, class_id, skill_points"
                     + " FROM game_character";
 
     /**
@@ -46,7 +47,7 @@ public class CharacterRepository {
     public Optional<SavedCharacter> find(String nameKey) {
         return jdbc.query(SELECT + " WHERE name_key = ?", CharacterRepository::read, nameKey)
                 .stream().findFirst()
-                .map(character -> withItems(character, itemsOf(nameKey)));
+                .map(character -> withBelongings(character, itemsOf(nameKey), skillsOf(nameKey)));
     }
 
     /**
@@ -66,11 +67,20 @@ public class CharacterRepository {
                 nameKey);
     }
 
-    private static SavedCharacter withItems(SavedCharacter character, List<StoredItem> items) {
+    public List<StoredSkill> skillsOf(String nameKey) {
+        return jdbc.query("SELECT skill_id, rank FROM character_skill"
+                        + " WHERE character_key = ? ORDER BY skill_id",
+                (rs, row) -> new StoredSkill(rs.getString("skill_id"), rs.getInt("rank")),
+                nameKey);
+    }
+
+    private static SavedCharacter withBelongings(SavedCharacter character, List<StoredItem> items,
+                                                 List<StoredSkill> skills) {
         return new SavedCharacter(character.nameKey(), character.name(), character.mapId(),
                 character.x(), character.y(), character.dir(), character.level(), character.xp(),
                 character.hp(), character.weakenedUntil(), character.attributes(),
-                character.unspentPoints(), items, character.classId());
+                character.unspentPoints(), items, character.classId(),
+                character.skillPoints(), skills);
     }
 
     /**
@@ -87,14 +97,14 @@ public class CharacterRepository {
     public void create(long accountId, SavedCharacter character) {
         jdbc.update("INSERT INTO game_character"
                         + " (name_key, name, map_id, x, y, dir, last_seen, account_id, level, xp,"
-                        + " hp, class_id, strength, agility, intellect)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        + " hp, class_id, strength, agility, intellect, skill_points)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 character.nameKey(), character.name(), character.mapId(),
                 character.x(), character.y(), character.dir().name(),
                 Timestamp.from(Instant.now()), accountId,
                 character.level(), character.xp(), character.hp(), character.classId(),
                 character.attributes().strength(), character.attributes().agility(),
-                character.attributes().intellect());
+                character.attributes().intellect(), character.skillPoints());
     }
 
     private static SavedCharacter read(java.sql.ResultSet rs, int row) throws java.sql.SQLException {
@@ -113,7 +123,9 @@ public class CharacterRepository {
                 new Attributes(rs.getInt("strength"), rs.getInt("agility"), rs.getInt("intellect")),
                 rs.getInt("unspent_points"),
                 List.of(),
-                rs.getString("class_id"));
+                rs.getString("class_id"),
+                rs.getInt("skill_points"),
+                List.of());
     }
 
     /**
@@ -128,7 +140,7 @@ public class CharacterRepository {
                 "UPDATE game_character SET map_id = ?, x = ?, y = ?, dir = ?, last_seen = ?,"
                         + " level = ?, xp = ?, hp = ?, weakened_until = ?,"
                         + " strength = ?, agility = ?, intellect = ?, unspent_points = ?,"
-                        + " class_id = ?"
+                        + " class_id = ?, skill_points = ?"
                         + " WHERE name_key = ?",
                 snapshot.mapId(), snapshot.x(), snapshot.y(), snapshot.dir(),
                 Timestamp.from(Instant.now()),
@@ -136,6 +148,7 @@ public class CharacterRepository {
                 snapshot.weakenedUntil() <= 0 ? null : new Timestamp(snapshot.weakenedUntil()),
                 snapshot.attributes().strength(), snapshot.attributes().agility(),
                 snapshot.attributes().intellect(), snapshot.unspentPoints(), snapshot.classId(),
+                snapshot.skillPoints(),
                 snapshot.nameKey());
         if (updated == 0) {
             log.warn("No character row for '{}'; its position was not saved", snapshot.nameKey());
@@ -144,6 +157,22 @@ public class CharacterRepository {
         if (snapshot.items() != null) {
             replaceItems(snapshot.nameKey(), snapshot.items());
         }
+        if (snapshot.skills() != null) {
+            replaceSkills(snapshot.nameKey(), snapshot.skills());
+        }
+    }
+
+    /** The same replace-the-lot as items, for the same reasons and just as rarely. */
+    private void replaceSkills(String nameKey, List<StoredSkill> skills) {
+        jdbc.update("DELETE FROM character_skill WHERE character_key = ?", nameKey);
+        if (skills.isEmpty()) {
+            return;
+        }
+        jdbc.batchUpdate("INSERT INTO character_skill (character_key, skill_id, rank)"
+                        + " VALUES (?, ?, ?)",
+                skills.stream()
+                        .map(skill -> new Object[]{nameKey, skill.skillId(), skill.rank()})
+                        .toList());
     }
 
     /**

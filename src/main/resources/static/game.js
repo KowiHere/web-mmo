@@ -71,6 +71,7 @@ const state = {
     lastKeyMoveAt: 0,
     you: null,
     bag: null,
+    skills: null,
     floaters: [],
     stats: { frames: 0, fps: 0, deltas: 0, deltaRate: 0, sampledAt: 0 },
 };
@@ -91,6 +92,9 @@ const pointsEl = document.getElementById('points');
 const equipmentEl = document.getElementById('equipment');
 const bagEl = document.getElementById('bag');
 const bagCountEl = document.getElementById('bag-count');
+const skillsEl = document.getElementById('skills');
+const skillPointsEl = document.getElementById('skill-points');
+const skillbarEl = document.getElementById('skillbar');
 
 // ---------------------------------------------------------------- networking
 
@@ -125,6 +129,7 @@ function connect(characterKey) {
         else if (msg.type === 'delta') applyDelta(msg);
         else if (msg.type === 'you') applyYou(msg);
         else if (msg.type === 'bag') applyBag(msg);
+        else if (msg.type === 'skills') applySkills(msg);
         else if (msg.type === 'error') logSystem(msg.message);
     };
 
@@ -227,7 +232,10 @@ function applyDelta(msg) {
     for (const change of msg.fights || []) {
         const actor = state.actors.get(change.id);
         if (actor) actor.inFight = change.inFight;
-        if (change.id === state.selfId) updateFleeButton();
+        if (change.id === state.selfId) {
+            updateFleeButton();
+            renderSkillBar();
+        }
     }
 
     // Arrivals and departures last, on purpose. A delta says what happened and
@@ -252,12 +260,19 @@ function applyYou(msg) {
     if (wasLevel && msg.level > wasLevel) logSystem(`Awans na poziom ${msg.level}!`);
     renderSheet();
     renderPanel();
+    renderSkillBar();
     updateFleeButton();
 }
 
 function applyBag(msg) {
     state.bag = msg;
     renderPanel();
+}
+
+function applySkills(msg) {
+    state.skills = msg;
+    renderPanel();
+    renderSkillBar();
 }
 
 function renderSheet() {
@@ -272,10 +287,10 @@ function renderSheet() {
     sheetEl.innerHTML = '';
     sheetEl.append(
         bar('hp', `${you.hp} / ${you.maxHp}`, healthPercent),
-        // Mana has no spender yet - intellect is the attribute classes will
-        // eventually pay from. Shown rather than hidden so an item granting
-        // intellect visibly does something today.
-        bar('mana', `${you.mana} / ${you.maxMana}`, you.maxMana > 0 ? 100 : 0),
+        // Energy belongs to the fight: empty outside one, filling inside. That
+        // it moves at all is the whole difference from the mana it replaced.
+        bar('energy', `${you.energy} / ${you.maxEnergy}`,
+            you.maxEnergy > 0 ? (you.energy / you.maxEnergy) * 100 : 0),
         bar('xp', `poziom ${you.level}`, xpPercent),
     );
     if (weakened) {
@@ -316,6 +331,7 @@ const SLOT_ORDER = ['WEAPON', 'CHEST', 'TRINKET'];
 function renderPanel() {
     if (panelEl.hidden) return;
     renderAttributes();
+    renderSkills();
     renderEquipment();
     renderBag();
 }
@@ -395,6 +411,103 @@ function renderEquipment() {
         }
         equipmentEl.append(itemRow(item, () => send({ type: 'unequip', slot }),
             `Zdejmij: ${item.name}`));
+    }
+}
+
+function renderSkills() {
+    skillsEl.innerHTML = '';
+    const known = state.skills ? state.skills.skills || [] : [];
+    const points = state.skills ? state.skills.skillPoints : 0;
+    skillPointsEl.textContent = points > 0 ? `${points} do rozdania` : '';
+
+    if (!known.length) {
+        const empty = document.createElement('li');
+        empty.className = 'empty';
+        empty.textContent = 'Brak';
+        skillsEl.append(empty);
+        return;
+    }
+
+    for (const skill of known) {
+        const row = document.createElement('li');
+        row.className = skill.rank > 0 ? 'known' : '';
+        row.title = skill.description || '';
+        row.dataset.skillId = skill.id;
+
+        const name = document.createElement('span');
+        name.textContent = skill.name;
+        const rank = document.createElement('span');
+        rank.className = 'rank';
+        // A passive says what it is rather than what it costs, because "0
+        // energy" reads as free rather than as "never used".
+        rank.textContent = skill.passive
+            ? `${skill.rank}/${skill.maxRank} · stale`
+            : `${skill.rank}/${skill.maxRank} · ${skill.cost} en.`;
+        row.append(name, rank);
+
+        if (points > 0 && skill.rank < skill.maxRank) {
+            const raise = document.createElement('button');
+            raise.type = 'button';
+            raise.textContent = '+';
+            raise.title = `Rozwiń: ${skill.name}`;
+            raise.addEventListener('click', () => send({ type: 'learn', skillId: skill.id }));
+            row.append(raise);
+        }
+        skillsEl.append(row);
+    }
+}
+
+/**
+ * The buttons pressed during a round.
+ *
+ * Only what is both learned and usable appears at all, and what cannot be paid
+ * for yet is greyed rather than removed: a button that disappears the moment it
+ * becomes unaffordable is one that moves under the cursor mid-fight.
+ */
+function renderSkillBar() {
+    const self = state.actors.get(state.selfId);
+    const fighting = !!(self && self.inFight);
+    const usable = (state.skills ? state.skills.skills || [] : [])
+        .filter((skill) => skill.rank > 0 && !skill.passive);
+
+    skillbarEl.hidden = !fighting || !usable.length;
+    if (skillbarEl.hidden) {
+        skillbarEl.innerHTML = '';
+        skillbarEl.dataset.showing = '';
+        return;
+    }
+
+    // Rebuilt only when the set of skills changes, which is a few times an
+    // hour. Rebuilding on every "you" - and one of those arrives every round -
+    // would replace the buttons under the player's cursor mid-fight, which is
+    // exactly when they are being aimed at.
+    const showing = usable.map((skill) => skill.id).join(',');
+    if (skillbarEl.dataset.showing !== showing) {
+        skillbarEl.dataset.showing = showing;
+        skillbarEl.innerHTML = '';
+        for (const skill of usable) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.dataset.skillId = skill.id;
+            button.title = skill.description || '';
+
+            const name = document.createElement('span');
+            name.textContent = skill.name;
+            const cost = document.createElement('span');
+            cost.className = 'cost';
+            cost.textContent = `${skill.cost}`;
+            button.append(name, cost);
+            button.addEventListener('click', () => send({ type: 'use', skillId: skill.id }));
+            skillbarEl.append(button);
+        }
+    }
+
+    // What does change every round is whether each one can be paid for. Worked
+    // out here rather than sent: the cost is fixed and the energy arrives in
+    // every "you", so a flag from the server would be stale on arrival.
+    for (const button of skillbarEl.children) {
+        const skill = usable.find((candidate) => candidate.id === button.dataset.skillId);
+        button.disabled = !skill || !state.you || state.you.energy < skill.cost;
     }
 }
 
@@ -967,7 +1080,9 @@ function show(name) {
         // Leaving the world takes the panel and its contents with it. A bag
         // left on screen belongs to a character this client no longer is.
         state.bag = null;
+        state.skills = null;
         state.you = null;
+        skillbarEl.hidden = true;
         togglePanel(false);
         return;
     }

@@ -60,6 +60,18 @@ final class Actor {
     int unspentPoints;
 
     final Inventory inventory = new Inventory();
+    final Skills skills = new Skills();
+
+    /**
+     * Energy for skills. Belongs to the fight rather than to the character: it
+     * starts every fight at zero and is gone when the fight ends, which is why
+     * it is never written down.
+     */
+    int energy;
+    /** The skill this character asked to use in the coming round, or null. */
+    String pendingSkill;
+    /** Points earned by levelling and not yet put into a skill. */
+    int skillPoints;
 
     /**
      * Set when what this character carries has changed, as opposed to where it
@@ -67,6 +79,9 @@ final class Actor {
      * save interval comes round.
      */
     boolean itemsDirty;
+
+    /** The same, for what it has learned. */
+    boolean skillsDirty;
 
     /** The fight this actor is locked into, or null. Movement is refused while it is set. */
     Fight fight;
@@ -206,10 +221,6 @@ final class Actor {
         return applyWeakness(isMob()
                 ? mob.armor()
                 : totalAttributes().armor() + inventory.grantedArmor());
-    }
-
-    int maxMana() {
-        return isMob() ? 0 : totalAttributes().maxMana();
     }
 
     /** A creature never evades; only characters have agility. */

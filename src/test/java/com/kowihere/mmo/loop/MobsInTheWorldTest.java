@@ -114,23 +114,27 @@ class MobsInTheWorldTest {
         int[] playerTile = {post.x() + guard.aggroRadius(), post.y()};
         FakeClient client = join("Ala", playerTile[0], playerTile[1]);
 
-        int guardId = creatureAt(client.await("\"type\":\"init\""), post.x(), post.y());
+        // Found by name, not by the tile it was placed on. Creatures wander from
+        // the first tick, so by the time this character's init frame is built
+        // the guard may well have stepped off its post - and looking for it
+        // there is how this test used to fail for no reason at all.
+        String init = client.await("\"type\":\"init\"");
+        int guardId = creatureNamed(init, guard.name());
         int[] home = {post.x(), post.y()};
-        int startDistance = chebyshev(home, playerTile);
 
-        // Waiting for any "moved" would be satisfied by some other creature
-        // wandering elsewhere, so follow this one specifically and require that
-        // it actually closed the gap.
+        // What chasing means, stated as the thing a player would see: it comes
+        // and stands next to you. Measuring "closer than it started" depends on
+        // where it happened to have wandered, which is the same coin flip.
         long deadline = System.currentTimeMillis() + TIMEOUT_MS;
-        int closest = startDistance;
-        while (System.currentTimeMillis() < deadline && closest >= startDistance) {
+        int distance = Integer.MAX_VALUE;
+        while (System.currentTimeMillis() < deadline && distance > 1) {
             sleep(100);
-            closest = chebyshev(lastKnownPosition(client, guardId, home), playerTile);
+            distance = chebyshev(lastKnownPosition(client, guardId, home), playerTile);
         }
 
-        assertThat(closest)
-                .as("'%s' stood %d tiles away and should have closed in", guard.name(), startDistance)
-                .isLessThan(startDistance);
+        assertThat(distance)
+                .as("'%s' never came over, and stopped %d tiles away", guard.name(), distance)
+                .isLessThanOrEqualTo(1);
     }
 
     @Test
@@ -200,15 +204,15 @@ class MobsInTheWorldTest {
         return count;
     }
 
-    /** The id of the creature standing on a given tile, read out of an init frame. */
-    private static int creatureAt(String initFrame, int x, int y) throws Exception {
+    /** The id of the first creature with this name, read out of an init frame. */
+    private static int creatureNamed(String initFrame, String name) throws Exception {
         for (JsonNode actor : JSON.readTree(initFrame).path("actors")) {
             if ("MOB".equals(actor.path("kind").asText())
-                    && actor.path("x").asInt() == x && actor.path("y").asInt() == y) {
+                    && name.equals(actor.path("name").asText())) {
                 return actor.path("id").asInt();
             }
         }
-        throw new AssertionError("no creature at " + x + "," + y);
+        throw new AssertionError("no creature called " + name + " on this map");
     }
 
     /** Where one actor ended up, according to every delta seen so far. */

@@ -4,6 +4,7 @@ import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.loop.ActorSnapshot;
 import com.kowihere.mmo.loop.SavedCharacter;
 import com.kowihere.mmo.loop.StoredItem;
+import com.kowihere.mmo.loop.StoredSkill;
 import com.kowihere.mmo.world.Direction;
 import com.kowihere.mmo.world.ItemSlot;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,7 +65,7 @@ class CharacterRepositoryTest {
         characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
 
         characters.save(new ActorSnapshot("ala", "Ala", "starter", 9, 4, "UP", 3, 450L, 27, 0L,
-                Attributes.FRESH, 6, null, "wojownik"));
+                Attributes.FRESH, 6, null, "wojownik", 3, null));
 
         SavedCharacter found = characters.find("ala").orElseThrow();
         assertThat(found.x()).isEqualTo(9);
@@ -120,11 +121,53 @@ class CharacterRepositoryTest {
     }
 
     @Test
+    void learnedSkillsComeBackAtTheRankTheyWereLeftAt() {
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+
+        characters.save(withSkills("ala", List.of(
+                new StoredSkill("regeneracja", 3),
+                new StoredSkill("blyskawica", 1))));
+
+        assertThat(characters.find("ala").orElseThrow().skills())
+                .containsExactlyInAnyOrder(
+                        new StoredSkill("regeneracja", 3),
+                        new StoredSkill("blyskawica", 1));
+    }
+
+    @Test
+    void aSaveThatCarriesNoSkillListLeavesTheSkillsAlone() {
+        // Null means "nothing was learned since last time", which is every save
+        // made by somebody merely fighting. Reading it as "they know nothing"
+        // would unlearn a character one round at a time.
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+        characters.save(withSkills("ala", List.of(new StoredSkill("regeneracja", 2))));
+
+        characters.save(withSkills("ala", null));
+
+        assertThat(characters.find("ala").orElseThrow().skills()).hasSize(1);
+    }
+
+    @Test
+    void skillPointsSurviveTheRoundTrip() {
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+
+        characters.save(new ActorSnapshot("ala", "Ala", "starter", 7, 11, "LEFT", 4, 900L, 40, 0L,
+                Attributes.FRESH, 0, null, "mag", 7, null));
+
+        assertThat(characters.find("ala").orElseThrow().skillPoints()).isEqualTo(7);
+    }
+
+    private static ActorSnapshot withSkills(String nameKey, List<StoredSkill> skills) {
+        return new ActorSnapshot(nameKey, "Ala", "starter", 7, 11, "LEFT", 1, 0L, 20, 0L,
+                Attributes.FRESH, 0, null, "mag", 1, skills);
+    }
+
+    @Test
     void attributesAndUnspentPointsSurviveTheRoundTrip() {
         characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
 
         characters.save(new ActorSnapshot("ala", "Ala", "starter", 7, 11, "LEFT", 4, 900L, 40, 0L,
-                new Attributes(11, 6, 5), 2, null, "mag"));
+                new Attributes(11, 6, 5), 2, null, "mag", 4, null));
 
         SavedCharacter found = characters.find("ala").orElseThrow();
         assertThat(found.attributes()).isEqualTo(new Attributes(11, 6, 5));
@@ -146,7 +189,7 @@ class CharacterRepositoryTest {
 
     private static ActorSnapshot snapshot(String nameKey, List<StoredItem> items) {
         return new ActorSnapshot(nameKey, "Ala", "starter", 7, 11, "LEFT", 1, 0L, 20, 0L,
-                Attributes.FRESH, 0, items, "wojownik");
+                Attributes.FRESH, 0, items, "wojownik", 1, null);
     }
 
     @Test
@@ -154,7 +197,7 @@ class CharacterRepositoryTest {
         // The world must not be able to invent a character with no owner, even
         // if one is deleted while it is being played.
         characters.save(new ActorSnapshot("widmo", "Widmo", "starter", 1, 1, "DOWN", 1, 0L, 10, 0L,
-                Attributes.FRESH, 0, null, "wojownik"));
+                Attributes.FRESH, 0, null, "wojownik", 1, null));
 
         assertThat(characters.find("widmo")).isEmpty();
     }

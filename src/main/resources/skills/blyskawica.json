@@ -1,0 +1,11 @@
+{
+  "id": "blyskawica",
+  "name": "Błyskawica",
+  "description": "Cios, przed którym pancerz prawie nie chroni.",
+  "classId": "mag",
+  "cost": 30,
+  "maxRank": 5,
+  "power": 1.4,
+  "blows": 1,
+  "armorIgnored": 0.9
+}

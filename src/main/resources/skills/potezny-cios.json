@@ -1,0 +1,10 @@
+{
+  "id": "potezny-cios",
+  "name": "Potężny cios",
+  "description": "Jedno uderzenie za podwójne obrażenia.",
+  "classId": "wojownik",
+  "cost": 40,
+  "maxRank": 5,
+  "power": 2.0,
+  "blows": 1
+}

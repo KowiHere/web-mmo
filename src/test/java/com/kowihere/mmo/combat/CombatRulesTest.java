@@ -3,6 +3,8 @@ package com.kowihere.mmo.combat;
 import com.kowihere.mmo.world.ClassDef;
 import com.kowihere.mmo.world.ClassDefLoader;
 import com.kowihere.mmo.world.MobDef;
+import com.kowihere.mmo.world.SkillDef;
+import com.kowihere.mmo.world.SkillDefLoader;
 import com.kowihere.mmo.world.MobDefLoader;
 import com.kowihere.mmo.world.MobTier;
 import org.junit.jupiter.api.Test;
@@ -150,16 +152,72 @@ class CombatRulesTest {
         }
     }
 
+    @Test
+    void noClassCanBeatAnEliteEvenUsingItsSkillEveryTimeItCanAffordIt() {
+        // Skills only ever help, so the checks above still hold with them. What
+        // they could break is the other half: an elite that stops being a wall.
+        // This is the place where this milestone most easily ruins the last one,
+        // so it is worth asking directly rather than assuming.
+        Map<String, MobDef> mobs = new MobDefLoader().loadAll();
+        Map<String, SkillDef> skills = new SkillDefLoader().loadAll();
+        MobDef elite = mobs.get("wilczyca");
+
+        for (ClassDef characterClass : new ClassDefLoader().loadAll().values()) {
+            SkillDef signature = signatureOf(skills, characterClass);
+            assertThat(survivesUsing(characterClass, elite, signature))
+                    .as("%s beats an elite at level one with %s, which makes the tier meaningless",
+                            characterClass.name(), signature.name())
+                    .isFalse();
+        }
+    }
+
+    private static SkillDef signatureOf(Map<String, SkillDef> skills, ClassDef characterClass) {
+        return skills.values().stream()
+                .filter(skill -> characterClass.id().equals(skill.classId()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        characterClass.name() + " has no skill of its own"));
+    }
+
     /** Whether a level-one character of this class outlasts this creature. */
     private static boolean survives(ClassDef characterClass, MobDef mob) {
+        return survivesUsing(characterClass, mob, null);
+    }
+
+    /**
+     * The same fight, optionally with the class throwing its skill the moment it
+     * can pay for it - which is the strongest a level-one character can be.
+     */
+    private static boolean survivesUsing(ClassDef characterClass, MobDef mob, SkillDef skill) {
         CombatRules average = rollingExactly(0.5);
         Attributes start = characterClass.startingAttributes();
         int health = start.maxHp() + characterClass.hpBonus();
+        int attack = characterClass.attackFrom(start);
+        int incoming = average.damage(mob.attack(), start.armor());
 
-        int dealt = average.damage(characterClass.attackFrom(start), mob.armor(),
-                characterClass.armorIgnored());
-        int rounds = (int) Math.ceil(mob.hp() / (double) dealt);
-        return rounds * average.damage(mob.attack(), start.armor()) < health;
+        int mobHealth = mob.hp();
+        int energy = 0;
+        int rounds = 0;
+        while (mobHealth > 0 && rounds < 10_000) {
+            rounds++;
+            // One rank of regeneration is all a level-one character could have,
+            // and only if it spent its single point there rather than on the
+            // skill it is about to use - so the base rate is the honest figure.
+            energy = Energy.charged(energy, 0);
+
+            if (skill != null && energy >= skill.cost()) {
+                energy -= skill.cost();
+                double ignored = skill.overridesArmorIgnored()
+                        ? skill.armorIgnored()
+                        : characterClass.armorIgnored();
+                int perBlow = average.damage((int) Math.round(attack * skill.power()),
+                        mob.armor(), ignored);
+                mobHealth -= perBlow * skill.blows();
+            } else {
+                mobHealth -= average.damage(attack, mob.armor(), characterClass.armorIgnored());
+            }
+        }
+        return rounds * incoming < health;
     }
 
     @Test

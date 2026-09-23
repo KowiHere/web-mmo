@@ -1,6 +1,7 @@
 package com.kowihere.mmo.loop;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kowihere.mmo.world.ClassDefLoader;
 import com.kowihere.mmo.world.Content;
 import com.kowihere.mmo.world.ItemDefLoader;
 import com.kowihere.mmo.world.MapDef;
@@ -35,6 +36,7 @@ public class WorldService {
     private final MapDefLoader loader;
     private final MobDefLoader mobLoader;
     private final ItemDefLoader itemLoader;
+    private final ClassDefLoader classLoader;
     private final ObjectMapper json;
     private final WorldPersistence persistence;
     private final Map<String, MapRunner> runners = new LinkedHashMap<>();
@@ -43,17 +45,20 @@ public class WorldService {
     private String defaultMapId;
 
     public WorldService(MapDefLoader loader, MobDefLoader mobLoader, ItemDefLoader itemLoader,
-                        ObjectMapper json, WorldPersistence persistence) {
+                        ClassDefLoader classLoader, ObjectMapper json,
+                        WorldPersistence persistence) {
         this.loader = loader;
         this.mobLoader = mobLoader;
         this.itemLoader = itemLoader;
+        this.classLoader = classLoader;
         this.json = json;
         this.persistence = persistence;
     }
 
     @PostConstruct
     void start() {
-        Content content = new Content(mobLoader.loadAll(), itemLoader.loadAll());
+        Content content = new Content(mobLoader.loadAll(), itemLoader.loadAll(),
+                classLoader.loadAll());
         Map<String, MobDef> mobs = content.mobs();
         for (MapDef def : loader.loadAll().values()) {
             MapRunner runner = new MapRunner(def, json, persistence, content);
@@ -69,6 +74,8 @@ public class WorldService {
         log.info("World started with {} map(s), {} creature definition(s) and {} item(s);"
                         + " default map is '{}'",
                 runners.size(), mobs.size(), content.items().size(), defaultMapId);
+        log.info("Content also carries {} class(es) and {} skill(s)",
+                content.classes().size(), content.skills().size());
     }
 
     @PreDestroy

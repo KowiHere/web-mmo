@@ -1,0 +1,10 @@
+{
+  "id": "seria",
+  "name": "Seria",
+  "description": "Trzy szybkie, słabsze ciosy zamiast jednego.",
+  "classId": "lowca",
+  "cost": 35,
+  "maxRank": 5,
+  "power": 0.7,
+  "blows": 3
+}

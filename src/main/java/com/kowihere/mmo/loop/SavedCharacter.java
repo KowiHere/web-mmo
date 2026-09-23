@@ -14,14 +14,17 @@ import java.util.List;
  *                characters are never renamed, so it needs no surrogate key
  * @param items   everything owned, worn and carried alike; the slot on each one
  *                says which it was
+ * @param skills  what has been learned, and how far
  */
 public record SavedCharacter(String nameKey, String name, String mapId, int x, int y, Direction dir,
                              int level, long xp, int hp, long weakenedUntil,
                              Attributes attributes, int unspentPoints, List<StoredItem> items,
-                             String classId) {
+                             String classId, int skillPoints,
+                             List<StoredSkill> skills) {
 
     public SavedCharacter {
         items = items == null ? List.of() : List.copyOf(items);
+        skills = skills == null ? List.of() : List.copyOf(skills);
     }
 
     /** A brand new character: level one, unhurt, unpenalised, empty-handed. */
@@ -36,7 +39,10 @@ public record SavedCharacter(String nameKey, String name, String mapId, int x, i
      */
     public static SavedCharacter fresh(String nameKey, String name, String mapId, int x, int y,
                                        Direction dir, String classId, Attributes attributes) {
+        // One skill point at level one, unlike attributes. A brand new
+        // character should have a first choice to make rather than a system it
+        // cannot see until it levels.
         return new SavedCharacter(nameKey, name, mapId, x, y, dir, 1, 0L, -1, 0L,
-                attributes, 0, List.of(), classId);
+                attributes, 0, List.of(), classId, 1, List.of());
     }
 }

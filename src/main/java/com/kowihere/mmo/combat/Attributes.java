@@ -36,8 +36,6 @@ public record Attributes(int strength, int agility, int intellect) {
     private static final int BASE_ATTACK = 2;
     private static final int ATTACK_PER_POINT = 1;
     private static final int BASE_ARMOR = 1;
-    private static final int BASE_MANA = 10;
-    private static final int MANA_PER_INTELLECT = 5;
 
     /**
      * Both of agility's payoffs are capped.
@@ -91,10 +89,6 @@ public record Attributes(int strength, int agility, int intellect) {
     /** Armour comes from what you are wearing; the body itself is worth one point. */
     public int armor() {
         return BASE_ARMOR;
-    }
-
-    public int maxMana() {
-        return BASE_MANA + MANA_PER_INTELLECT * intellect;
     }
 
     public double dodgeChance() {

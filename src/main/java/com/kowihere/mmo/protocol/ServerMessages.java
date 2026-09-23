@@ -72,19 +72,52 @@ public final class ServerMessages {
      * another player's progress is nobody else's business, and a leak like that
      * is the kind nobody ever files a bug about.
      */
+    /**
+     * @param energy        what is in hand right now. It belongs to the fight,
+     *                      so outside one this is always zero - which is the
+     *                      whole difference between it and the mana it replaced
+     * @param energyPerRound what a round of fighting is worth, which is what a
+     *                      point in regeneration buys
+     */
     public record You(String type, String classId, String className,
-                      int hp, int maxHp, int mana, int maxMana, int level, long xp,
+                      int hp, int maxHp, int energy, int maxEnergy, int energyPerRound,
+                      int level, long xp,
                       long xpThisLevel, long xpForNextLevel, long weakenedUntil, boolean dead,
-                      int strength, int agility, int intellect, int unspentPoints,
+                      int strength, int agility, int intellect, int unspentPoints, int skillPoints,
                       int attack, int armor, int dodgePercent, int secondBlowPercent) {
         public You(String classId, String className,
-                   int hp, int maxHp, int mana, int maxMana, int level, long xp, long xpThisLevel,
+                   int hp, int maxHp, int energy, int maxEnergy, int energyPerRound,
+                   int level, long xp, long xpThisLevel,
                    long xpForNextLevel, long weakenedUntil, boolean dead,
-                   int strength, int agility, int intellect, int unspentPoints,
+                   int strength, int agility, int intellect, int unspentPoints, int skillPoints,
                    int attack, int armor, int dodgePercent, int secondBlowPercent) {
-            this("you", classId, className, hp, maxHp, mana, maxMana, level, xp, xpThisLevel,
+            this("you", classId, className, hp, maxHp, energy, maxEnergy, energyPerRound,
+                    level, xp, xpThisLevel,
                     xpForNextLevel, weakenedUntil, dead, strength, agility, intellect,
-                    unspentPoints, attack, armor, dodgePercent, secondBlowPercent);
+                    unspentPoints, skillPoints, attack, armor, dodgePercent, secondBlowPercent);
+        }
+    }
+
+    /**
+     * One skill as its owner needs it: what it is, how far they have taken it,
+     * and whether they could use it right now.
+     *
+     * @param rank    zero for one they may learn but have not
+     * @param passive true when it works by being known rather than by being used
+     *
+     * <p>Deliberately no "can you afford it": that changes every round, and this
+     * frame is sent a few times an hour. A field like that would be a stale
+     * answer to a question the client can settle for itself, having both the
+     * cost here and the energy in every {@code you}.
+     */
+    public record SkillDto(String id, String name, String description, int rank, int maxRank,
+                           int cost, boolean passive) {
+    }
+
+    /** What a character has learned, sent only to its owner. */
+    public record Skills(String type, int skillPoints, List<SkillDto> skills) {
+        public Skills(int skillPoints, List<SkillDto> skills) {
+            this("skills", skillPoints, skills);
         }
     }
 

@@ -16,9 +16,11 @@ import java.util.List;
  *              "leave the item rows alone": walking across a map writes a
  *              position every save interval, and rewriting a bag nobody touched
  *              would be twenty pointless rows every time.
+ * @param skills the same, for what has been learned. Null means unchanged.
  */
 public record ActorSnapshot(String nameKey, String name, String mapId, int x, int y, String dir,
                             int level, long xp, int hp, long weakenedUntil,
                             Attributes attributes, int unspentPoints, List<StoredItem> items,
-                            String classId) {
+                            String classId, int skillPoints,
+                            List<StoredSkill> skills) {
 }

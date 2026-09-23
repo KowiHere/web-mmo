@@ -315,6 +315,7 @@ label {
     position: absolute;
     right: 12px;
     bottom: 12px;
+    z-index: 5; /* same reason as the skill bar above it */
     width: auto;
     margin: 0;
     padding: 10px 18px;
@@ -343,7 +344,9 @@ label {
     right: 12px;
     top: 52px;
     width: min(280px, calc(100% - 24px));
-    max-height: calc(100% - 120px);
+    /* Stops short of the combat controls in the corner below, so the two only
+       overlap on a window too short for either choice to help. */
+    max-height: calc(100% - 180px);
     overflow-y: auto;
     display: grid;
     gap: 12px;
@@ -479,4 +482,68 @@ label {
     grid-column: 2;
     font-size: 11px;
     color: var(--muted);
+}
+
+/* ---- energy and skills ----------------------------------------------- */
+
+.bar-energy .bar-fill { background: linear-gradient(90deg, #b8860b, #e8c547); }
+
+/*
+ * Above the flee button and out of the map's way. These are pressed in the
+ * middle of a round, so they are large and always in the same place rather
+ * than appearing wherever there happens to be room.
+ */
+#skillbar {
+    position: absolute;
+    right: 12px;
+    bottom: 60px;
+    /* Above the character panel. They share the right-hand edge, and on a short
+       window the panel reaches down over these - which is how a button pressed
+       in the middle of a round ends up unclickable. The panel is something to
+       read; these are something to press now. */
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-end;
+}
+
+#skillbar button {
+    width: auto;
+    margin: 0;
+    padding: 8px 14px;
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+}
+
+/* Dimmed rather than hidden: "not yet" is information, and a button that
+   vanishes and reappears is harder to aim at than one that greys out. */
+#skillbar button:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+}
+
+#skillbar .cost {
+    font-size: 11px;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+}
+
+#skillbar button:disabled .cost { color: var(--muted); }
+
+.slots li.known { border-color: rgba(110, 168, 254, .45); }
+
+.slots .rank {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.slots li button {
+    width: 24px;
+    margin: 0;
+    padding: 0;
+    line-height: 20px;
 }

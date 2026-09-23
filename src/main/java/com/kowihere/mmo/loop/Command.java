@@ -49,4 +49,12 @@ public sealed interface Command {
     /** Spend one earned point on an attribute. */
     record Spend(Client client, Attributes.Attribute attribute) implements Command {
     }
+
+    /** Use a skill in the coming round. Resolved there, like fleeing. */
+    record Use(Client client, String skillId) implements Command {
+    }
+
+    /** Put one earned point into a skill. */
+    record Learn(Client client, String skillId) implements Command {
+    }
 }

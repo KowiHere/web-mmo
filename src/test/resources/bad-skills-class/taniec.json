@@ -1,0 +1,8 @@
+{
+  "id": "taniec",
+  "name": "Taniec ostrzy",
+  "classId": "tancerz",
+  "cost": 20,
+  "power": 1.2,
+  "blows": 2
+}

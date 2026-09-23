@@ -1,0 +1,9 @@
+{
+  "id": "regeneracja",
+  "name": "Regeneracja energii",
+  "description": "Energia ładuje się szybciej z każdą rangą. Nie używa się jej — działa przez to, że się ją zna.",
+  "classId": null,
+  "cost": 0,
+  "maxRank": 5,
+  "energyPerRank": 5
+}
