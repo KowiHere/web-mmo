@@ -1,0 +1,7 @@
+{
+  "id": "pierscien-sily",
+  "name": "Pierścień Siły",
+  "slot": "TRINKET",
+  "requiresLevel": 1,
+  "bonuses": { "strength": 4 }
+}

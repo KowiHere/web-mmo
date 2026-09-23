@@ -1,0 +1,7 @@
+{
+  "id": "probny-miecz",
+  "name": "Próbny miecz",
+  "slot": "WEAPON",
+  "requiresLevel": 1,
+  "bonuses": { "attack": 5 }
+}

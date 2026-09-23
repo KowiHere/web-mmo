@@ -154,24 +154,16 @@ with nothing in between to tune. The floor of 1 guarantees every fight ends.
 the next round: succeed and the fight is over, fail and you lose your own blow
 while your opponent strikes normally.
 
-Statistics are **derived from your level and never stored beside it**:
-
-```
-maxHp  = 50 + 15 * level
-attack =  5 +  2 * level
-armour =  1 +      level
-```
-
-so the database holds `level`, `xp` and current `hp`, and there is nothing that
-can drift out of agreement with anything else. A level heals you to full.
+A level heals you to full and pays three attribute points; where a character's
+numbers actually come from is **What a character is made of**, below.
 
 **Experience is private.** Deltas go to everyone on the map, so progress travels
 in a separate `you` frame addressed to one client — sent *after* the delta it
 belongs to, so a character is never told it is dead while still being drawn
 where it fell.
 
-Kill a creature and it leaves the world; its spawn point counts down
-`respawnSeconds` and puts it back. An elite has no spawn point, so it dies for
+Kill a creature and it leaves the world, paying experience and whatever its loot
+table rolls; its spawn point counts down `respawnSeconds` and puts it back. An elite has no spawn point, so it dies for
 good and the next one arrives on the ordinary roll.
 
 Die and you wake at the spawn with full health and **weakened** — halved attack
@@ -188,6 +180,80 @@ time:
 - **Nothing will attack you within four tiles of the spawn.** Every character
   appears there and returns there after dying, already weakened; without a truce
   on that ground one death becomes a loop a new character cannot break.
+
+### What a character is made of
+
+Statistics used to come from the level. The rule behind that was never "the
+level decides" — it was **store nothing that can be computed**, so that nothing
+can drift out of agreement with anything else. That rule is untouched. Only the
+chain got longer:
+
+```
+level  →  points to spend  →  attributes + equipment  →  combat statistics
+```
+
+Three attributes, five of each to start, **three points per level for the player
+to spend**:
+
+```
+maxHp   = 40 + 5 * strength        dodge       = min(35%, 1% * agility)
+attack  =  2 +     strength        second blow = min(40%, 1.2% * agility)
+armour  =  1 + equipment           maxMana     = 10 + 5 * intellect
+```
+
+The constants are chosen so a fresh character has exactly what it had before
+attributes existed — 65 health and 7 attack. That is not nostalgia: the
+creatures on the starter map were balanced against those numbers, and moving
+them would quietly have made the map unwinnable again, for new players only.
+
+**Agility does not buy attack speed**, whatever the word suggests. A round is
+still a round and everybody still gets one turn in it; what agility buys is the
+part of speed that fits a turn — sometimes the turn is two blows. Both of its
+payoffs are capped, because a character that eventually cannot be hit is a
+character in a fight that never ends.
+
+**Intellect buys mana, and mana buys nothing yet.** There are no spells to pay
+for. The bar is on screen anyway, so that an item granting intellect visibly
+does something, and so the frame that will carry it does not have to change when
+skills arrive. Said plainly here because a resource that never moves looks
+broken rather than unfinished.
+
+Only attributes, points and what is worn are stored. Not one derived number is.
+
+### Items
+
+Content, like maps and creatures: `src/main/resources/items/*.json`, loaded and
+validated at startup by a loader that is `MobDefLoader`'s twin. An unknown slot,
+a duplicated id, an item whose bonuses are all misspelled, or a creature that
+drops something which is not an item — each stops the server rather than
+producing an item somebody picks up and cannot work out why it does nothing.
+
+```json
+{
+  "id": "zardzewialy-miecz",
+  "name": "Zardzewiały miecz",
+  "slot": "WEAPON",
+  "requiresLevel": 1,
+  "bonuses": { "attack": 3 }
+}
+```
+
+An item **is** its definition: two rusty swords are the same sword. Rolled
+bonuses and rarities would make each copy its own thing, which is a milestone
+with its own questions. Three slots — weapon, chest, trinket — which is enough
+to prove that bonuses add up, that a slot holds one thing, and that a level
+requirement is enforced. A fourth would prove none of it.
+
+Everything is refused by the **server**: wearing something above your level,
+changing clothes mid-fight, spending a point you have not earned. A client that
+never draws the button is a courtesy, not a rule.
+
+Loot goes straight into the killer's bag, which holds twenty things. A full bag
+does not swallow a reward silently — nothing is dropped and you are told why.
+
+**The shipped items are test content.** A boar drops a sword every single time,
+which is why the browser checks can be decisive rather than patient. It is not a
+balance proposal.
 
 ### Disconnecting is not leaving
 
@@ -248,9 +314,10 @@ cd e2e && npm install && npm test
 
 That covers what unit tests cannot — two people seeing each other move, the
 server refusing an illegal destination, a dropped socket resuming the same
-character, and a fight fought from the browser: one attack command, health bars
+character, a fight fought from the browser — one attack command, health bars
 falling, a kill paying experience, and a death putting the character back at the
-spawn weakened.
+spawn weakened — and the loot from that kill being worn from the character
+panel.
 
 The combat checks are deliberately written as "something was wounded, something
 died" rather than naming a particular creature. The map hunts back, so which
@@ -264,10 +331,12 @@ One check needs the server stopped and started around it, so it runs itself:
 e2e/restart-check.sh
 ```
 
-It registers an account, walks the character somewhere, kills the server,
-starts it again, and then **logs in** rather than registering — so it fails
-unless both the account and the character survived. Nothing inside a single
-process can prove that.
+It registers an account, walks the character somewhere, kills something and puts
+on what it dropped, kills the server, starts it again, and then **logs in**
+rather than registering — so it fails unless the account, the character and the
+item all survived. Nothing inside a single process can prove that: a reconnect
+within the grace period finds the character still standing in memory, so an item
+that "came back" there never went near the database.
 
 ## Maps
 
@@ -297,10 +366,20 @@ Client to server:
 | `move`   | x, y           | request a path to this tile            |
 | `attack` | targetId       | go to that creature and fight it       |
 | `flee`   | —              | try to leave the fight next round      |
+| `equip`  | itemId         | put on something from the bag          |
+| `unequip`| slot           | take off what is in that slot          |
+| `spend`  | attribute      | spend one earned point                 |
 | `chat`   | text           | say something on this map              |
 
 Server to client: `init` (the whole world once), `delta` (what changed), `you`
-(your own character, to your socket only), `error`.
+(your own character, to your socket only), `bag` (what it is wearing and
+carrying, likewise), `error`.
+
+`bag` is separate from `you` on purpose: `you` goes out at every scratch, and a
+bag that changes a few times an hour has no business riding along with it. It is
+also the one frame that does **not** omit its empty fields — an empty bag is
+news, and a `carried` that is simply missing cannot be told from one that was
+never sent.
 
 A delta carries arrivals, departures, movement, chat, presence, blows struck,
 deaths and changes of fight state. Its consumer applies arrivals and departures
@@ -316,28 +395,30 @@ pathfinding.
 
 ## What is not here yet
 
-**No items and no loot**, which is the honest limit of the fighting above: you
-can kill a creature and be paid in experience for it, and that is the whole of
-the reward. Loot tables stay absent until items exist — a table pointing at a
-registry that does not exist cannot even be validated.
+**No classes**, which is the honest limit of the attributes above: nothing yet
+stops a character putting every point into strength, because nothing yet says
+what kind of character it is. That is what the attributes were built for, and
+it is the next question rather than an oversight.
 
-**No skills**: a fight is an exchange of ordinary blows, and saying so plainly
-is better than letting the word "combat" promise more than it delivers. **No
-PvP** either; `attack` refuses anything that is not a creature.
+**No skills and no spells**, so mana is a number with nothing to spend it on.
+**No rolled bonuses or rarities** — an item is exactly its definition. **No loot
+on the ground**, no trading and no shops: a reward goes straight into the bag.
+**No PvP**; `attack` refuses anything that is not a creature.
 
 Also missing: interactive NPCs, more than one map, and instances with parties.
 No password reset or email confirmation either — both need to send mail, which
 means a service to run.
 
-Roughly in order: items with rolled statistics and loot, interactive NPCs, then
-instances and parties, which is what heroes and colossi are waiting on.
+Roughly in order: classes and skills, which is what mana and free points are
+waiting for, then interactive NPCs, then instances and parties, which is what
+heroes and colossi are waiting on.
 
 ## Layout
 
 ```
 world/       maps and creature definitions — immutable, shared
 path/        A* over the collision grid    — server-side only
-combat/      damage, experience, escape — pure functions, injected randomness
+combat/      attributes, damage, experience — pure functions, injected randomness
 loop/        the game loop, commands, creature behaviour — no Spring below this line
 account/     registration, login, sessions — passwords never reach the loop
 net/         WebSocket transport           — authenticates, then decides nothing

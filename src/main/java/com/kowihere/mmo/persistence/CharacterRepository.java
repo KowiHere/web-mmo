@@ -1,12 +1,16 @@
 package com.kowihere.mmo.persistence;
 
+import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.loop.ActorSnapshot;
 import com.kowihere.mmo.loop.SavedCharacter;
+import com.kowihere.mmo.loop.StoredItem;
 import com.kowihere.mmo.world.Direction;
+import com.kowihere.mmo.world.ItemSlot;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -30,17 +34,43 @@ public class CharacterRepository {
     }
 
     private static final String SELECT =
-            "SELECT name_key, name, map_id, x, y, dir, level, xp, hp, weakened_until"
+            "SELECT name_key, name, map_id, x, y, dir, level, xp, hp, weakened_until,"
+                    + " strength, agility, intellect, unspent_points"
                     + " FROM game_character";
 
+    /**
+     * A character and everything it owns. Two queries rather than a join: a join
+     * would repeat the character on every item row, and this runs on a network
+     * thread before somebody enters the world, never in a tick.
+     */
     public Optional<SavedCharacter> find(String nameKey) {
         return jdbc.query(SELECT + " WHERE name_key = ?", CharacterRepository::read, nameKey)
-                .stream().findFirst();
+                .stream().findFirst()
+                .map(character -> withItems(character, itemsOf(nameKey)));
     }
 
-    /** Every character on one account, for the selection screen. */
+    /**
+     * Every character on one account, for the selection screen. Without their
+     * items: the screen shows names, and loading five bags to draw a list would
+     * be five queries for nothing.
+     */
     public List<SavedCharacter> findByAccount(long accountId) {
         return jdbc.query(SELECT + " WHERE account_id = ? ORDER BY name", CharacterRepository::read, accountId);
+    }
+
+    public List<StoredItem> itemsOf(String nameKey) {
+        return jdbc.query("SELECT id, def_id, slot FROM item_instance"
+                        + " WHERE character_key = ? ORDER BY created_at, id",
+                (rs, row) -> new StoredItem(rs.getString("id"), rs.getString("def_id"),
+                        ItemSlot.parse(rs.getString("slot"))),
+                nameKey);
+    }
+
+    private static SavedCharacter withItems(SavedCharacter character, List<StoredItem> items) {
+        return new SavedCharacter(character.nameKey(), character.name(), character.mapId(),
+                character.x(), character.y(), character.dir(), character.level(), character.xp(),
+                character.hp(), character.weakenedUntil(), character.attributes(),
+                character.unspentPoints(), items);
     }
 
     /**
@@ -76,7 +106,10 @@ public class CharacterRepository {
                 rs.getInt("level"),
                 rs.getLong("xp"),
                 rs.getInt("hp"),
-                weakened == null ? 0L : weakened.getTime());
+                weakened == null ? 0L : weakened.getTime(),
+                new Attributes(rs.getInt("strength"), rs.getInt("agility"), rs.getInt("intellect")),
+                rs.getInt("unspent_points"),
+                List.of());
     }
 
     /**
@@ -85,19 +118,51 @@ public class CharacterRepository {
      * there means the character was deleted while it was being played, which is
      * worth a line in the log rather than a resurrection.
      */
+    @Transactional
     public void save(ActorSnapshot snapshot) {
         int updated = jdbc.update(
                 "UPDATE game_character SET map_id = ?, x = ?, y = ?, dir = ?, last_seen = ?,"
-                        + " level = ?, xp = ?, hp = ?, weakened_until = ?"
+                        + " level = ?, xp = ?, hp = ?, weakened_until = ?,"
+                        + " strength = ?, agility = ?, intellect = ?, unspent_points = ?"
                         + " WHERE name_key = ?",
                 snapshot.mapId(), snapshot.x(), snapshot.y(), snapshot.dir(),
                 Timestamp.from(Instant.now()),
                 snapshot.level(), snapshot.xp(), snapshot.hp(),
                 snapshot.weakenedUntil() <= 0 ? null : new Timestamp(snapshot.weakenedUntil()),
+                snapshot.attributes().strength(), snapshot.attributes().agility(),
+                snapshot.attributes().intellect(), snapshot.unspentPoints(),
                 snapshot.nameKey());
         if (updated == 0) {
             log.warn("No character row for '{}'; its position was not saved", snapshot.nameKey());
+            return;
         }
+        if (snapshot.items() != null) {
+            replaceItems(snapshot.nameKey(), snapshot.items());
+        }
+    }
+
+    /**
+     * Writes a character's items out by replacing the lot.
+     *
+     * <p>Only when something actually moved: a snapshot carries null for items
+     * that have not changed, which is every save made by somebody merely walking
+     * about. When they have changed, twenty rows deleted and reinserted inside
+     * one transaction is both cheaper and far easier to be sure of than working
+     * out the difference - and an item can never be in two places at once, not
+     * even for the instant between two statements.
+     */
+    private void replaceItems(String nameKey, List<StoredItem> items) {
+        jdbc.update("DELETE FROM item_instance WHERE character_key = ?", nameKey);
+        if (items.isEmpty()) {
+            return;
+        }
+        Timestamp now = Timestamp.from(Instant.now());
+        jdbc.batchUpdate("INSERT INTO item_instance (id, character_key, def_id, slot, created_at)"
+                        + " VALUES (?, ?, ?, ?, ?)",
+                items.stream()
+                        .map(item -> new Object[]{item.id(), nameKey, item.defId(),
+                                item.slot() == null ? null : item.slot().name(), now})
+                        .toList());
     }
 
     private static Direction direction(String stored) {

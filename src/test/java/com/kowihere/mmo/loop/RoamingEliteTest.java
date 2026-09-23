@@ -2,7 +2,9 @@ package com.kowihere.mmo.loop;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kowihere.mmo.world.Content;
 import com.kowihere.mmo.world.Direction;
+import com.kowihere.mmo.world.ItemDefLoader;
 import com.kowihere.mmo.world.MapDef;
 import com.kowihere.mmo.world.MapDefLoader;
 import com.kowihere.mmo.world.MobDef;
@@ -29,6 +31,7 @@ class RoamingEliteTest {
     private static final MapDef ARENA = new MapDefLoader(new MobDefLoader(),
             "classpath:test-maps-elite/*.json").loadAll().get("arena");
     private static final Map<String, MobDef> MOBS = new MobDefLoader().loadAll();
+    private static final Content SHIPPED = new Content(MOBS, new ItemDefLoader().loadAll());
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private MapRunner runner;
@@ -36,7 +39,7 @@ class RoamingEliteTest {
 
     @BeforeEach
     void startMap() {
-        runner = new MapRunner(ARENA, JSON, WorldPersistence.NONE, MOBS);
+        runner = new MapRunner(ARENA, JSON, WorldPersistence.NONE, SHIPPED);
         thread = new Thread(runner, "test-arena");
         thread.setDaemon(true);
         thread.start();

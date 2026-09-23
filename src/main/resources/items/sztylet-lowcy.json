@@ -1,0 +1,7 @@
+{
+  "id": "sztylet-lowcy",
+  "name": "Sztylet Łowcy",
+  "slot": "WEAPON",
+  "requiresLevel": 3,
+  "bonuses": { "attack": 1, "agility": 6 }
+}

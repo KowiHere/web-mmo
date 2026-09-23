@@ -1,0 +1,7 @@
+{
+  "id": "zardzewialy-miecz",
+  "name": "Zardzewiały miecz",
+  "slot": "WEAPON",
+  "requiresLevel": 1,
+  "bonuses": { "attack": 3 }
+}

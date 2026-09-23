@@ -72,11 +72,48 @@ public final class ServerMessages {
      * another player's progress is nobody else's business, and a leak like that
      * is the kind nobody ever files a bug about.
      */
-    public record You(String type, int hp, int maxHp, int level, long xp,
-                      long xpThisLevel, long xpForNextLevel, long weakenedUntil, boolean dead) {
-        public You(int hp, int maxHp, int level, long xp, long xpThisLevel, long xpForNextLevel,
-                   long weakenedUntil, boolean dead) {
-            this("you", hp, maxHp, level, xp, xpThisLevel, xpForNextLevel, weakenedUntil, dead);
+    public record You(String type, int hp, int maxHp, int mana, int maxMana, int level, long xp,
+                      long xpThisLevel, long xpForNextLevel, long weakenedUntil, boolean dead,
+                      int strength, int agility, int intellect, int unspentPoints,
+                      int attack, int armor, int dodgePercent, int secondBlowPercent) {
+        public You(int hp, int maxHp, int mana, int maxMana, int level, long xp, long xpThisLevel,
+                   long xpForNextLevel, long weakenedUntil, boolean dead,
+                   int strength, int agility, int intellect, int unspentPoints,
+                   int attack, int armor, int dodgePercent, int secondBlowPercent) {
+            this("you", hp, maxHp, mana, maxMana, level, xp, xpThisLevel, xpForNextLevel,
+                    weakenedUntil, dead, strength, agility, intellect, unspentPoints,
+                    attack, armor, dodgePercent, secondBlowPercent);
+        }
+    }
+
+    /**
+     * One item, described well enough to be drawn and compared without the
+     * client holding a copy of the item catalogue.
+     *
+     * @param slot where it is worn; for a bag item this is where it *would* go
+     * @param wearable false when the character's level is too low, so the panel
+     *                 can say why rather than letting the click be refused
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ItemDto(String id, String defId, String name, String slot, int requiresLevel,
+                          boolean wearable, int strength, int agility, int intellect,
+                          int attack, int armor) {
+    }
+
+    /**
+     * What a character is wearing and carrying, sent only to its owner.
+     *
+     * <p>Kept out of {@code you} on purpose: {@code you} goes out at every
+     * scratch, and a bag that changes a few times an hour has no business riding
+     * along with it.
+     */
+    // Deliberately not NON_EMPTY, unlike the delta: an empty bag is news, and a
+    // frame where "carried" is simply missing cannot be told apart from one
+    // where it was never sent. The frame goes out a few times an hour, so there
+    // is nothing to save by leaving fields out of it.
+    public record Bag(String type, int capacity, List<ItemDto> carried, List<ItemDto> worn) {
+        public Bag(int capacity, List<ItemDto> carried, List<ItemDto> worn) {
+            this("bag", capacity, carried, worn);
         }
     }
 

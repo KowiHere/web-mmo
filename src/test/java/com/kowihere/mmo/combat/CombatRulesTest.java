@@ -72,16 +72,15 @@ class CombatRulesTest {
     }
 
     @Test
-    void statisticsFollowTheLevelAndNothingElse() {
-        assertThat(CombatRules.maxHpForLevel(1)).isEqualTo(65);
-        assertThat(CombatRules.maxHpForLevel(5)).isEqualTo(125);
-        assertThat(CombatRules.attackForLevel(1)).isEqualTo(7);
-        assertThat(CombatRules.armorForLevel(1)).isEqualTo(2);
+    void aFreshCharacterIsExactlyAsStrongAsItWasBeforeAttributesExisted() {
+        // Statistics used to come straight from the level. They now come from
+        // attributes, and this pins the join: a brand new character has the same
+        // 65 health and 7 attack it always had. Without that, every creature on
+        // the starter map would silently need rebalancing again.
+        Attributes fresh = Attributes.FRESH;
 
-        for (int level = 1; level < 50; level++) {
-            assertThat(CombatRules.maxHpForLevel(level + 1))
-                    .isGreaterThan(CombatRules.maxHpForLevel(level));
-        }
+        assertThat(fresh.maxHp()).isEqualTo(65);
+        assertThat(fresh.attack()).isEqualTo(7);
     }
 
     @Test
@@ -149,14 +148,13 @@ class CombatRulesTest {
     /** Whether a level-one character at full health outlasts this creature. */
     private static boolean roundsSurvivedAgainst(MobDef mob) {
         // The average swing, since neither side is luckier than the other over
-        // the length of a fight.
+        // the length of a fight. Bare-handed and with nothing spent: the worst
+        // shape a character is ever in is the one the starter map has to suit.
         CombatRules average = rollingExactly(0.5);
-        int hp = CombatRules.maxHpForLevel(1);
-        int attack = CombatRules.attackForLevel(1);
-        int armour = CombatRules.armorForLevel(1);
+        Attributes fresh = Attributes.FRESH;
 
-        int rounds = (int) Math.ceil(mob.hp() / (double) average.damage(attack, mob.armor()));
-        return rounds * average.damage(mob.attack(), armour) < hp;
+        int rounds = (int) Math.ceil(mob.hp() / (double) average.damage(fresh.attack(), mob.armor()));
+        return rounds * average.damage(mob.attack(), fresh.armor()) < fresh.maxHp();
     }
 
     @Test

@@ -2,7 +2,9 @@ package com.kowihere.mmo.loop;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kowihere.mmo.world.Content;
 import com.kowihere.mmo.world.Direction;
+import com.kowihere.mmo.world.ItemDefLoader;
 import com.kowihere.mmo.world.MapDef;
 import com.kowihere.mmo.world.MapDefLoader;
 import com.kowihere.mmo.world.MobDef;
@@ -32,6 +34,8 @@ class SafeSpawnTest {
 
     private static final Map<String, MobDef> MOBS =
             new MobDefLoader("classpath:test-mobs/*.json").loadAll();
+    private static final Content CONTENT =
+            new Content(MOBS, new ItemDefLoader("classpath:test-items/*.json").loadAll());
     private static final MapDef ARENA = new MapDefLoader(
             new MobDefLoader("classpath:test-mobs/*.json"),
             "classpath:test-maps-safe/*.json").loadAll().get("arena-bezpieczna");
@@ -43,7 +47,7 @@ class SafeSpawnTest {
 
     @BeforeEach
     void startMap() {
-        runner = new MapRunner(ARENA, JSON, WorldPersistence.NONE, MOBS, 20);
+        runner = new MapRunner(ARENA, JSON, WorldPersistence.NONE, CONTENT, 20);
         thread = new Thread(runner, "test-arena-safe");
         thread.setDaemon(true);
         thread.start();

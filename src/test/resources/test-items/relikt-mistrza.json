@@ -1,0 +1,7 @@
+{
+  "id": "relikt-mistrza",
+  "name": "Relikt Mistrza",
+  "slot": "TRINKET",
+  "requiresLevel": 9,
+  "bonuses": { "strength": 10 }
+}

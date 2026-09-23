@@ -1,0 +1,7 @@
+{
+  "id": "kostur-ucznia",
+  "name": "Kostur Ucznia",
+  "slot": "WEAPON",
+  "requiresLevel": 1,
+  "bonuses": { "intellect": 8 }
+}

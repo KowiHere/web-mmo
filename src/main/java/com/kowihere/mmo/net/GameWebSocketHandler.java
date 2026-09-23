@@ -6,7 +6,9 @@ import com.kowihere.mmo.loop.MapRunner;
 import com.kowihere.mmo.loop.SavedCharacter;
 import com.kowihere.mmo.loop.WorldService;
 import com.kowihere.mmo.persistence.CharacterRepository;
+import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.protocol.ClientMessage;
+import com.kowihere.mmo.world.ItemSlot;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -91,6 +93,17 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 }
             }
             case "flee" -> map.submit(new Command.Flee(client));
+            case "equip" -> {
+                if (message.itemId() != null) {
+                    map.submit(new Command.Equip(client, message.itemId()));
+                }
+            }
+            // Both of these parse to null when a client names something that
+            // does not exist, and the map ignores a null. Nothing here decides
+            // whether the action is allowed - that is the world's business.
+            case "unequip" -> map.submit(new Command.Unequip(client, ItemSlot.parse(message.slot())));
+            case "spend" -> map.submit(
+                    new Command.Spend(client, Attributes.Attribute.parse(message.attribute())));
             default -> log.debug("Unknown message type '{}' from {}", message.type(), session.getId());
         }
     }

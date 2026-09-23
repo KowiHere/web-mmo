@@ -21,6 +21,9 @@ public record ClientMessage(
         Integer x,
         Integer y,
         String text,
-        Integer targetId
+        Integer targetId,
+        String itemId,
+        String slot,
+        String attribute
 ) {
 }

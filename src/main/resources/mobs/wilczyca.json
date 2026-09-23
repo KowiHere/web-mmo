@@ -9,5 +9,15 @@
   "stepTicks": 3,
   "aggroRadius": 6,
   "leashRadius": 12,
-  "respawnSeconds": 600
+  "respawnSeconds": 600,
+  "loot": [
+    {
+      "item": "sztylet-lowcy",
+      "chance": 1.0
+    },
+    {
+      "item": "pierscien-sily",
+      "chance": 0.5
+    }
+  ]
 }

@@ -2,6 +2,7 @@ package com.kowihere.mmo.loop;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.combat.CombatRules;
 import com.kowihere.mmo.combat.Fight;
 import com.kowihere.mmo.path.AStar;
@@ -16,6 +17,10 @@ import com.kowihere.mmo.protocol.ServerMessages.MoveDto;
 import com.kowihere.mmo.protocol.ServerMessages.PresenceDto;
 import com.kowihere.mmo.world.Direction;
 import com.kowihere.mmo.world.MapDef;
+import com.kowihere.mmo.world.Content;
+import com.kowihere.mmo.world.ItemDef;
+import com.kowihere.mmo.world.ItemSlot;
+import com.kowihere.mmo.world.LootEntry;
 import com.kowihere.mmo.world.MobDef;
 import com.kowihere.mmo.world.RoamingSpawn;
 import com.kowihere.mmo.world.SpawnPoint;
@@ -90,11 +95,14 @@ public final class MapRunner implements Runnable {
     // ---- owned exclusively by the map thread from here down ----
     private final Map<Integer, Actor> actors = new HashMap<>();
     private final Map<String, Actor> byNameKey = new HashMap<>();
+    private final Content content;
     private final Map<String, MobDef> mobDefs;
     private final MobBehaviour brain;
     private final Random random;
     /** Characters owed an own-state frame once this tick's delta has gone out. */
     private final Set<Integer> pendingYou = new LinkedHashSet<>();
+    /** The same, for what they are carrying. */
+    private final Set<Integer> pendingBag = new LinkedHashSet<>();
     private final Map<String, Long> nextRoamTick = new HashMap<>();
     private final List<Fight> fights = new ArrayList<>();
     private final List<PendingRespawn> respawning = new ArrayList<>();
@@ -124,12 +132,11 @@ public final class MapRunner implements Runnable {
     }
 
     public MapRunner(MapDef map, ObjectMapper json, WorldPersistence persistence) {
-        this(map, json, persistence, Map.of());
+        this(map, json, persistence, Content.EMPTY);
     }
 
-    public MapRunner(MapDef map, ObjectMapper json, WorldPersistence persistence,
-                     Map<String, MobDef> mobDefs) {
-        this(map, json, persistence, mobDefs, DEFAULT_GRACE_TICKS);
+    public MapRunner(MapDef map, ObjectMapper json, WorldPersistence persistence, Content content) {
+        this(map, json, persistence, content, DEFAULT_GRACE_TICKS);
     }
 
     /**
@@ -138,24 +145,26 @@ public final class MapRunner implements Runnable {
      *                   out the real half-minute.
      */
     public MapRunner(MapDef map, ObjectMapper json, WorldPersistence persistence,
-                     Map<String, MobDef> mobDefs, int graceTicks) {
-        this(map, json, persistence, mobDefs, graceTicks, new Random());
+                     Content content, int graceTicks) {
+        this(map, json, persistence, content, graceTicks, new Random());
     }
 
     /**
-     * @param random every roll this map makes - damage swings, escapes, where a
-     *               creature wanders. Handed in rather than made here so a test
-     *               can decide an outcome instead of running the same fight a
-     *               hundred times and hoping to see the case it is after.
+     * @param random every roll this map makes - damage swings, escapes, what a
+     *               creature leaves behind, where it wanders. Handed in rather
+     *               than made here so a test can decide an outcome instead of
+     *               running the same fight a hundred times and hoping to see the
+     *               case it is after.
      */
     MapRunner(MapDef map, ObjectMapper json, WorldPersistence persistence,
-              Map<String, MobDef> mobDefs, int graceTicks, Random random) {
+              Content content, int graceTicks, Random random) {
         this.random = random;
         this.graceTicks = graceTicks;
         this.map = map;
         this.json = json;
         this.persistence = persistence;
-        this.mobDefs = mobDefs;
+        this.content = content;
+        this.mobDefs = content.mobs();
         this.pathfinder = new AStar(map);
         // The same pathfinder players use, deliberately: both run on this thread,
         // and sharing it makes pathSearches() the map's true total rather than
@@ -250,6 +259,9 @@ public final class MapRunner implements Runnable {
                 case Command.Chat message -> handleChat(message);
                 case Command.Attack attack -> handleAttack(attack);
                 case Command.Flee flee -> handleFlee(flee);
+                case Command.Equip equip -> handleEquip(equip);
+                case Command.Unequip unequip -> handleUnequip(unequip);
+                case Command.Spend spend -> handleSpend(spend);
             }
         }
     }
@@ -280,6 +292,7 @@ public final class MapRunner implements Runnable {
         joined.add(toDto(actor));
         sendInit(actor, join.client());
         sendYou(actor);
+        sendBag(actor);
     }
 
     private void attach(Actor actor, Command.Join join) {
@@ -296,6 +309,7 @@ public final class MapRunner implements Runnable {
             sendInit(actor, join.client());
         }
         sendYou(actor);
+        sendBag(actor);
     }
 
     /**
@@ -322,6 +336,9 @@ public final class MapRunner implements Runnable {
         actor.level = Math.max(1, saved.level());
         actor.xp = Math.max(0, saved.xp());
         actor.weakenedUntil = saved.weakenedUntil();
+        actor.attributes = saved.attributes();
+        actor.unspentPoints = Math.max(0, saved.unspentPoints());
+        actor.inventory.restore(saved.items(), content.items());
         // -1 means "as healthy as this level allows", which is how a new
         // character and every row predating combat is stored.
         actor.hp = saved.hp() < 0 ? actor.maxHp() : Math.min(saved.hp(), actor.maxHp());
@@ -405,6 +422,107 @@ public final class MapRunner implements Runnable {
         if (actor != null && actor.inFight()) {
             actor.fight.wantsToFlee(actor.id);
         }
+    }
+
+    /**
+     * Puts something on.
+     *
+     * <p>Every refusal below is the server's, not the interface's. A client that
+     * never draws an unwearable item is a convenience; a client that cannot be
+     * made to send one anyway does not exist.
+     */
+    private void handleEquip(Command.Equip equip) {
+        Actor actor = byClient.get(equip.client());
+        if (actor == null) {
+            return;
+        }
+        if (actor.inFight()) {
+            sendError(actor, "W walce nie ma czasu na przebieranie się.");
+            return;
+        }
+        ItemStack stack = actor.inventory.inBag(equip.itemId());
+        if (stack == null) {
+            return; // nothing of that name in the bag; nothing to say about it
+        }
+        if (actor.level < stack.def().requiresLevel()) {
+            sendError(actor, stack.def().name() + " wymaga poziomu "
+                    + stack.def().requiresLevel() + ".");
+            return;
+        }
+
+        int healthBefore = actor.maxHp();
+        actor.inventory.wear(stack);
+        keepHealthInRange(actor, healthBefore);
+        itemsChanged(actor);
+    }
+
+    private void handleUnequip(Command.Unequip unequip) {
+        Actor actor = byClient.get(unequip.client());
+        if (actor == null || unequip.slot() == null) {
+            return;
+        }
+        if (actor.inFight()) {
+            sendError(actor, "W walce nie ma czasu na przebieranie się.");
+            return;
+        }
+        if (actor.inventory.wornIn(unequip.slot()) == null) {
+            return;
+        }
+        if (actor.inventory.isFull()) {
+            // Refused rather than dropped: an item that disappears because a bag
+            // was full is a bug report nobody can reproduce.
+            sendError(actor, "Nie ma gdzie tego schować - plecak jest pełny.");
+            return;
+        }
+
+        int healthBefore = actor.maxHp();
+        actor.inventory.takeOff(unequip.slot());
+        keepHealthInRange(actor, healthBefore);
+        itemsChanged(actor);
+    }
+
+    private void handleSpend(Command.Spend spend) {
+        Actor actor = byClient.get(spend.client());
+        if (actor == null || spend.attribute() == null) {
+            return;
+        }
+        if (actor.inFight()) {
+            sendError(actor, "Punkty rozdasz po walce.");
+            return;
+        }
+        if (actor.unspentPoints <= 0) {
+            sendError(actor, "Nie masz punktów do rozdania.");
+            return;
+        }
+
+        int healthBefore = actor.maxHp();
+        actor.unspentPoints--;
+        actor.attributes = actor.attributes.plus(spend.attribute(), 1);
+        // A point in strength is worth health immediately - the alternative is
+        // spending a point and seeing nothing happen until the next fight.
+        actor.hp += Math.max(0, actor.maxHp() - healthBefore);
+        actor.dirty = true;
+        sendYou(actor);
+    }
+
+    /**
+     * Keeps current health sane when the maximum moves under it.
+     *
+     * <p>Taking off the armour that was holding your health up should not kill
+     * you, and putting it back on should not heal you.
+     */
+    private static void keepHealthInRange(Actor actor, int healthBefore) {
+        int now = actor.maxHp();
+        if (now < healthBefore) {
+            actor.hp = Math.max(1, Math.min(actor.hp, now));
+        }
+    }
+
+    private void itemsChanged(Actor actor) {
+        actor.dirty = true;
+        actor.itemsDirty = true;
+        sendYou(actor);
+        sendBag(actor);
     }
 
     private void handleChat(Command.Chat message) {
@@ -583,7 +701,32 @@ public final class MapRunner implements Runnable {
         return null;
     }
 
+    /**
+     * One participant's turn: a blow, and sometimes a second one.
+     *
+     * <p>Agility buys the second. It is not attack speed - the round is still
+     * the round, and everybody still gets one turn in it - but it is the part of
+     * attack speed that fits a turn: sometimes you get two in.
+     */
     private void strike(Actor attacker, Actor target, Fight fight) {
+        if (!swing(attacker, target, fight)) {
+            return; // the target is down; nothing left to hit
+        }
+        if (combat.landsSecondBlow(attacker.secondBlowChance())) {
+            swing(attacker, target, fight);
+        }
+    }
+
+    /** @return true if the target is still standing and can be hit again */
+    private boolean swing(Actor attacker, Actor target, Fight fight) {
+        if (combat.dodges(target.dodgeChance())) {
+            // Reported as a blow for zero, so the client can say "0" where it
+            // would have said a number. A miss that shows nothing at all looks
+            // like the server stopped answering.
+            damage.add(new DamageDto(attacker.id, target.id, 0, target.hp));
+            return true;
+        }
+
         int dealt = combat.damage(attacker.attack(), target.armor());
         target.hp = Math.max(0, target.hp - dealt);
         damage.add(new DamageDto(attacker.id, target.id, dealt, target.hp));
@@ -592,13 +735,14 @@ public final class MapRunner implements Runnable {
             sendYou(target);
         }
         if (target.isAlive()) {
-            return;
+            return true;
         }
         if (target.isMob()) {
             killCreature(target, attacker, fight);
         } else {
             killPlayer(target, fight);
         }
+        return false;
     }
 
     private void killCreature(Actor creature, Actor killer, Fight fight) {
@@ -614,6 +758,36 @@ public final class MapRunner implements Runnable {
 
         if (killer != null && !killer.isMob()) {
             awardExperience(killer, creature);
+            awardLoot(killer, creature);
+        }
+    }
+
+    /**
+     * What a creature leaves behind, rolled once per entry.
+     *
+     * <p>Straight into the killer's bag. Loot lying on a tile is its own feature
+     * - who may pick it up, how long it waits, how it is drawn - and none of
+     * those questions have anything to do with whether items work.
+     */
+    private void awardLoot(Actor killer, Actor creature) {
+        for (LootEntry entry : creature.mob.loot()) {
+            if (!combat.rolls(entry.chance())) {
+                continue;
+            }
+            ItemDef def = content.items().get(entry.itemId());
+            if (def == null) {
+                continue; // the loader refuses this at startup; belt and braces
+            }
+            if (!killer.inventory.add(ItemStack.of(def))) {
+                sendError(killer, "Plecak jest pełny - " + def.name() + " przepadł.");
+                return;
+            }
+            chat.add(new ChatDto(killer.id, killer.name, "* znajduje: " + def.name() + " *"));
+            killer.dirty = true;
+            killer.itemsDirty = true;
+        }
+        if (killer.itemsDirty) {
+            sendBag(killer);
         }
     }
 
@@ -643,6 +817,9 @@ public final class MapRunner implements Runnable {
         player.xp += reward;
         player.level = CombatRules.levelForXp(player.xp);
         if (player.level > before) {
+            // Points, not statistics. A level is worth what the player decides
+            // it is worth, which is the whole reason attributes exist.
+            player.unspentPoints += Attributes.POINTS_PER_LEVEL * (player.level - before);
             player.hp = player.maxHp(); // a level is worth a full recovery
             chat.add(new ChatDto(player.id, player.name, "* osiąga poziom " + player.level + " *"));
         }
@@ -883,7 +1060,7 @@ public final class MapRunner implements Runnable {
     private void flush() {
         if (joined.isEmpty() && left.isEmpty() && moved.isEmpty() && chat.isEmpty()
                 && presence.isEmpty() && damage.isEmpty() && died.isEmpty() && fightChanges.isEmpty()) {
-            flushPrivateFrames(); // a level-up on a tick where nothing else moved
+            flushPrivateFrames(); // a level-up, or a bag change, on an otherwise still tick
             return;
         }
         version++;
@@ -926,6 +1103,13 @@ public final class MapRunner implements Runnable {
             }
         }
         pendingYou.clear();
+        for (int id : pendingBag) {
+            Actor actor = actors.get(id);
+            if (actor != null) {
+                sendBagNow(actor);
+            }
+        }
+        pendingBag.clear();
     }
 
     private void sendInit(Actor self, Client client) {
@@ -1005,11 +1189,16 @@ public final class MapRunner implements Runnable {
             return;
         }
         actor.dirty = false;
+        // Items only when they moved. Null here means "leave those rows alone",
+        // which is every save made by somebody simply walking across a map.
+        List<StoredItem> items = actor.itemsDirty ? actor.inventory.stored() : null;
+        actor.itemsDirty = false;
         // A copy, never the live actor: anything handed across threads must not
         // be something the tick is still writing to.
         persistence.save(new ActorSnapshot(actor.nameKey, actor.name, map.id(),
                 actor.x, actor.y, actor.dir.name(),
-                actor.level, actor.xp, actor.hp, actor.weakenedUntil));
+                actor.level, actor.xp, actor.hp, actor.weakenedUntil,
+                actor.attributes, actor.unspentPoints, items));
     }
 
     private ActorDto toDto(Actor actor) {
@@ -1051,10 +1240,56 @@ public final class MapRunner implements Runnable {
         }
         long floor = CombatRules.xpForLevel(actor.level);
         long ceiling = CombatRules.xpForLevel(actor.level + 1);
-        String frame = serialise(new ServerMessages.You(actor.hp, actor.maxHp(), actor.level,
-                actor.xp, actor.xp - floor, ceiling - floor, actor.weakenedUntil, !actor.isAlive()));
+        Attributes total = actor.totalAttributes();
+        String frame = serialise(new ServerMessages.You(
+                actor.hp, actor.maxHp(),
+                // Mana has no spender yet. It is here because intellect has to
+                // be worth something a player can see, and because a bar added
+                // later would mean a protocol change for a feature that was
+                // always going to need it.
+                actor.maxMana(), actor.maxMana(),
+                actor.level, actor.xp, actor.xp - floor, ceiling - floor,
+                actor.weakenedUntil, !actor.isAlive(),
+                total.strength(), total.agility(), total.intellect(), actor.unspentPoints,
+                actor.attack(), actor.armor(),
+                (int) Math.round(actor.dodgeChance() * 100),
+                (int) Math.round(actor.secondBlowChance() * 100)));
         if (frame != null) {
             actor.client.send(frame);
         }
+    }
+
+    /** Queued like {@code you}, and for the same reason: after the delta. */
+    private void sendBag(Actor actor) {
+        if (actor.isMob() || actor.client == null) {
+            return;
+        }
+        pendingBag.add(actor.id);
+    }
+
+    private void sendBagNow(Actor actor) {
+        if (actor.isMob() || actor.client == null) {
+            return;
+        }
+        List<ServerMessages.ItemDto> carried = new ArrayList<>();
+        for (ItemStack stack : actor.inventory.bag()) {
+            carried.add(toDto(stack, actor));
+        }
+        List<ServerMessages.ItemDto> worn = new ArrayList<>();
+        for (Map.Entry<ItemSlot, ItemStack> entry : actor.inventory.worn().entrySet()) {
+            worn.add(toDto(entry.getValue(), actor));
+        }
+        String frame = serialise(new ServerMessages.Bag(Inventory.CAPACITY, carried, worn));
+        if (frame != null) {
+            actor.client.send(frame);
+        }
+    }
+
+    private static ServerMessages.ItemDto toDto(ItemStack stack, Actor owner) {
+        ItemDef def = stack.def();
+        return new ServerMessages.ItemDto(stack.id(), def.id(), def.name(), def.slot().name(),
+                def.requiresLevel(), owner.level >= def.requiresLevel(),
+                def.bonuses().strength(), def.bonuses().agility(), def.bonuses().intellect(),
+                def.attack(), def.armor());
     }
 }

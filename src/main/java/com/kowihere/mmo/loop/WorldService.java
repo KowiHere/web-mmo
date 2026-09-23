@@ -1,6 +1,8 @@
 package com.kowihere.mmo.loop;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kowihere.mmo.world.Content;
+import com.kowihere.mmo.world.ItemDefLoader;
 import com.kowihere.mmo.world.MapDef;
 import com.kowihere.mmo.world.MapDefLoader;
 import com.kowihere.mmo.world.MobDef;
@@ -32,6 +34,7 @@ public class WorldService {
 
     private final MapDefLoader loader;
     private final MobDefLoader mobLoader;
+    private final ItemDefLoader itemLoader;
     private final ObjectMapper json;
     private final WorldPersistence persistence;
     private final Map<String, MapRunner> runners = new LinkedHashMap<>();
@@ -39,19 +42,21 @@ public class WorldService {
 
     private String defaultMapId;
 
-    public WorldService(MapDefLoader loader, MobDefLoader mobLoader, ObjectMapper json,
-                        WorldPersistence persistence) {
+    public WorldService(MapDefLoader loader, MobDefLoader mobLoader, ItemDefLoader itemLoader,
+                        ObjectMapper json, WorldPersistence persistence) {
         this.loader = loader;
         this.mobLoader = mobLoader;
+        this.itemLoader = itemLoader;
         this.json = json;
         this.persistence = persistence;
     }
 
     @PostConstruct
     void start() {
-        Map<String, MobDef> mobs = mobLoader.loadAll();
+        Content content = new Content(mobLoader.loadAll(), itemLoader.loadAll());
+        Map<String, MobDef> mobs = content.mobs();
         for (MapDef def : loader.loadAll().values()) {
-            MapRunner runner = new MapRunner(def, json, persistence, mobs);
+            MapRunner runner = new MapRunner(def, json, persistence, content);
             runners.put(def.id(), runner);
             Thread thread = new Thread(runner, "map-" + def.id());
             thread.setDaemon(false);
@@ -61,8 +66,9 @@ public class WorldService {
                 defaultMapId = def.id();
             }
         }
-        log.info("World started with {} map(s) and {} creature definition(s); default is '{}'",
-                runners.size(), mobs.size(), defaultMapId);
+        log.info("World started with {} map(s), {} creature definition(s) and {} item(s);"
+                        + " default map is '{}'",
+                runners.size(), mobs.size(), content.items().size(), defaultMapId);
     }
 
     @PreDestroy

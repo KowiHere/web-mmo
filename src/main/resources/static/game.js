@@ -70,6 +70,7 @@ const state = {
     held: new Set(),
     lastKeyMoveAt: 0,
     you: null,
+    bag: null,
     floaters: [],
     stats: { frames: 0, fps: 0, deltas: 0, deltaRate: 0, sampledAt: 0 },
 };
@@ -83,6 +84,13 @@ const chatInput = document.getElementById('chat-input');
 const debugEl = document.getElementById('debug');
 const sheetEl = document.getElementById('sheet');
 const fleeButton = document.getElementById('flee');
+const panelEl = document.getElementById('panel');
+const panelToggle = document.getElementById('panel-toggle');
+const attributesEl = document.getElementById('attributes');
+const pointsEl = document.getElementById('points');
+const equipmentEl = document.getElementById('equipment');
+const bagEl = document.getElementById('bag');
+const bagCountEl = document.getElementById('bag-count');
 
 // ---------------------------------------------------------------- networking
 
@@ -116,6 +124,7 @@ function connect(characterKey) {
         if (msg.type === 'init') applyInit(msg);
         else if (msg.type === 'delta') applyDelta(msg);
         else if (msg.type === 'you') applyYou(msg);
+        else if (msg.type === 'bag') applyBag(msg);
         else if (msg.type === 'error') logSystem(msg.message);
     };
 
@@ -242,7 +251,13 @@ function applyYou(msg) {
     state.you = msg;
     if (wasLevel && msg.level > wasLevel) logSystem(`Awans na poziom ${msg.level}!`);
     renderSheet();
+    renderPanel();
     updateFleeButton();
+}
+
+function applyBag(msg) {
+    state.bag = msg;
+    renderPanel();
 }
 
 function renderSheet() {
@@ -257,6 +272,10 @@ function renderSheet() {
     sheetEl.innerHTML = '';
     sheetEl.append(
         bar('hp', `${you.hp} / ${you.maxHp}`, healthPercent),
+        // Mana has no spender yet - intellect is the attribute classes will
+        // eventually pay from. Shown rather than hidden so an item granting
+        // intellect visibly does something today.
+        bar('mana', `${you.mana} / ${you.maxMana}`, you.maxMana > 0 ? 100 : 0),
         bar('xp', `poziom ${you.level}`, xpPercent),
     );
     if (weakened) {
@@ -278,6 +297,150 @@ function bar(kind, label, percent) {
     text.textContent = label;
     wrap.append(fill, text);
     return wrap;
+}
+
+const ATTRIBUTE_NAMES = {
+    STRENGTH: 'Siła',
+    AGILITY: 'Zwinność',
+    INTELLECT: 'Inteligencja',
+};
+
+const SLOT_NAMES = {
+    WEAPON: 'Broń',
+    CHEST: 'Tors',
+    TRINKET: 'Ozdoba',
+};
+
+const SLOT_ORDER = ['WEAPON', 'CHEST', 'TRINKET'];
+
+function renderPanel() {
+    if (panelEl.hidden) return;
+    renderAttributes();
+    renderEquipment();
+    renderBag();
+}
+
+function renderAttributes() {
+    const you = state.you;
+    attributesEl.innerHTML = '';
+    if (!you) return;
+
+    const values = { STRENGTH: you.strength, AGILITY: you.agility, INTELLECT: you.intellect };
+    for (const [key, label] of Object.entries(ATTRIBUTE_NAMES)) {
+        const row = document.createElement('li');
+        const name = document.createElement('span');
+        name.textContent = label;
+        const value = document.createElement('span');
+        value.className = 'value';
+        value.textContent = values[key];
+        row.append(name, value);
+
+        if (you.unspentPoints > 0) {
+            const spend = document.createElement('button');
+            spend.type = 'button';
+            spend.textContent = '+';
+            spend.title = `Wydaj punkt na: ${label}`;
+            spend.addEventListener('click', () => send({ type: 'spend', attribute: key }));
+            row.append(spend);
+        }
+        attributesEl.append(row);
+    }
+
+    // The derived numbers, so it is obvious what a point actually bought.
+    for (const [label, text] of [
+        ['Atak', you.attack],
+        ['Pancerz', you.armor],
+        ['Unik', `${you.dodgePercent}%`],
+        ['Drugi cios', `${you.secondBlowPercent}%`],
+    ]) {
+        const row = document.createElement('li');
+        const name = document.createElement('span');
+        name.className = 'slot-name';
+        name.textContent = label;
+        const value = document.createElement('span');
+        value.className = 'value';
+        value.textContent = text;
+        row.append(name, value);
+        attributesEl.append(row);
+    }
+
+    pointsEl.hidden = you.unspentPoints <= 0;
+    pointsEl.textContent = `Punkty do rozdania: ${you.unspentPoints}`;
+}
+
+function renderEquipment() {
+    equipmentEl.innerHTML = '';
+    const worn = new Map((state.bag ? state.bag.worn || [] : []).map((item) => [item.slot, item]));
+
+    for (const slot of SLOT_ORDER) {
+        const item = worn.get(slot);
+        if (!item) {
+            const empty = document.createElement('li');
+            empty.className = 'empty';
+            empty.innerHTML = `<span class="slot-name">${SLOT_NAMES[slot]}</span>`;
+            equipmentEl.append(empty);
+            continue;
+        }
+        equipmentEl.append(itemRow(item, () => send({ type: 'unequip', slot }),
+            `Zdejmij: ${item.name}`));
+    }
+}
+
+function renderBag() {
+    bagEl.innerHTML = '';
+    const carried = state.bag ? state.bag.carried || [] : [];
+    bagCountEl.textContent = state.bag ? `${carried.length} / ${state.bag.capacity}` : '';
+
+    if (!carried.length) {
+        const empty = document.createElement('li');
+        empty.className = 'empty';
+        empty.textContent = 'Pusto';
+        bagEl.append(empty);
+        return;
+    }
+    for (const item of carried) {
+        bagEl.append(itemRow(item,
+            item.wearable ? () => send({ type: 'equip', itemId: item.id }) : null,
+            item.wearable ? `Załóż: ${item.name}` : `Wymaga poziomu ${item.requiresLevel}`));
+    }
+}
+
+function itemRow(item, onClick, title) {
+    const row = document.createElement('li');
+    row.title = title;
+    row.dataset.itemId = item.id;
+    row.dataset.defId = item.defId;
+    if (!onClick) row.classList.add('locked');
+
+    const slot = document.createElement('span');
+    slot.className = 'slot-name';
+    slot.textContent = SLOT_NAMES[item.slot] || item.slot;
+    const name = document.createElement('span');
+    name.textContent = item.name;
+    const bonus = document.createElement('span');
+    bonus.className = 'bonus';
+    bonus.textContent = describeBonuses(item);
+
+    row.append(slot, name, bonus);
+    if (onClick) row.addEventListener('click', onClick);
+    return row;
+}
+
+/** Everything an item grants, short enough to sit on one line. */
+function describeBonuses(item) {
+    const parts = [];
+    if (item.attack) parts.push(`+${item.attack} atk`);
+    if (item.armor) parts.push(`+${item.armor} panc`);
+    if (item.strength) parts.push(`+${item.strength} sił`);
+    if (item.agility) parts.push(`+${item.agility} zwn`);
+    if (item.intellect) parts.push(`+${item.intellect} int`);
+    return parts.join(' ');
+}
+
+function togglePanel(show) {
+    panelEl.hidden = show === undefined ? !panelEl.hidden : !show;
+    panelToggle.textContent = panelEl.hidden ? 'Postać (i)' : 'Zamknij (i)';
+    renderPanel();
 }
 
 function updateFleeButton() {
@@ -725,6 +888,17 @@ document.addEventListener('keydown', (event) => {
         return;
     }
 
+    if (event.key === 'i' || event.key === 'I') {
+        event.preventDefault();
+        togglePanel();
+        return;
+    }
+
+    if (event.key === 'Escape' && !panelEl.hidden) {
+        togglePanel(false);
+        return;
+    }
+
     const direction = MOVEMENT_KEYS[event.key];
     if (direction) {
         event.preventDefault(); // movement keys must not also scroll the page
@@ -733,6 +907,13 @@ document.addEventListener('keydown', (event) => {
         stepInDirection(direction, performance.now());
     }
 });
+
+panelToggle.addEventListener('click', () => togglePanel());
+
+// The panel is a panel, not a form: nothing inside it takes the keyboard, so
+// movement keys keep working while it is open. The chat box already taught us
+// what happens when part of the interface quietly swallows "w".
+
 
 document.addEventListener('keyup', (event) => {
     state.held.delete(event.key);
@@ -770,7 +951,14 @@ let rendering = false;
 
 function show(name) {
     for (const [key, element] of Object.entries(screens)) element.hidden = key !== name;
-    if (name !== 'game') return;
+    if (name !== 'game') {
+        // Leaving the world takes the panel and its contents with it. A bag
+        // left on screen belongs to a character this client no longer is.
+        state.bag = null;
+        state.you = null;
+        togglePanel(false);
+        return;
+    }
     resize();
     if (!rendering) {
         rendering = true;

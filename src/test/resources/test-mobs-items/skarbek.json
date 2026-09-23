@@ -1,0 +1,14 @@
+{
+  "id": "skarbek",
+  "name": "Skarbek",
+  "tier": "MOB",
+  "level": 1,
+  "hp": 10,
+  "attack": 1,
+  "armor": 0,
+  "stepTicks": 8,
+  "aggroRadius": 0,
+  "leashRadius": 2,
+  "respawnSeconds": 1,
+  "loot": [ { "item": "probny-miecz", "chance": 1.0 } ]
+}

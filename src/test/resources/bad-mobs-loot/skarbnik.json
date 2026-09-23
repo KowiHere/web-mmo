@@ -1,0 +1,10 @@
+{
+  "id": "skarbnik",
+  "name": "Skarbnik",
+  "tier": "MOB",
+  "level": 1,
+  "hp": 10,
+  "attack": 1,
+  "armor": 0,
+  "loot": [ { "item": "nie-ma-takiego-przedmiotu", "chance": 1.0 } ]
+}

@@ -1,5 +1,8 @@
 package com.kowihere.mmo.loop;
 
+import com.kowihere.mmo.combat.Attributes;
+import com.kowihere.mmo.world.ItemSlot;
+
 /**
  * The only way into a map's state. Network threads enqueue these; the map's own
  * thread is the sole consumer and the sole writer of everything they touch.
@@ -34,5 +37,16 @@ public sealed interface Command {
 
     /** Try to leave the current fight. Resolved at the start of the next round. */
     record Flee(Client client) implements Command {
+    }
+
+    /** Put on something from the bag. The item is named by its own id, not a slot. */
+    record Equip(Client client, String itemId) implements Command {
+    }
+
+    record Unequip(Client client, ItemSlot slot) implements Command {
+    }
+
+    /** Spend one earned point on an attribute. */
+    record Spend(Client client, Attributes.Attribute attribute) implements Command {
     }
 }

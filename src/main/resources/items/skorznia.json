@@ -1,0 +1,7 @@
+{
+  "id": "skorznia",
+  "name": "Skórznia",
+  "slot": "CHEST",
+  "requiresLevel": 1,
+  "bonuses": { "armor": 3 }
+}

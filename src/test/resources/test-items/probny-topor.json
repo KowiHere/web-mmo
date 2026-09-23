@@ -1,0 +1,7 @@
+{
+  "id": "probny-topor",
+  "name": "Próbny topór",
+  "slot": "WEAPON",
+  "requiresLevel": 1,
+  "bonuses": { "attack": 9 }
+}

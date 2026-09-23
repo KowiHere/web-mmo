@@ -2,7 +2,9 @@ package com.kowihere.mmo.loop;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kowihere.mmo.world.Content;
 import com.kowihere.mmo.world.Direction;
+import com.kowihere.mmo.world.ItemDefLoader;
 import com.kowihere.mmo.world.MapDef;
 import com.kowihere.mmo.world.MapDefLoader;
 import com.kowihere.mmo.world.MobDef;
@@ -31,6 +33,7 @@ class MobsInTheWorldTest {
 
     private static final MapDef MAP = new MapDefLoader().loadAll().get("starter");
     private static final Map<String, MobDef> MOBS = new MobDefLoader().loadAll();
+    private static final Content SHIPPED = new Content(MOBS, new ItemDefLoader().loadAll());
     private static final long TIMEOUT_MS = 8_000;
     private static final long ACCOUNT = 1L;
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -44,7 +47,7 @@ class MobsInTheWorldTest {
         saved = new RecordingPersistence();
         // A two-second grace period rather than the real thirty, so the reaper
         // test below finishes in this decade.
-        runner = new MapRunner(MAP, new ObjectMapper(), saved, MOBS, 20);
+        runner = new MapRunner(MAP, new ObjectMapper(), saved, SHIPPED, 20);
         thread = new Thread(runner, "test-map-mobs");
         thread.setDaemon(true);
         thread.start();

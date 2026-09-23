@@ -3,7 +3,9 @@ package com.kowihere.mmo.loop;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kowihere.mmo.combat.CombatRules;
+import com.kowihere.mmo.world.Content;
 import com.kowihere.mmo.world.Direction;
+import com.kowihere.mmo.world.ItemDefLoader;
 import com.kowihere.mmo.world.MapDef;
 import com.kowihere.mmo.world.MapDefLoader;
 import com.kowihere.mmo.world.MobDef;
@@ -34,6 +36,8 @@ class CombatInTheWorldTest {
 
     private static final Map<String, MobDef> MOBS =
             new MobDefLoader("classpath:test-mobs/*.json").loadAll();
+    private static final Content CONTENT =
+            new Content(MOBS, new ItemDefLoader("classpath:test-items/*.json").loadAll());
     private static final MapDef ARENA = new MapDefLoader(
             new MobDefLoader("classpath:test-mobs/*.json"),
             "classpath:test-maps-combat/*.json").loadAll().get("arena-walki");
@@ -49,7 +53,7 @@ class CombatInTheWorldTest {
     @BeforeEach
     void startMap() {
         saved = new RecordingPersistence();
-        runner = new MapRunner(ARENA, JSON, saved, MOBS, 20);
+        runner = new MapRunner(ARENA, JSON, saved, CONTENT, 20);
         thread = new Thread(runner, "test-arena-combat");
         thread.setDaemon(true);
         thread.start();
@@ -224,7 +228,7 @@ class CombatInTheWorldTest {
     void afailedEscapeCostsYouTheRound() throws Exception {
         // With the roll fixed against the runner, the round is decided rather
         // than sampled: the creature must swing and the runner must not.
-        MapRunner rigged = new MapRunner(ARENA, JSON, WorldPersistence.NONE, MOBS, 20, neverEscapes());
+        MapRunner rigged = new MapRunner(ARENA, JSON, WorldPersistence.NONE, CONTENT, 20, neverEscapes());
         Thread riggedThread = new Thread(rigged, "test-arena-no-escape");
         riggedThread.setDaemon(true);
         riggedThread.start();
@@ -250,6 +254,41 @@ class CombatInTheWorldTest {
             assertThat(inFight(client))
                     .as("and the escape failed, so the fight goes on")
                     .isTrue();
+        } finally {
+            rigged.stop();
+            riggedThread.join(2_000);
+        }
+    }
+
+    @Test
+    void agilityBuysASecondBlowInTheSameRound() throws Exception {
+        // Rounds still come every 1.5 seconds and everybody still gets one turn
+        // in one. What agility buys is what fits inside a turn: sometimes the
+        // turn is two blows rather than one.
+        //
+        // With every roll landing at the bottom of its range the second blow is
+        // certain, so this counts rather than samples. The log is the target
+        // because it has four hundred health and cannot end the fight by dying.
+        MapRunner rigged = new MapRunner(ARENA, JSON, WorldPersistence.NONE, CONTENT, 20, alwaysLucky());
+        Thread riggedThread = new Thread(rigged, "test-arena-second-blow");
+        riggedThread.setDaemon(true);
+        riggedThread.start();
+        try {
+            FakeClient client = new FakeClient();
+            rigged.submit(new Command.Join(client, ACCOUNT,
+                    SavedCharacter.fresh("cela", "Cela", ARENA.id(), 5, 5, Direction.DOWN), 0));
+            assertThat(client.await(f -> f.contains("\"type\":\"init\""))).isTrue();
+            String init = client.await("\"type\":\"init\"");
+            int log = creatureNamed(init, "Kloda");
+            int self = JSON.readTree(init).path("selfId").asInt();
+
+            rigged.submit(new Command.Attack(client, log));
+            assertThat(client.await(f -> f.contains("\"damage\""))).isTrue();
+            sleep(400);
+
+            assertThat(blowsInOneFrame(client, self))
+                    .as("one round, one turn, two blows")
+                    .isEqualTo(2);
         } finally {
             rigged.stop();
             riggedThread.join(2_000);
@@ -285,6 +324,31 @@ class CombatInTheWorldTest {
                 return 1.0;
             }
         };
+    }
+
+    /** Every roll lands at the bottom of its range, so every chance comes off. */
+    private static Random alwaysLucky() {
+        return new Random() {
+            @Override
+            public double nextDouble() {
+                return 0.0;
+            }
+        };
+    }
+
+    /** The most blows this actor struck inside any single delta. */
+    private int blowsInOneFrame(FakeClient client, int actorId) throws Exception {
+        int most = 0;
+        for (String frame : client.frames()) {
+            int blows = 0;
+            for (JsonNode blow : JSON.readTree(frame).path("damage")) {
+                if (blow.path("attacker").asInt() == actorId) {
+                    blows++;
+                }
+            }
+            most = Math.max(most, blows);
+        }
+        return most;
     }
 
     private int blowsStruckBy(FakeClient client, int actorId) throws Exception {

@@ -77,6 +77,25 @@
 
     <div id="sheet"></div>
     <button type="button" id="flee" hidden>Uciekaj</button>
+    <button type="button" id="panel-toggle" class="quiet">Postać (i)</button>
+
+    <div id="panel" hidden>
+        <section class="panel-block">
+            <h2>Atrybuty</h2>
+            <ul id="attributes" class="attributes"></ul>
+            <p id="points" class="hint" hidden></p>
+        </section>
+
+        <section class="panel-block">
+            <h2>Ekwipunek</h2>
+            <ul id="equipment" class="slots"></ul>
+        </section>
+
+        <section class="panel-block">
+            <h2>Plecak <span id="bag-count" class="hint"></span></h2>
+            <ul id="bag" class="slots"></ul>
+        </section>
+    </div>
 
     <pre id="debug" hidden></pre>
 

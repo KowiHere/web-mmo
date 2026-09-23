@@ -151,6 +151,27 @@ async function tryStep(page, stepMs) {
     return false;
 }
 
+/**
+ * Waits until the character has actually stopped walking.
+ *
+ * A click gives the server a whole path, which it walks out one tile at a
+ * time. Measuring anything about movement while one is still being walked
+ * reads the tail of the last instruction as the result of the next one.
+ */
+async function waitUntilStill(page, stepMs) {
+    let last = null;
+    for (let attempt = 0; attempt < 40; attempt++) {
+        const at = await page.evaluate(() => {
+            const self = state.actors.get(state.selfId);
+            return `${self.x},${self.y}`;
+        });
+        if (at === last) return at;
+        last = at;
+        await page.waitForTimeout(stepMs);
+    }
+    return last;
+}
+
 const snapshot = (page) => page.evaluate(() => ({
     version: state.version,
     selfId: state.selfId,
@@ -228,6 +249,7 @@ try {
         : fail('movement did not propagate to the other client');
 
     // ---- the server, not the client, refuses a wall ----------------------
+    await waitUntilStill(ala, STEP_MS);
     const wall = await ala.evaluate(async (settleMs) => {
         const before = { ...state.actors.get(state.selfId) };
         state.ws.send(JSON.stringify({ type: 'move', x: 0, y: 0 })); // map border
@@ -392,6 +414,78 @@ try {
     } else {
         fail('the character never died, or died without a penalty');
     }
+
+    // ---- loot, and putting it on -----------------------------------------
+    // The boar drops a sword every time in this content, so the only question
+    // here is whether the chain works end to end: a kill fills the bag, the
+    // panel shows it, a click wears it, and wearing it changes the character.
+    await ala.keyboard.press('i');
+    const panelOpen = await ala.evaluate(() => !document.getElementById('panel').hidden);
+    panelOpen ? ok('the character panel opens') : fail('the panel did not open');
+
+    const carried = await ala
+        .waitForFunction(() => (state.bag && state.bag.carried.length ? state.bag.carried : null),
+            null, { timeout: 30_000 })
+        .then((handle) => handle.jsonValue())
+        .catch(() => null);
+
+    if (!carried) {
+        fail('nothing was ever looted, so there is nothing to wear');
+    } else {
+        ok(`the kill paid in goods: ${carried.map((item) => item.name).join(', ')}`);
+
+        const wearable = carried.find((item) => item.wearable);
+        if (!wearable) {
+            fail('everything looted is above this level; cannot test wearing');
+        } else {
+            const before = await ala.evaluate(() => ({ attack: state.you.attack, armor: state.you.armor }));
+            await ala.click(`#bag li[data-item-id="${wearable.id}"]`);
+
+            const worn = await ala
+                .waitForFunction((id) => (state.bag.worn || []).some((item) => item.id === id),
+                    wearable.id, { timeout: 10_000 })
+                .then(() => true)
+                .catch(() => false);
+            worn
+                ? ok(`clicking it in the bag put it on: ${wearable.name}`)
+                : fail('the item never moved from the bag to a slot');
+
+            const after = await ala.evaluate(() => ({ attack: state.you.attack, armor: state.you.armor }));
+            after.attack > before.attack || after.armor > before.armor
+                ? ok(`and it changed the character: attack ${before.attack} -> ${after.attack}`)
+                : fail(`wearing ${wearable.name} changed nothing: ${JSON.stringify(after)}`);
+
+            if (shots) await ala.screenshot({ path: `${shots}/ekwipunek.png` });
+
+            // Reload rather than merely reconnect: this is the whole round trip
+            // through the database, which is where an item is most likely to be
+            // quietly lost.
+            await ala.reload();
+            // A reload does not remember which character was being played, so
+            // this goes back in through the selection screen exactly as a
+            // person would.
+            await ala.waitForSelector(`.character:has-text("${ALA}")`, { timeout: 15_000 });
+            await ala.click(`.character:has-text("${ALA}")`);
+            await ala.waitForFunction(() => state.selfId !== null, null, { timeout: 15_000 });
+            const stillWorn = await ala
+                .waitForFunction((id) => state.bag && (state.bag.worn || []).some((i) => i.id === id),
+                    wearable.id, { timeout: 15_000 })
+                .then(() => true)
+                .catch(() => false);
+            stillWorn
+                ? ok('and it is still worn after reloading the page')
+                : fail('the item came off, or vanished, across a reload');
+        }
+    }
+
+    // ---- movement keys still work with the panel open --------------------
+    // The chat box taught this lesson once already: a piece of interface that
+    // quietly takes the keyboard makes the game feel broken, not busy.
+    await ala.evaluate(() => { document.getElementById('panel').hidden = false; });
+    const stepWithPanel = await tryStep(ala, STEP_MS);
+    stepWithPanel
+        ? ok('the character still walks with the panel open')
+        : fail('the open panel swallowed the movement keys');
 
     // ---- a dropped socket resumes the same character ---------------------
     const previousActor = alaView.selfId;

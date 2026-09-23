@@ -16,13 +16,6 @@ public final class CombatRules {
 
     // ---- how a character grows -------------------------------------------
 
-    public static final int BASE_HP = 50;
-    public static final int HP_PER_LEVEL = 15;
-    public static final int BASE_ATTACK = 5;
-    public static final int ATTACK_PER_LEVEL = 2;
-    public static final int BASE_ARMOR = 1;
-    public static final int ARMOR_PER_LEVEL = 1;
-
     /** Total experience needed to *be* level n, for the curve below. */
     private static final int XP_SCALE = 100;
 
@@ -58,21 +51,10 @@ public final class CombatRules {
     // ---- derived statistics ------------------------------------------------
 
     /**
-     * Statistics come from the level rather than being stored beside it. There
-     * is then no way for the two to drift apart, because there is nothing to
-     * drift.
+     * Where a character's numbers come from now lives in {@link Attributes}.
+     * Nothing derived is stored, which was the whole point of deriving it from
+     * the level in the first place.
      */
-    public static int maxHpForLevel(int level) {
-        return BASE_HP + HP_PER_LEVEL * level;
-    }
-
-    public static int attackForLevel(int level) {
-        return BASE_ATTACK + ATTACK_PER_LEVEL * level;
-    }
-
-    public static int armorForLevel(int level) {
-        return BASE_ARMOR + ARMOR_PER_LEVEL * level;
-    }
 
     /** Applies the penalty a freshly killed character carries for a while. */
     public static int weakened(int value) {
@@ -105,5 +87,20 @@ public final class CombatRules {
 
     public boolean escapes() {
         return random.nextDouble() < FLEE_CHANCE;
+    }
+
+    /** Whether a blow misses entirely. Agility's first payoff. */
+    public boolean dodges(double dodgeChance) {
+        return random.nextDouble() < dodgeChance;
+    }
+
+    /** Whether this swing is followed by a second one in the same round. */
+    public boolean landsSecondBlow(double chance) {
+        return random.nextDouble() < chance;
+    }
+
+    /** One roll against a stated chance, for anything that is simply luck. */
+    public boolean rolls(double chance) {
+        return random.nextDouble() < chance;
     }
 }

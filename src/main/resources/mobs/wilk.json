@@ -9,5 +9,11 @@
   "stepTicks": 3,
   "aggroRadius": 4,
   "leashRadius": 9,
-  "respawnSeconds": 45
+  "respawnSeconds": 45,
+  "loot": [
+    {
+      "item": "skorznia",
+      "chance": 0.5
+    }
+  ]
 }

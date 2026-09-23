@@ -1,0 +1,7 @@
+{
+  "id": "probny-kaftan",
+  "name": "Próbny kaftan",
+  "slot": "CHEST",
+  "requiresLevel": 1,
+  "bonuses": { "armor": 2, "strength": 3 }
+}

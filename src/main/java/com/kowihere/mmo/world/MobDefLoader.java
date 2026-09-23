@@ -8,7 +8,9 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -24,6 +26,7 @@ public class MobDefLoader {
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final String location;
+    private final Map<String, ItemDef> items;
 
     public MobDefLoader() {
         this(LOCATION);
@@ -31,7 +34,17 @@ public class MobDefLoader {
 
     /** Where the definitions live. Content need not sit at the default path. */
     public MobDefLoader(String location) {
+        this(location, new ItemDefLoader().loadAll());
+    }
+
+    /**
+     * @param items what a creature is allowed to drop. Checked while loading, so
+     *              a misspelled reward stops the server instead of becoming a
+     *              creature that silently drops nothing.
+     */
+    public MobDefLoader(String location, Map<String, ItemDef> items) {
         this.location = location;
+        this.items = items;
     }
 
     public Map<String, MobDef> loadAll() {
@@ -78,7 +91,27 @@ public class MobDefLoader {
                 atLeast(root, "attack", 0, 1, where),
                 atLeast(root, "armor", 0, 0, where),
                 stepTicks, aggroRadius, leashRadius,
-                positive(root, "respawnSeconds", 30, where));
+                positive(root, "respawnSeconds", 30, where),
+                loot(root, where));
+    }
+
+    private List<LootEntry> loot(JsonNode root, String where) {
+        List<LootEntry> entries = new ArrayList<>();
+        for (JsonNode entry : root.path("loot")) {
+            String itemId = text(entry, "item", where);
+            if (!items.containsKey(itemId)) {
+                throw new IllegalStateException(where + ": drops '" + itemId
+                        + "', which is not an item. Refusing to start rather than loading a"
+                        + " creature whose reward could never be given.");
+            }
+            double chance = entry.path("chance").asDouble(1.0);
+            if (chance <= 0 || chance > 1) {
+                throw new IllegalStateException(where + ": chance for '" + itemId
+                        + "' must be above 0 and at most 1, got " + chance);
+            }
+            entries.add(new LootEntry(itemId, chance));
+        }
+        return List.copyOf(entries);
     }
 
     private static MobTier tier(JsonNode root, String where) {

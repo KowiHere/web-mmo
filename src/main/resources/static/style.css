@@ -322,3 +322,113 @@ label {
     color: #1a0b0c;
     font-weight: 700;
 }
+
+/* ---- the character panel -------------------------------------------- */
+
+#panel-toggle {
+    position: absolute;
+    right: 12px;
+    top: 12px;
+    width: auto;
+    margin: 0;
+}
+
+/*
+ * Right-hand column, under its own button. It overlays the map rather than
+ * shrinking it: the map is a canvas sized to the window, and resizing it every
+ * time somebody glances at their bag would be a lot of work for a glance.
+ */
+#panel {
+    position: absolute;
+    right: 12px;
+    top: 52px;
+    width: min(280px, calc(100% - 24px));
+    max-height: calc(100% - 120px);
+    overflow-y: auto;
+    display: grid;
+    gap: 12px;
+    background: rgba(28, 31, 39, .95);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 13px;
+}
+
+.panel-block h2 {
+    margin: 0 0 6px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+}
+
+.attributes, .slots {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 4px;
+}
+
+.attributes li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.attributes .value {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Narrow, so it cannot be mistaken for the row it sits on. */
+.attributes button {
+    width: 24px;
+    margin: 0;
+    padding: 0;
+    line-height: 20px;
+}
+
+.slots li {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 5px 7px;
+    cursor: pointer;
+    background: rgba(15, 17, 22, .6);
+}
+
+.slots li:hover { border-color: var(--accent); }
+
+/* An empty slot is not a button, and should not pretend to be one. */
+.slots li.empty {
+    cursor: default;
+    color: var(--muted);
+    border-style: dashed;
+}
+
+.slots li.empty:hover { border-color: var(--border); }
+
+/* Greyed rather than hidden: "you cannot wear this yet" is information. */
+.slots li.locked {
+    cursor: not-allowed;
+    opacity: .55;
+}
+
+.slots .slot-name {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--muted);
+}
+
+.slots .bonus {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--accent);
+    white-space: nowrap;
+}
+
+.bar-mana .bar-fill { background: linear-gradient(90deg, #3f6fd8, #6ea8fe); }

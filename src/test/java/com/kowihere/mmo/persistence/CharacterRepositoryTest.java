@@ -1,8 +1,11 @@
 package com.kowihere.mmo.persistence;
 
+import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.loop.ActorSnapshot;
 import com.kowihere.mmo.loop.SavedCharacter;
+import com.kowihere.mmo.loop.StoredItem;
 import com.kowihere.mmo.world.Direction;
+import com.kowihere.mmo.world.ItemSlot;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +16,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -59,7 +63,8 @@ class CharacterRepositoryTest {
     void savingMovesTheCharacterWithoutCreatingASecond() {
         characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
 
-        characters.save(new ActorSnapshot("ala", "Ala", "starter", 9, 4, "UP", 3, 450L, 27, 0L));
+        characters.save(new ActorSnapshot("ala", "Ala", "starter", 9, 4, "UP", 3, 450L, 27, 0L,
+                Attributes.FRESH, 6, null));
 
         SavedCharacter found = characters.find("ala").orElseThrow();
         assertThat(found.x()).isEqualTo(9);
@@ -69,10 +74,87 @@ class CharacterRepositoryTest {
     }
 
     @Test
+    void itemsComeBackWhereTheyWereLeft() {
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+
+        characters.save(snapshot("ala", List.of(
+                new StoredItem("item-1", "zardzewialy-miecz", ItemSlot.WEAPON),
+                new StoredItem("item-2", "skorznia", null))));
+
+        SavedCharacter found = characters.find("ala").orElseThrow();
+        assertThat(found.items())
+                .as("what was worn must come back worn, and what was carried carried")
+                .containsExactlyInAnyOrder(
+                        new StoredItem("item-1", "zardzewialy-miecz", ItemSlot.WEAPON),
+                        new StoredItem("item-2", "skorznia", null));
+    }
+
+    @Test
+    void savingItemsReplacesThemRatherThanPilingThemUp() {
+        // The world hands over everything a character owns, every time. Without
+        // the delete, giving somebody one sword twice would leave them holding
+        // two - and the duplicate would be indistinguishable from a real one.
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+        characters.save(snapshot("ala", List.of(
+                new StoredItem("item-1", "zardzewialy-miecz", ItemSlot.WEAPON))));
+
+        characters.save(snapshot("ala", List.of(
+                new StoredItem("item-1", "zardzewialy-miecz", null))));
+
+        assertThat(characters.find("ala").orElseThrow().items())
+                .containsExactly(new StoredItem("item-1", "zardzewialy-miecz", null));
+    }
+
+    @Test
+    void aSaveThatCarriesNoItemListLeavesTheItemsAlone() {
+        // Null means "nothing about the bag changed", which is every save made
+        // by somebody merely walking. Reading it as "the bag is empty" would
+        // quietly delete everything a character owns, one walk at a time.
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+        characters.save(snapshot("ala", List.of(
+                new StoredItem("item-1", "zardzewialy-miecz", ItemSlot.WEAPON))));
+
+        characters.save(snapshot("ala", null));
+
+        assertThat(characters.find("ala").orElseThrow().items()).hasSize(1);
+    }
+
+    @Test
+    void attributesAndUnspentPointsSurviveTheRoundTrip() {
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+
+        characters.save(new ActorSnapshot("ala", "Ala", "starter", 7, 11, "LEFT", 4, 900L, 40, 0L,
+                new Attributes(11, 6, 5), 2, null));
+
+        SavedCharacter found = characters.find("ala").orElseThrow();
+        assertThat(found.attributes()).isEqualTo(new Attributes(11, 6, 5));
+        assertThat(found.unspentPoints()).isEqualTo(2);
+    }
+
+    @Test
+    void aCharacterThatEarnedLevelsBeforeAttributesExistedKeepsWhatTheyAreWorth() {
+        // The migration hands existing characters the points their levels are
+        // worth. Without it, everybody who had been playing would quietly find
+        // themselves as weak as a character created that morning.
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+        jdbc.update("UPDATE game_character SET level = 5, unspent_points = 3 * (5 - 1)"
+                + " WHERE name_key = 'ala'");
+
+        SavedCharacter found = characters.find("ala").orElseThrow();
+        assertThat(found.unspentPoints()).isEqualTo(Attributes.pointsEarnedBy(5));
+    }
+
+    private static ActorSnapshot snapshot(String nameKey, List<StoredItem> items) {
+        return new ActorSnapshot(nameKey, "Ala", "starter", 7, 11, "LEFT", 1, 0L, 20, 0L,
+                Attributes.FRESH, 0, items);
+    }
+
+    @Test
     void savingACharacterThatIsNotThereCreatesNothing() {
         // The world must not be able to invent a character with no owner, even
         // if one is deleted while it is being played.
-        characters.save(new ActorSnapshot("widmo", "Widmo", "starter", 1, 1, "DOWN", 1, 0L, 10, 0L));
+        characters.save(new ActorSnapshot("widmo", "Widmo", "starter", 1, 1, "DOWN", 1, 0L, 10, 0L,
+                Attributes.FRESH, 0, null));
 
         assertThat(characters.find("widmo")).isEmpty();
     }

@@ -8,6 +8,10 @@
  * Splitting it this way is the point: nothing in one process proves a character
  * outlived the process. Only a real stop and start does. The second half logs
  * in rather than registering, so it also proves the account survived.
+ *
+ * It also carries an item, for the same reason. A reconnect inside the grace
+ * period finds the character still standing in memory, so an item that "came
+ * back" there never went near the database - only a restart can tell.
  */
 import { chromium } from 'playwright';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -32,8 +36,44 @@ const character = account.character || `Trwalka-${account.login.split('-')[1]}`;
 
 const here = () => page.evaluate(() => {
     const self = state.actors.get(state.selfId);
-    return { x: self.x, y: self.y, name: self.name };
+    const worn = state.bag ? (state.bag.worn || []).map((item) => item.defId) : [];
+    return { x: self.x, y: self.y, name: self.name, worn };
 });
+
+/** Kills whatever is nearest until something is in the bag, then wears it. */
+async function findAndWearSomething() {
+    for (let attempt = 0; attempt < 8; attempt++) {
+        const busy = await page.evaluate(() => {
+            const self = state.actors.get(state.selfId);
+            return !!(self && self.inFight);
+        });
+        if (!busy) {
+            const prey = await page.evaluate(() => {
+                const self = state.actors.get(state.selfId);
+                const mobs = [...state.actors.values()].filter((a) => a.kind === 'MOB');
+                mobs.sort((a, b) => Math.abs(a.x - self.x) + Math.abs(a.y - self.y)
+                    - Math.abs(b.x - self.x) - Math.abs(b.y - self.y));
+                return mobs[0] ? mobs[0].id : null;
+            });
+            if (prey !== null) {
+                await page.evaluate((id) =>
+                    state.ws.send(JSON.stringify({ type: 'attack', targetId: id })), prey);
+            }
+        }
+        await page.waitForTimeout(2_000);
+
+        const wearable = await page.evaluate(() =>
+            (state.bag ? state.bag.carried : []).find((item) => item.wearable) || null);
+        if (wearable) {
+            await page.evaluate((id) =>
+                state.ws.send(JSON.stringify({ type: 'equip', itemId: id })), wearable.id);
+            await page.waitForFunction((id) => (state.bag.worn || []).some((i) => i.id === id),
+                wearable.id, { timeout: 10_000 });
+            return wearable.defId;
+        }
+    }
+    return null;
+}
 
 async function enterWorld() {
     await page.waitForSelector(`.character:has-text("${character}")`, { timeout: 10_000 });
@@ -56,9 +96,15 @@ if (mode === 'record') {
         await page.waitForTimeout(STEP_MS + 120);
     }
 
+    const worn = await findAndWearSomething();
+    if (!worn) {
+        console.error('FAIL - could not find anything to wear; nothing to prove about items');
+        process.exit(1);
+    }
+
     const at = await here();
     writeFileSync(file, JSON.stringify({ ...account, character, ...at }));
-    console.log(`recorded ${at.name} at ${at.x},${at.y}`);
+    console.log(`recorded ${at.name} at ${at.x},${at.y} wearing ${at.worn.join(', ')}`);
 } else {
     // Logging in, not registering: the account has to have survived too.
     await page.fill('#login-name', account.login);
@@ -66,11 +112,22 @@ if (mode === 'record') {
     await page.click('#login-form button[type="submit"]');
     await enterWorld();
 
+    // Wait for the bag to arrive; it is a separate frame from the world.
+    await page.waitForFunction(() => state.bag !== null, null, { timeout: 10_000 }).catch(() => {});
     const at = await here();
+
     if (at.x === account.x && at.y === account.y) {
         console.log(`ok   - ${at.name} logged back in at ${at.x},${at.y} after a server restart`);
     } else {
         console.error(`FAIL - expected ${account.x},${account.y} but found ${at.x},${at.y}`);
+        exitCode = 1;
+    }
+
+    const missing = (account.worn || []).filter((defId) => !at.worn.includes(defId));
+    if (!missing.length) {
+        console.log(`ok   - and still wearing ${at.worn.join(', ')}`);
+    } else {
+        console.error(`FAIL - lost across the restart: ${missing.join(', ')}`);
         exitCode = 1;
     }
 }

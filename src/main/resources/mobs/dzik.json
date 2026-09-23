@@ -9,5 +9,11 @@
   "stepTicks": 5,
   "aggroRadius": 2,
   "leashRadius": 5,
-  "respawnSeconds": 30
+  "respawnSeconds": 30,
+  "loot": [
+    {
+      "item": "zardzewialy-miecz",
+      "chance": 1.0
+    }
+  ]
 }

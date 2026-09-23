@@ -1,5 +1,6 @@
 package com.kowihere.mmo.loop;
 
+import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.combat.CombatRules;
 import com.kowihere.mmo.combat.Fight;
 import com.kowihere.mmo.world.Direction;
@@ -41,6 +42,24 @@ final class Actor {
     int level = 1;
     long xp;
     int hp;
+
+    /**
+     * What this character is made of. A creature has none: its numbers come from
+     * its definition, and giving it attributes would mean two ways of saying the
+     * same thing, which is one too many.
+     */
+    Attributes attributes = Attributes.FRESH;
+    /** Points earned by levelling and not yet spent. */
+    int unspentPoints;
+
+    final Inventory inventory = new Inventory();
+
+    /**
+     * Set when what this character carries has changed, as opposed to where it
+     * stands. Walking about must not rewrite twenty rows of bag every time the
+     * save interval comes round.
+     */
+    boolean itemsDirty;
 
     /** The fight this actor is locked into, or null. Movement is refused while it is set. */
     Fight fight;
@@ -145,19 +164,41 @@ final class Actor {
     }
 
     /**
-     * A creature's numbers come from its definition; a player's come from their
-     * level, so the two can never disagree.
+     * A creature's numbers come from its definition; a character's come from its
+     * attributes and what it is wearing. Neither is stored anywhere, so neither
+     * can fall out of step with what it was computed from.
      */
+    Attributes totalAttributes() {
+        return isMob() ? Attributes.FRESH : attributes.plus(inventory.grantedAttributes());
+    }
+
     int maxHp() {
-        return isMob() ? mob.hp() : CombatRules.maxHpForLevel(level);
+        return isMob() ? mob.hp() : totalAttributes().maxHp();
     }
 
     int attack() {
-        return applyWeakness(isMob() ? mob.attack() : CombatRules.attackForLevel(level));
+        return applyWeakness(isMob()
+                ? mob.attack()
+                : totalAttributes().attack() + inventory.grantedAttack());
     }
 
     int armor() {
-        return applyWeakness(isMob() ? mob.armor() : CombatRules.armorForLevel(level));
+        return applyWeakness(isMob()
+                ? mob.armor()
+                : totalAttributes().armor() + inventory.grantedArmor());
+    }
+
+    int maxMana() {
+        return isMob() ? 0 : totalAttributes().maxMana();
+    }
+
+    /** A creature never evades; only characters have agility. */
+    double dodgeChance() {
+        return isMob() ? 0 : totalAttributes().dodgeChance();
+    }
+
+    double secondBlowChance() {
+        return isMob() ? 0 : totalAttributes().secondBlowChance();
     }
 
     boolean isWeakened(long nowMillis) {
