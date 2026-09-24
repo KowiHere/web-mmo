@@ -19,10 +19,15 @@ import java.util.List;
  * @param skills the same, for what has been learned. Null means unchanged.
  * @param coins  and again for money. Null means unchanged, which is every save
  *               by somebody who has neither killed nor bought anything since.
+ * @param accountId whose account this character is on - which the chest shared
+ *                  by that account is written against
+ * @param deposit the character's own chest, or null when nothing in it moved
+ * @param accountDeposit the account's chest, same rule
  */
 public record ActorSnapshot(String nameKey, String name, String mapId, int x, int y, String dir,
                             int level, long xp, int hp, long wakesAt,
                             Attributes attributes, int unspentPoints, List<StoredItem> items,
                             String classId, int skillPoints,
-                            List<StoredSkill> skills, List<StoredCoin> coins) {
+                            List<StoredSkill> skills, List<StoredCoin> coins,
+                            long accountId, Deposit deposit, Deposit accountDeposit) {
 }

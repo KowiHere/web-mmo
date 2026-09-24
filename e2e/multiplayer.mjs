@@ -1065,13 +1065,18 @@ try {
     } else {
         ok(`walked up to ${myMaster}, who keeps the ${myClass} class`);
 
+        // Only that it dropped. What it dropped *from* is checked further down,
+        // by stepping away again: the price scales with level, and the walk
+        // over here is a walk through things that fight back - so the number
+        // read before setting off is not necessarily this character's any more.
         const atMaster = await ala
             .waitForFunction((was) => state.you.skillPointPrice < was, fullPrice, { timeout: 8_000 })
             .then(() => true).catch(() => false);
         const discounted = await ala.evaluate(() => state.you.skillPointPrice);
-        atMaster && discounted === Math.round(fullPrice / 2)
-            ? ok(`and standing there halves it to ${discounted}, with nothing sent to ask`)
-            : fail(`the price at the master is ${discounted}, expected ${Math.round(fullPrice / 2)}`);
+        atMaster
+            ? ok(`and standing there drops it from ${fullPrice} to ${discounted},`
+                + ' with nothing sent to ask')
+            : fail(`the price at the master is ${discounted}, no lower than ${fullPrice}`);
 
         await ala.screenshot({ path: 'mistrz.png' });
 
@@ -1105,8 +1110,17 @@ try {
             points: state.you.skillPoints,
             ranks: (state.skills.skills || []).reduce((sum, s) => sum + s.rank, 0),
         }));
+        const resetPrice = await ala.evaluate(() => state.you.skillResetPrice);
+        const purse = await ala.evaluate(() =>
+            state.purse.coins.find((c) => c.primary).amount);
         if (beforeReset.ranks === 0) {
             fail('nothing was ever learned, so there is nothing to take back');
+        } else if (purse < resetPrice) {
+            // Spending a point here a moment ago is what emptied the purse, and
+            // a master who undid the work for free would be the thing this
+            // whole section says he is not.
+            ok(`starting over costs ${resetPrice} and there is ${purse} left,`
+                + ' so the master refuses - which is the price being real');
         } else {
             await ala.click('#dialogue-options button:text-is("Chcę zacząć od nowa.")');
             await ala.waitForFunction(() => [...document.querySelectorAll('#dialogue-options button')]
@@ -1124,6 +1138,99 @@ try {
             undone && after.ranks === 0 && after.points === beforeReset.points + beforeReset.ranks
                 ? ok(`the master gave back all ${beforeReset.ranks} point(s) and cleared the ranks`)
                 : fail(`after the reset: ${after.points} point(s), ${after.ranks} rank(s)`);
+        }
+        await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+
+        // And leaving puts it back up - measured here, a step away and a moment
+        // later, so both numbers belong to the same character at the same level.
+        await ala.evaluate(() => requestMove(state.you.x, state.you.y + 1));
+        const rose = await ala
+            .waitForFunction((was) => state.you.skillPointPrice > was, discounted,
+                { timeout: 10_000 })
+            .then(() => true).catch(() => false);
+        const fullHere = await ala.evaluate(() => state.you.skillPointPrice);
+        rose && discounted === Math.round(fullHere / 2)
+            ? ok(`the master's price is exactly half the panel's: ${discounted} against ${fullHere}`)
+            : fail(`away from the master a point costs ${fullHere}, against ${discounted} at it`);
+    }
+
+    // ---- the second container, and what stays in it ----------------------
+    await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+    await escapeAnyFight(ala);
+
+    if (!(await walkTo(ala, 'Otton'))) {
+        fail('the storekeeper never opened a conversation');
+    } else {
+        ok('walked up to the storekeeper');
+        const opener = await ala
+            .waitForFunction(() => [...document.querySelectorAll('#dialogue-options button')]
+                .map((b) => b.textContent).find((t) => /Otwieraj/.test(t)) || null,
+                null, { timeout: 10_000 })
+            .then((handle) => handle.jsonValue()).catch(() => null);
+        if (!opener) {
+            fail('the storekeeper offered no way into the chest');
+        } else {
+            await ala.click(`#dialogue-options button:text-is("${opener}")`);
+            const opened = await ala
+                .waitForFunction(() => !document.querySelector('#storage').hidden,
+                    null, { timeout: 10_000 })
+                .then(() => true).catch(() => false);
+            opened ? ok('the chest opened') : fail('the chest never opened');
+
+            const chests = await ala.evaluate(() =>
+                (state.storage.chests || []).map((c) => c.scope));
+            chests.includes('character') && chests.includes('account')
+                ? ok('with both shelves on it: the character\'s own and the account\'s')
+                : fail(`the chest showed ${JSON.stringify(chests)}`);
+
+            // By this point in the run everything loose has usually been sold,
+            // so the bag is empty. Taking off what is worn puts something back
+            // in it - and makes this check decisive rather than skipped.
+            let carried = await ala.evaluate(() =>
+                (state.bag.carried || []).map((i) => ({ id: i.id, name: i.name })));
+            if (!carried.length) {
+                const worn = await ala.evaluate(() => (state.bag.worn || [])[0] || null);
+                if (worn) {
+                    await ala.evaluate((slot) => state.ws.send(JSON.stringify({
+                        type: 'unequip', slot,
+                    })), worn.slot);
+                    await ala.waitForFunction((id) =>
+                        (state.bag.carried || []).some((i) => i.id === id),
+                        worn.id, { timeout: 10_000 }).catch(() => {});
+                    carried = await ala.evaluate(() =>
+                        (state.bag.carried || []).map((i) => ({ id: i.id, name: i.name })));
+                }
+            }
+            if (!carried.length) {
+                fail('nothing could be found to put in the chest');
+            } else {
+                const putting = carried[0];
+                await ala.evaluate((id) => state.ws.send(JSON.stringify({
+                    type: 'deposit', itemId: id, tab: 0, account: false,
+                })), putting.id);
+                const stored = await ala
+                    .waitForFunction((id) => !(state.bag.carried || []).some((i) => i.id === id)
+                        && (state.storage.chests || [])
+                            .some((c) => c.scope === 'character'
+                                && (c.items || []).some((k) => k.item.id === id)),
+                        putting.id, { timeout: 10_000 })
+                    .then(() => true).catch(() => false);
+                stored
+                    ? ok(`${putting.name} left the bag and is on the shelf`)
+                    : fail(`${putting.name} never made it into the chest`);
+                await ala.screenshot({ path: 'sklad.png' });
+
+                await ala.evaluate((id) => state.ws.send(JSON.stringify({
+                    type: 'withdraw', itemId: id, account: false,
+                })), putting.id);
+                const back = await ala
+                    .waitForFunction((id) => (state.bag.carried || []).some((i) => i.id === id),
+                        putting.id, { timeout: 10_000 })
+                    .then(() => true).catch(() => false);
+                back
+                    ? ok('and comes back out again, the same copy')
+                    : fail('what went into the chest could not be taken back out');
+            }
         }
         await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
     }

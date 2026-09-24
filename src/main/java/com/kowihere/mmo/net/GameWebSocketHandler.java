@@ -145,6 +145,31 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                     map.submit(new Command.Sell(client, message.itemId()));
                 }
             }
+            case "deposit" -> {
+                if (message.itemId() != null && message.tab() != null) {
+                    map.submit(new Command.Deposit(client, message.itemId(), message.tab(),
+                            message.accountChest()));
+                }
+            }
+            case "withdraw" -> {
+                if (message.itemId() != null) {
+                    map.submit(new Command.Withdraw(client, message.itemId(),
+                            message.accountChest()));
+                }
+            }
+            case "depositCoins" -> {
+                if (message.currencyId() != null && message.amount() != null) {
+                    map.submit(new Command.DepositCoins(client, message.currencyId(),
+                            message.amount(), message.accountChest()));
+                }
+            }
+            case "withdrawCoins" -> {
+                if (message.currencyId() != null && message.amount() != null) {
+                    map.submit(new Command.WithdrawCoins(client, message.currencyId(),
+                            message.amount(), message.accountChest()));
+                }
+            }
+            case "buyTab" -> map.submit(new Command.BuyTab(client, message.accountChest()));
             default -> log.debug("Unknown message type '{}' from {}", message.type(), session.getId());
         }
     }

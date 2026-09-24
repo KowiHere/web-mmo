@@ -40,6 +40,7 @@ import com.kowihere.mmo.world.SkillDefLoader;
 import com.kowihere.mmo.world.RespawnPoint;
 import com.kowihere.mmo.world.RoamingSpawn;
 import com.kowihere.mmo.world.SpawnPoint;
+import com.kowihere.mmo.world.Vault;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -322,6 +323,11 @@ public final class MapRunner implements Runnable {
                 case Command.StopTalking stop -> handleStopTalking(stop);
                 case Command.Buy buy -> handleBuy(buy);
                 case Command.Sell sell -> handleSell(sell);
+                case Command.Deposit deposit -> handleDeposit(deposit);
+                case Command.Withdraw withdraw -> handleWithdraw(withdraw);
+                case Command.DepositCoins put -> handleDepositCoins(put);
+                case Command.WithdrawCoins take -> handleWithdrawCoins(take);
+                case Command.BuyTab buy -> handleBuyTab(buy);
             }
         }
     }
@@ -460,6 +466,12 @@ public final class MapRunner implements Runnable {
         actor.inventory.restore(saved.items(), content.items());
         actor.skills.restore(saved.skills(), content.skills());
         actor.purse.restore(saved.coins(), content.currencies());
+        actor.storage = new Storage(saved.deposit().tabs());
+        actor.storage.restore(saved.deposit().items(), content.items());
+        actor.storagePurse.restore(saved.deposit().coins(), content.currencies());
+        actor.accountStorage = new Storage(saved.accountDeposit().tabs());
+        actor.accountStorage.restore(saved.accountDeposit().items(), content.items());
+        actor.accountPurse.restore(saved.accountDeposit().coins(), content.currencies());
         actor.skillPoints = Math.max(0, saved.skillPoints());
         // -1 means "as healthy as this level allows", which is how a new
         // character and every row predating combat is stored.
@@ -812,6 +824,7 @@ public final class MapRunner implements Runnable {
             case HEAL -> heal(actor, npc);
             case OPEN_SHOP -> sendShop(actor, npc);
             case RESET_SKILLS -> resetSkills(actor, npc);
+            case OPEN_STORAGE -> sendStorage(actor, npc);
             // END is somewhere to go rather than something to do, and never
             // arrives here - the loader refuses it as a deed.
             case END -> { }
@@ -879,6 +892,12 @@ public final class MapRunner implements Runnable {
             String stall = serialise(ServerMessages.Shop.closed(npcId));
             if (stall != null) {
                 actor.client.send(stall);
+            }
+            // And the chest, for the same reason: what is in it may not be
+            // touched from across the map, so it may not be looked at either.
+            String chest = serialise(ServerMessages.Storage.closed(npcId));
+            if (chest != null) {
+                actor.client.send(chest);
             }
         }
     }
@@ -1084,6 +1103,180 @@ public final class MapRunner implements Runnable {
         sendShop(actor, npc);
     }
 
+    /**
+     * The storekeeper this character is talking to, or nobody.
+     *
+     * <p>The twin of {@link #traderFor}, and the whole of the "are you allowed
+     * to touch this" question: a chest may only be reached through an open
+     * conversation, and walking away ends the conversation in the same tick.
+     */
+    private Actor keeperFor(Actor actor) {
+        if (actor == null) {
+            return null;
+        }
+        Actor npc = actor.talkingTo == 0 ? null : actors.get(actor.talkingTo);
+        if (npc == null || !npc.isNpc() || npc.npc.vault() == null) {
+            sendError(actor, "Nie ma tu gdzie niczego odłożyć.");
+            return null;
+        }
+        return npc;
+    }
+
+    private Storage chestOf(Actor actor, boolean account) {
+        return account ? actor.accountStorage : actor.storage;
+    }
+
+    private Purse chestPurseOf(Actor actor, boolean account) {
+        return account ? actor.accountPurse : actor.storagePurse;
+    }
+
+    private void chestChanged(Actor actor, boolean account) {
+        actor.dirty = true;
+        if (account) {
+            actor.accountDepositDirty = true;
+        } else {
+            actor.depositDirty = true;
+        }
+    }
+
+    private void handleDeposit(Command.Deposit deposit) {
+        Actor actor = byClient.get(deposit.client());
+        Actor npc = keeperFor(actor);
+        if (npc == null) {
+            return;
+        }
+        ItemStack stack = actor.inventory.inBag(deposit.itemId());
+        if (stack == null) {
+            // Worn, or already put away, or never owned. The bag is the only
+            // place a thing can be handed over from - taking somebody's sword
+            // off for them is how they walk into the next fight unarmed.
+            sendError(actor, "Tego nie masz w plecaku. Zdejmij, zanim odłożysz.");
+            return;
+        }
+        Storage chest = chestOf(actor, deposit.account());
+        if (!chest.hasTab(deposit.tab())) {
+            sendError(actor, "Nie masz takiej zakładki.");
+            return;
+        }
+        if (chest.isFull(deposit.tab())) {
+            sendError(actor, "Ta zakładka jest pełna.");
+            return;
+        }
+        actor.inventory.removeFromBag(stack.id());
+        chest.put(stack, deposit.tab());
+        actor.itemsDirty = true;
+        chestChanged(actor, deposit.account());
+        sendBag(actor);
+        sendStorage(actor, npc);
+    }
+
+    private void handleWithdraw(Command.Withdraw withdraw) {
+        Actor actor = byClient.get(withdraw.client());
+        Actor npc = keeperFor(actor);
+        if (npc == null) {
+            return;
+        }
+        if (actor.inventory.isFull()) {
+            // Asked before anything is moved. An item taken out of a chest with
+            // nowhere to go is an item that has stopped existing.
+            sendError(actor, "Plecak jest pełny.");
+            return;
+        }
+        Storage chest = chestOf(actor, withdraw.account());
+        ItemStack stack = chest.take(withdraw.itemId());
+        if (stack == null) {
+            sendError(actor, "Tego tu nie ma.");
+            return;
+        }
+        actor.inventory.add(stack);
+        actor.itemsDirty = true;
+        chestChanged(actor, withdraw.account());
+        sendBag(actor);
+        sendStorage(actor, npc);
+    }
+
+    private void handleDepositCoins(Command.DepositCoins put) {
+        Actor actor = byClient.get(put.client());
+        Actor npc = keeperFor(actor);
+        if (npc == null) {
+            return;
+        }
+        CurrencyDef currency = content.currencies().get(put.currencyId());
+        if (currency == null || put.amount() <= 0) {
+            sendError(actor, "Nie ma takich pieniędzy.");
+            return;
+        }
+        if (!actor.purse.take(currency.id(), put.amount())) {
+            sendError(actor, "Nie masz tyle.");
+            return;
+        }
+        chestPurseOf(actor, put.account()).add(currency.id(), put.amount());
+        actor.purseDirty = true;
+        chestChanged(actor, put.account());
+        sendPurse(actor);
+        sendStorage(actor, npc);
+    }
+
+    private void handleWithdrawCoins(Command.WithdrawCoins take) {
+        Actor actor = byClient.get(take.client());
+        Actor npc = keeperFor(actor);
+        if (npc == null) {
+            return;
+        }
+        CurrencyDef currency = content.currencies().get(take.currencyId());
+        if (currency == null || take.amount() <= 0) {
+            sendError(actor, "Nie ma takich pieniędzy.");
+            return;
+        }
+        if (!chestPurseOf(actor, take.account()).take(currency.id(), take.amount())) {
+            sendError(actor, "Tyle tu nie leży.");
+            return;
+        }
+        actor.purse.add(currency.id(), take.amount());
+        actor.purseDirty = true;
+        chestChanged(actor, take.account());
+        sendPurse(actor);
+        sendStorage(actor, npc);
+    }
+
+    /**
+     * Buys the next tab of one chest.
+     *
+     * <p>Paid out of the purse in hand, never out of the chest itself: money
+     * put away is money put away, and a keeper who could reach into the chest
+     * to pay himself would make the deposit meaningless.
+     */
+    private void handleBuyTab(Command.BuyTab buy) {
+        Actor actor = byClient.get(buy.client());
+        Actor npc = keeperFor(actor);
+        if (npc == null) {
+            return;
+        }
+        Vault vault = npc.npc.vault();
+        Storage chest = chestOf(actor, buy.account());
+        int price = vault.priceOfNextTab(chest.tabs(), buy.account());
+        CurrencyDef currency = content.currencies()
+                .get(buy.account() ? vault.accountCurrencyId() : vault.currencyId());
+        if (price < 0 || currency == null) {
+            sendError(actor, "Więcej zakładek już nie będzie.");
+            return;
+        }
+        if (!actor.purse.take(currency.id(), price)) {
+            sendError(actor, "Za mało: " + price + " " + currency.shortName()
+                    + ", a masz " + actor.purse.amountOf(currency.id()) + ".");
+            return;
+        }
+        // Cannot fail: a price list longer than the chest is refused while the
+        // content is read, so a priced tab is always a tab there is room for.
+        // Asking again here would be the same rule kept in two places.
+        chest.openAnotherTab();
+        actor.purseDirty = true;
+        chestChanged(actor, buy.account());
+        chat.add(new ChatDto(actor.id, actor.name, "* wynajmuje zakładkę *"));
+        sendPurse(actor);
+        sendStorage(actor, npc);
+    }
+
     private void handleChat(Command.Chat message) {
         Actor actor = byClient.get(message.client());
         if (actor == null || message.text() == null) {
@@ -1192,11 +1385,14 @@ public final class MapRunner implements Runnable {
                     actor.level, actor.xp, actor.hp, actor.wakesAt,
                     actor.attributes, actor.unspentPoints, actor.inventory.stored(),
                     actor.characterClass == null ? null : actor.characterClass.id(),
-                    actor.skillPoints, actor.skills.stored(), actor.purse.stored()));
+                    actor.skillPoints, actor.skills.stored(), actor.purse.stored(),
+                    actor.accountId, depositOf(actor), accountDepositOf(actor)));
             actor.dirty = false;
             actor.itemsDirty = false;
             actor.skillsDirty = false;
             actor.purseDirty = false;
+            actor.depositDirty = false;
+            actor.accountDepositDirty = false;
 
             endConversation(actor);
             actors.remove(actor.id);
@@ -1222,7 +1418,22 @@ public final class MapRunner implements Runnable {
                 actor.level, actor.xp, actor.hp, actor.wakesAt, actor.attributes,
                 actor.unspentPoints, actor.inventory.stored(),
                 actor.characterClass == null ? null : actor.characterClass.id(),
-                actor.skillPoints, actor.skills.stored(), actor.purse.stored());
+                actor.skillPoints, actor.skills.stored(), actor.purse.stored(),
+                new Deposit(actor.storage.tabs(), actor.storage.stored(),
+                        actor.storagePurse.stored()),
+                new Deposit(actor.accountStorage.tabs(), actor.accountStorage.stored(),
+                        actor.accountPurse.stored()));
+    }
+
+    /** Both chests, whole, for a character that is on its way somewhere else. */
+    private Deposit depositOf(Actor actor) {
+        return new Deposit(actor.storage.tabs(), actor.storage.stored(),
+                actor.storagePurse.stored());
+    }
+
+    private Deposit accountDepositOf(Actor actor) {
+        return new Deposit(actor.accountStorage.tabs(), actor.accountStorage.stored(),
+                actor.accountPurse.stored());
     }
 
     private void reapExpiredActors() {
@@ -2029,6 +2240,12 @@ public final class MapRunner implements Runnable {
         actor.skillsDirty = false;
         List<StoredCoin> coins = actor.purseDirty ? actor.purse.stored() : null;
         actor.purseDirty = false;
+        // Chests move less often than anything else here: null leaves their
+        // rows alone, which is every save by everybody not standing at one.
+        Deposit deposit = actor.depositDirty ? depositOf(actor) : null;
+        actor.depositDirty = false;
+        Deposit accountDeposit = actor.accountDepositDirty ? accountDepositOf(actor) : null;
+        actor.accountDepositDirty = false;
         // A copy, never the live actor: anything handed across threads must not
         // be something the tick is still writing to.
         persistence.save(new ActorSnapshot(actor.nameKey, actor.name, map.id(),
@@ -2036,7 +2253,8 @@ public final class MapRunner implements Runnable {
                 actor.level, actor.xp, actor.hp, actor.wakesAt,
                 actor.attributes, actor.unspentPoints, items,
                 actor.characterClass == null ? null : actor.characterClass.id(),
-                actor.skillPoints, skills, coins));
+                actor.skillPoints, skills, coins,
+                actor.accountId, deposit, accountDeposit));
     }
 
     private ActorDto toDto(Actor actor) {
@@ -2209,6 +2427,48 @@ public final class MapRunner implements Runnable {
         if (frame != null) {
             actor.client.send(frame);
         }
+    }
+
+    /**
+     * Both chests, sent straight out like the stall beside them and for the
+     * same reason: everything in them was already named in a frame this client
+     * has.
+     */
+    private void sendStorage(Actor actor, Actor npc) {
+        if (actor.client == null || !npc.isNpc() || npc.npc.vault() == null) {
+            return;
+        }
+        Vault vault = npc.npc.vault();
+        List<ServerMessages.ChestDto> chests = List.of(
+                chestDto(actor, "character", false, vault),
+                chestDto(actor, "account", true, vault));
+        String frame = serialise(new ServerMessages.Storage(npc.id, npc.name, chests));
+        if (frame != null) {
+            actor.client.send(frame);
+        }
+    }
+
+    private ServerMessages.ChestDto chestDto(Actor actor, String scope, boolean account,
+                                             Vault vault) {
+        Storage chest = chestOf(actor, account);
+        List<ServerMessages.KeptDto> items = new ArrayList<>();
+        for (Storage.Kept kept : chest.contents()) {
+            items.add(new ServerMessages.KeptDto(kept.tab(), toDto(kept.stack(), actor)));
+        }
+        // Every currency, at zero as well, exactly as the purse does it: money
+        // that appears from nowhere looks like a bug rather than a find.
+        List<ServerMessages.CoinDto> coins = new ArrayList<>();
+        Purse purse = chestPurseOf(actor, account);
+        for (CurrencyDef currency : content.currencies().values()) {
+            coins.add(new ServerMessages.CoinDto(currency.id(), currency.name(),
+                    currency.shortName(), purse.amountOf(currency.id()), currency.primary()));
+        }
+        CurrencyDef tabCurrency = content.currencies()
+                .get(account ? vault.accountCurrencyId() : vault.currencyId());
+        return new ServerMessages.ChestDto(scope, chest.tabs(), Storage.TAB, items, coins,
+                vault.priceOfNextTab(chest.tabs(), account),
+                tabCurrency == null ? null : tabCurrency.id(),
+                tabCurrency == null ? null : tabCurrency.shortName());
     }
 
     private static ServerMessages.ItemDto toDto(ItemStack stack, Actor owner) {

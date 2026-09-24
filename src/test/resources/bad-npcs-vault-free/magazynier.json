@@ -1,0 +1,23 @@
+{
+  "id": "magazynier",
+  "name": "Magazynier",
+  "kind": "PERSON",
+  "functions": ["DIALOGUE", "STORAGE"],
+  "vault": { "currency": "zloto", "tabPrices": [0, 100], "accountCurrency": "kly", "accountTabPrices": [5] },
+  "dialogue": {
+    "start": "powitanie",
+    "nodes": {
+      "powitanie": {
+        "text": "Odkladasz?",
+        "options": [
+          { "text": "Otwieraj.", "action": "OPEN_STORAGE", "goto": "sklad" },
+          { "text": "Nie.", "action": "END" }
+        ]
+      },
+      "sklad": {
+        "text": "Kladz.",
+        "options": [ { "text": "Dosc.", "goto": "powitanie" } ]
+      }
+    }
+  }
+}

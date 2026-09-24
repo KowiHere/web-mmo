@@ -315,7 +315,8 @@ class EquipmentInTheWorldTest {
         SavedCharacter character = new SavedCharacter(fresh.nameKey(), fresh.name(), fresh.mapId(),
                 fresh.x(), fresh.y(), fresh.dir(), fresh.level(), fresh.xp(), fresh.hp(),
                 fresh.wakesAt(), fresh.attributes(), fresh.unspentPoints(), items,
-                fresh.classId(), fresh.skillPoints(), fresh.skills(), fresh.coins());
+                fresh.classId(), fresh.skillPoints(), fresh.skills(), fresh.coins(),
+                Deposit.EMPTY, Deposit.EMPTY);
 
         FakeClient client = new FakeClient();
         runner.submit(new Command.Join(client, ACCOUNT, character, 0));

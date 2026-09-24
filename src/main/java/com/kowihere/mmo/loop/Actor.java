@@ -70,6 +70,21 @@ final class Actor {
     final Purse purse = new Purse();
 
     /**
+     * The chest kept for this character, and the one kept for its account.
+     *
+     * <p>Not final: how many tabs each has is read back with the character, and
+     * a chest has to know that before anything is put in it.
+     *
+     * <p>The account's chest is held here, on one character, which is only safe
+     * because one character from an account is in the world at a time. That
+     * rule is what stands in place of a lock.
+     */
+    Storage storage = new Storage(1);
+    Storage accountStorage = new Storage(1);
+    final Purse storagePurse = new Purse();
+    final Purse accountPurse = new Purse();
+
+    /**
      * Energy for skills. Belongs to the fight rather than to the character: it
      * starts every fight at zero and is gone when the fight ends, which is why
      * it is never written down.
@@ -92,6 +107,10 @@ final class Actor {
 
     /** And for what it has to spend, which changes on every kill and purchase. */
     boolean purseDirty;
+
+    /** And for each chest, which changes only while somebody is standing at one. */
+    boolean depositDirty;
+    boolean accountDepositDirty;
 
     /** The fight this actor is locked into, or null. Movement is refused while it is set. */
     Fight fight;

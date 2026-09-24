@@ -304,7 +304,7 @@ class TalkingToNpcsTest {
     /** Somebody hurt, and optionally still lying there from the last fight. */
     private static SavedCharacter hurtAndOut(String name, int x, int y, int hp, long until) {
         return new SavedCharacter(PlayerNames.key(name), name, PEN.id(), x, y, Direction.DOWN,
-                1, 0L, hp, until, Attributes.FRESH, 0, List.of(), null, 1, List.of(), List.of());
+                1, 0L, hp, until, Attributes.FRESH, 0, List.of(), null, 1, List.of(), List.of(), Deposit.EMPTY, Deposit.EMPTY);
     }
 
     private FakeClient join(SavedCharacter character) {

@@ -118,6 +118,72 @@ async function findAndWearSomething() {
     return null;
 }
 
+/** Kills until there is something loose in the bag. Leaves it there. */
+async function findSomethingLoose() {
+    for (let attempt = 0; attempt < 8; attempt++) {
+        const loose = await page.evaluate(() => (state.bag.carried || [])[0] || null);
+        if (loose) return loose;
+        const busy = await page.evaluate(() =>
+            !!(state.actors.get(state.selfId) || {}).inFight);
+        if (!busy) {
+            const prey = await page.evaluate(() => {
+                const self = state.actors.get(state.selfId);
+                const mobs = [...state.actors.values()].filter((a) => a.kind === 'MOB');
+                mobs.sort((a, b) => Math.abs(a.x - self.x) + Math.abs(a.y - self.y)
+                    - Math.abs(b.x - self.x) - Math.abs(b.y - self.y));
+                return mobs[0] ? mobs[0].id : null;
+            });
+            if (prey !== null) {
+                await page.evaluate((id) =>
+                    state.ws.send(JSON.stringify({ type: 'attack', targetId: id })), prey);
+            }
+        }
+        await page.waitForTimeout(2_000);
+    }
+    return null;
+}
+
+/**
+ * Walks up to the storekeeper and gets the chest open.
+ *
+ * <p>There is no other way to see one: a chest is only sent to somebody
+ * standing in front of it, which is the same door the stall has.
+ */
+async function openChest() {
+    const until = Date.now() + 90_000;
+    while (Date.now() < until) {
+        const keeper = await page.evaluate(() =>
+            [...state.actors.values()].find((a) => a.kind === 'NPC' && a.name.includes('Otton'))
+            || null);
+        if (!keeper) return false;
+        while (await page.evaluate(() => !!(state.actors.get(state.selfId) || {}).inFight)) {
+            await page.evaluate(() => state.ws.send(JSON.stringify({ type: 'flee' })));
+            await page.waitForTimeout(1_200);
+        }
+        await page.evaluate((k) => {
+            const spot = besideThem(k);
+            state.walkingUpTo = k.id;
+            requestMove(spot.x, spot.y);
+        }, keeper);
+        const greeted = await page
+            .waitForFunction(() => [...document.querySelectorAll('#dialogue-options button')]
+                .some((b) => /Otwieraj/.test(b.textContent)), null, { timeout: 15_000 })
+            .then(() => true).catch(() => false);
+        if (!greeted) continue;
+        await page.click('#dialogue-options button:text-is("Otwieraj skład.")');
+        const open = await page
+            .waitForFunction(() => !!state.storage, null, { timeout: 10_000 })
+            .then(() => true).catch(() => false);
+        if (open) return true;
+    }
+    return false;
+}
+
+const inTheChest = () => page.evaluate(() => {
+    const chest = (state.storage.chests || []).find((c) => c.scope === 'character');
+    return (chest ? chest.items || [] : []).map((k) => k.item.id);
+});
+
 async function enterWorld() {
     await page.waitForSelector(`.character:has-text("${character}")`, { timeout: 10_000 });
     await page.click(`.character:has-text("${character}")`);
@@ -168,8 +234,46 @@ if (mode === 'record') {
         process.exit(1);
     }
 
+    // Something put away, which is the only claim a chest can make: an item
+    // that came back after a reconnect never went near the database, and one
+    // that came back out of the chest after a restart can have done nothing
+    // else.
+    if (!(await findSomethingLoose())) {
+        console.error('FAIL - nothing dropped that could be put away');
+        process.exit(1);
+    }
+    if (!(await openChest())) {
+        console.error('FAIL - the storekeeper never opened the chest');
+        process.exit(1);
+    }
+    // Something loose, never what is being worn: this file also claims that
+    // what a character had on survives the restart, and taking it off to stash
+    // it would quietly turn that check into a claim about an empty back.
+    const toStash = await page.evaluate(() => (state.bag.carried || [])[0] || null);
+    let stashed = null;
+    if (toStash) {
+        await page.evaluate((id) => state.ws.send(JSON.stringify({
+            type: 'deposit', itemId: id, tab: 0, account: false,
+        })), toStash.id);
+        const went = await page
+            .waitForFunction((id) => (state.storage.chests || [])
+                .some((c) => c.scope === 'character' && (c.items || [])
+                    .some((k) => k.item.id === id)), toStash.id, { timeout: 10_000 })
+            .then(() => true).catch(() => false);
+        if (!went) {
+            console.error('FAIL - nothing would go into the chest');
+            process.exit(1);
+        }
+        stashed = toStash.id;
+    } else {
+        console.error('FAIL - nothing in the bag to put away');
+        process.exit(1);
+    }
+    await page.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+    await page.waitForTimeout(600);
+
     const at = await here();
-    writeFileSync(file, JSON.stringify({ ...account, character, ...at }));
+    writeFileSync(file, JSON.stringify({ ...account, character, ...at, stashed }));
     console.log(`recorded ${at.name} the ${at.classId} at ${at.x},${at.y}`
         + ` wearing ${at.worn.join(', ')} and knowing ${at.ranks.join(', ')}`);
 } else {
@@ -220,6 +324,16 @@ if (mode === 'record') {
         console.log(`ok   - and still carrying the same wound (${at.hp}/${at.maxHp})`);
     } else {
         console.error(`FAIL - came back on ${at.hp} health, was left on ${account.hp}`);
+        exitCode = 1;
+    }
+
+    if (!(await openChest())) {
+        console.error('FAIL - the storekeeper never opened the chest after the restart');
+        exitCode = 1;
+    } else if ((await inTheChest()).includes(account.stashed)) {
+        console.log('ok   - and what was put in the chest is still lying in it');
+    } else {
+        console.error(`FAIL - ${account.stashed} is not in the chest any more`);
         exitCode = 1;
     }
 

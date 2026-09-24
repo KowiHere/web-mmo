@@ -87,6 +87,31 @@ public sealed interface Command {
      *               swords is selling one of them, and which one is theirs to
      *               decide rather than the server's
      */
+    /**
+     * Puts one thing from the bag into a chest tab.
+     *
+     * @param account true for the chest shared by the whole account
+     */
+    record Deposit(Client client, String itemId, int tab, boolean account) implements Command {
+    }
+
+    /** Takes one thing back out of a chest and into the bag. */
+    record Withdraw(Client client, String itemId, boolean account) implements Command {
+    }
+
+    /** Moves money the same way, in one named currency. */
+    record DepositCoins(Client client, String currencyId, int amount, boolean account)
+            implements Command {
+    }
+
+    record WithdrawCoins(Client client, String currencyId, int amount, boolean account)
+            implements Command {
+    }
+
+    /** Buys the next tab of one chest, at whatever the storekeeper charges. */
+    record BuyTab(Client client, boolean account) implements Command {
+    }
+
     record Sell(Client client, String itemId) implements Command {
     }
 }

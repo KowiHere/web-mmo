@@ -2,6 +2,9 @@ package com.kowihere.mmo.persistence;
 
 import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.loop.ActorSnapshot;
+import com.kowihere.mmo.loop.Deposit;
+import com.kowihere.mmo.loop.StoredCoin;
+import com.kowihere.mmo.loop.StoredDeposit;
 import com.kowihere.mmo.loop.SavedCharacter;
 import com.kowihere.mmo.loop.StoredItem;
 import com.kowihere.mmo.loop.StoredSkill;
@@ -65,7 +68,7 @@ class CharacterRepositoryTest {
         characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
 
         characters.save(new ActorSnapshot("ala", "Ala", "starter", 9, 4, "UP", 3, 450L, 27, 0L,
-                Attributes.FRESH, 6, null, "wojownik", 3, null, null));
+                Attributes.FRESH, 6, null, "wojownik", 3, null, null, 0L, null, null));
 
         SavedCharacter found = characters.find("ala").orElseThrow();
         assertThat(found.x()).isEqualTo(9);
@@ -152,14 +155,14 @@ class CharacterRepositoryTest {
         characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
 
         characters.save(new ActorSnapshot("ala", "Ala", "starter", 7, 11, "LEFT", 4, 900L, 40, 0L,
-                Attributes.FRESH, 0, null, "mag", 7, null, null));
+                Attributes.FRESH, 0, null, "mag", 7, null, null, 0L, null, null));
 
         assertThat(characters.find("ala").orElseThrow().skillPoints()).isEqualTo(7);
     }
 
     private static ActorSnapshot withSkills(String nameKey, List<StoredSkill> skills) {
         return new ActorSnapshot(nameKey, "Ala", "starter", 7, 11, "LEFT", 1, 0L, 20, 0L,
-                Attributes.FRESH, 0, null, "mag", 1, skills, null);
+                Attributes.FRESH, 0, null, "mag", 1, skills, null, 0L, null, null);
     }
 
     @Test
@@ -167,7 +170,7 @@ class CharacterRepositoryTest {
         characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
 
         characters.save(new ActorSnapshot("ala", "Ala", "starter", 7, 11, "LEFT", 4, 900L, 40, 0L,
-                new Attributes(11, 6, 5), 2, null, "mag", 4, null, null));
+                new Attributes(11, 6, 5), 2, null, "mag", 4, null, null, 0L, null, null));
 
         SavedCharacter found = characters.find("ala").orElseThrow();
         assertThat(found.attributes()).isEqualTo(new Attributes(11, 6, 5));
@@ -187,9 +190,148 @@ class CharacterRepositoryTest {
         assertThat(found.unspentPoints()).isEqualTo(Attributes.pointsEarnedBy(5));
     }
 
+    // ---- the chests --------------------------------------------------
+
+    @Test
+    void aChestSurvivesTheRoundTrip() {
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+
+        characters.save(withDeposit("ala", new Deposit(3,
+                List.of(new StoredDeposit("miecz-1", "zardzewialy-miecz", 2)),
+                List.of(new StoredCoin("zloto", 640)))));
+
+        Deposit found = characters.find("ala").orElseThrow().deposit();
+        assertThat(found.tabs()).isEqualTo(3);
+        assertThat(found.items())
+                .as("in the tab it was left in, not merely somewhere in the chest")
+                .containsExactly(new StoredDeposit("miecz-1", "zardzewialy-miecz", 2));
+        assertThat(found.coins()).containsExactly(new StoredCoin("zloto", 640));
+    }
+
+    @Test
+    void whatIsInTheChestIsNotInTheBag() {
+        // The two share a table and are told apart by one column. If the bag
+        // query forgot to say so, everything stored would come back worn or
+        // carried - and the character would appear to own it twice.
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+
+        characters.save(withDeposit("ala", new Deposit(1,
+                List.of(new StoredDeposit("miecz-1", "zardzewialy-miecz", 0)), List.of())));
+
+        assertThat(characters.find("ala").orElseThrow().items()).isEmpty();
+        assertThat(characters.itemsOf("ala")).isEmpty();
+    }
+
+    @Test
+    void writingTheBagDoesNotEmptyTheChest() {
+        // The delete behind a bag write is narrowed to the rows in the bag. A
+        // missing WHERE clause here would empty somebody's storage every time
+        // they picked something up.
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+        characters.save(withDeposit("ala", new Deposit(1,
+                List.of(new StoredDeposit("miecz-1", "zardzewialy-miecz", 0)), List.of())));
+
+        characters.save(snapshot("ala", List.of(new StoredItem("kij-1", "kostur-ucznia", null))));
+
+        SavedCharacter found = characters.find("ala").orElseThrow();
+        assertThat(found.items()).hasSize(1);
+        assertThat(found.deposit().items())
+                .containsExactly(new StoredDeposit("miecz-1", "zardzewialy-miecz", 0));
+    }
+
+    @Test
+    void writingTheChestDoesNotEmptyTheBag() {
+        // And the same in the other direction: the delete behind a chest write
+        // is narrowed to the stored rows, or putting one thing away would take
+        // everything the character was carrying with it.
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+        characters.save(snapshot("ala", List.of(new StoredItem("kij-1", "kostur-ucznia", null))));
+
+        characters.save(withDeposit("ala", new Deposit(1,
+                List.of(new StoredDeposit("miecz-1", "zardzewialy-miecz", 0)), List.of())));
+
+        assertThat(characters.find("ala").orElseThrow().items())
+                .containsExactly(new StoredItem("kij-1", "kostur-ucznia", null));
+    }
+
+    @Test
+    void aChestNobodyHasOpenedIsOneEmptyTab() {
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+
+        Deposit found = characters.find("ala").orElseThrow().deposit();
+
+        assertThat(found.tabs()).isEqualTo(1);
+        assertThat(found.items()).isEmpty();
+        assertThat(found.coins()).isEmpty();
+    }
+
+    @Test
+    void theAccountChestIsSharedByEveryCharacterOnIt() {
+        // The whole reason it is not keyed by character: what one of them puts
+        // away, the next one finds.
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+        characters.create(ala, character("Ola", 3, 3, Direction.DOWN));
+
+        characters.save(withAccountDeposit("ala", ala, new Deposit(2,
+                List.of(new StoredDeposit("skora-1", "niedzwiedzia-skora", 1)),
+                List.of(new StoredCoin("zloto", 12)))));
+
+        Deposit fromTheOther = characters.find("ola").orElseThrow().accountDeposit();
+        assertThat(fromTheOther.tabs()).isEqualTo(2);
+        assertThat(fromTheOther.items())
+                .containsExactly(new StoredDeposit("skora-1", "niedzwiedzia-skora", 1));
+        assertThat(fromTheOther.coins()).containsExactly(new StoredCoin("zloto", 12));
+    }
+
+    @Test
+    void andNotByAnotherAccount() {
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+        characters.create(bogumil, character("Bogumil", 4, 4, Direction.DOWN));
+
+        characters.save(withAccountDeposit("ala", ala, new Deposit(1,
+                List.of(new StoredDeposit("skora-1", "niedzwiedzia-skora", 0)), List.of())));
+
+        assertThat(characters.find("bogumil").orElseThrow().accountDeposit().items()).isEmpty();
+    }
+
+    @Test
+    void anAccountChestIsWrittenTheFirstTimeAnythingGoesIntoIt() {
+        // There is no row until something is bought or stored, the same way
+        // there is no currency row until somebody earns some.
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+        assertThat(characters.accountDepositOf(ala).tabs()).isEqualTo(1);
+
+        characters.save(withAccountDeposit("ala", ala, new Deposit(4, List.of(), List.of())));
+
+        assertThat(characters.accountDepositOf(ala).tabs()).isEqualTo(4);
+    }
+
+    @Test
+    void nullLeavesBothChestsAlone() {
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+        characters.save(withDeposit("ala", new Deposit(2,
+                List.of(new StoredDeposit("miecz-1", "zardzewialy-miecz", 1)), List.of())));
+
+        characters.save(new ActorSnapshot("ala", "Ala", "starter", 8, 8, "UP", 1, 0L, 20, 0L,
+                Attributes.FRESH, 0, null, "wojownik", 1, null, null, ala, null, null));
+
+        assertThat(characters.find("ala").orElseThrow().deposit().items()).hasSize(1);
+    }
+
+    private static ActorSnapshot withDeposit(String nameKey, Deposit deposit) {
+        return new ActorSnapshot(nameKey, "Ala", "starter", 7, 11, "LEFT", 1, 0L, 20, 0L,
+                Attributes.FRESH, 0, null, "wojownik", 1, null, null, 0L, deposit, null);
+    }
+
+    private static ActorSnapshot withAccountDeposit(String nameKey, long accountId,
+                                                    Deposit deposit) {
+        return new ActorSnapshot(nameKey, "Ala", "starter", 7, 11, "LEFT", 1, 0L, 20, 0L,
+                Attributes.FRESH, 0, null, "wojownik", 1, null, null, accountId, null, deposit);
+    }
+
     private static ActorSnapshot snapshot(String nameKey, List<StoredItem> items) {
         return new ActorSnapshot(nameKey, "Ala", "starter", 7, 11, "LEFT", 1, 0L, 20, 0L,
-                Attributes.FRESH, 0, items, "wojownik", 1, null, null);
+                Attributes.FRESH, 0, items, "wojownik", 1, null, null, 0L, null, null);
     }
 
     @Test
@@ -197,7 +339,7 @@ class CharacterRepositoryTest {
         // The world must not be able to invent a character with no owner, even
         // if one is deleted while it is being played.
         characters.save(new ActorSnapshot("widmo", "Widmo", "starter", 1, 1, "DOWN", 1, 0L, 10, 0L,
-                Attributes.FRESH, 0, null, "wojownik", 1, null, null));
+                Attributes.FRESH, 0, null, "wojownik", 1, null, null, 0L, null, null));
 
         assertThat(characters.find("widmo")).isEmpty();
     }

@@ -2,8 +2,10 @@ package com.kowihere.mmo.persistence;
 
 import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.loop.ActorSnapshot;
+import com.kowihere.mmo.loop.Deposit;
 import com.kowihere.mmo.loop.SavedCharacter;
 import com.kowihere.mmo.loop.StoredCoin;
+import com.kowihere.mmo.loop.StoredDeposit;
 import com.kowihere.mmo.loop.StoredItem;
 import com.kowihere.mmo.loop.StoredSkill;
 import com.kowihere.mmo.world.Direction;
@@ -49,7 +51,8 @@ public class CharacterRepository {
         return jdbc.query(SELECT + " WHERE name_key = ?", CharacterRepository::read, nameKey)
                 .stream().findFirst()
                 .map(character -> withBelongings(character, itemsOf(nameKey), skillsOf(nameKey),
-                        coinsOf(nameKey)));
+                        coinsOf(nameKey), depositOf(nameKey),
+                        accountDepositOf(ownerOf(nameKey).orElse(0L))));
     }
 
     /**
@@ -63,10 +66,55 @@ public class CharacterRepository {
 
     public List<StoredItem> itemsOf(String nameKey) {
         return jdbc.query("SELECT id, def_id, slot FROM item_instance"
-                        + " WHERE character_key = ? ORDER BY created_at, id",
+                        + " WHERE character_key = ? AND tab IS NULL ORDER BY created_at, id",
                 (rs, row) -> new StoredItem(rs.getString("id"), rs.getString("def_id"),
                         ItemSlot.parse(rs.getString("slot"))),
                 nameKey);
+    }
+
+    /**
+     * A character's own chest. The same table as the bag, told apart by the one
+     * column that says which tab a thing is in: an item in storage is the same
+     * instance as an item in a bag, and moving it between two tables would be
+     * moving the same truth between two homes.
+     */
+    public Deposit depositOf(String nameKey) {
+        List<StoredDeposit> items = jdbc.query(
+                "SELECT id, def_id, tab FROM item_instance"
+                        + " WHERE character_key = ? AND tab IS NOT NULL ORDER BY created_at, id",
+                (rs, row) -> new StoredDeposit(rs.getString("id"), rs.getString("def_id"),
+                        rs.getInt("tab")),
+                nameKey);
+        List<StoredCoin> coins = jdbc.query(
+                "SELECT currency_id, amount FROM storage_currency WHERE character_key = ?",
+                (rs, row) -> new StoredCoin(rs.getString("currency_id"), rs.getInt("amount")),
+                nameKey);
+        Integer tabs = jdbc.query("SELECT storage_tabs FROM game_character WHERE name_key = ?",
+                (rs, row) -> rs.getInt("storage_tabs"), nameKey).stream().findFirst().orElse(1);
+        return new Deposit(tabs, items, coins);
+    }
+
+    /**
+     * The chest every character on one account shares.
+     *
+     * <p>A missing {@code account_storage} row means one tab, the same way a
+     * missing currency row means no money: nothing is written until something
+     * is bought.
+     */
+    public Deposit accountDepositOf(long accountId) {
+        List<StoredDeposit> items = jdbc.query(
+                "SELECT id, def_id, tab FROM account_item"
+                        + " WHERE account_id = ? ORDER BY created_at, id",
+                (rs, row) -> new StoredDeposit(rs.getString("id"), rs.getString("def_id"),
+                        rs.getInt("tab")),
+                accountId);
+        List<StoredCoin> coins = jdbc.query(
+                "SELECT currency_id, amount FROM account_currency WHERE account_id = ?",
+                (rs, row) -> new StoredCoin(rs.getString("currency_id"), rs.getInt("amount")),
+                accountId);
+        Integer tabs = jdbc.query("SELECT tabs FROM account_storage WHERE account_id = ?",
+                (rs, row) -> rs.getInt("tabs"), accountId).stream().findFirst().orElse(1);
+        return new Deposit(tabs, items, coins);
     }
 
     public List<StoredCoin> coinsOf(String nameKey) {
@@ -84,12 +132,13 @@ public class CharacterRepository {
     }
 
     private static SavedCharacter withBelongings(SavedCharacter character, List<StoredItem> items,
-                                                 List<StoredSkill> skills, List<StoredCoin> coins) {
+                                                 List<StoredSkill> skills, List<StoredCoin> coins,
+                                                 Deposit deposit, Deposit accountDeposit) {
         return new SavedCharacter(character.nameKey(), character.name(), character.mapId(),
                 character.x(), character.y(), character.dir(), character.level(), character.xp(),
                 character.hp(), character.wakesAt(), character.attributes(),
                 character.unspentPoints(), items, character.classId(),
-                character.skillPoints(), skills, coins);
+                character.skillPoints(), skills, coins, deposit, accountDeposit);
     }
 
     /**
@@ -135,7 +184,11 @@ public class CharacterRepository {
                 rs.getString("class_id"),
                 rs.getInt("skill_points"),
                 List.of(),
-                List.of());
+                List.of(),
+                // Both chests are read separately, by the two queries beside
+                // this one. A row on the selection screen carries neither.
+                null,
+                null);
     }
 
     /**
@@ -172,6 +225,71 @@ public class CharacterRepository {
         }
         if (snapshot.coins() != null) {
             replaceCoins(snapshot.nameKey(), snapshot.coins());
+        }
+        if (snapshot.deposit() != null) {
+            replaceDeposit(snapshot.nameKey(), snapshot.deposit());
+        }
+        if (snapshot.accountDeposit() != null) {
+            replaceAccountDeposit(snapshot.accountId(), snapshot.accountDeposit());
+        }
+    }
+
+    /**
+     * A character's chest, replaced whole like everything else that is written
+     * rarely. The delete is narrowed to the stored rows so that it cannot take
+     * the bag with it - the two live in one table and are told apart by a
+     * column, which makes this WHERE clause load-bearing.
+     */
+    private void replaceDeposit(String nameKey, Deposit deposit) {
+        jdbc.update("UPDATE game_character SET storage_tabs = ? WHERE name_key = ?",
+                deposit.tabs(), nameKey);
+        jdbc.update("DELETE FROM item_instance WHERE character_key = ? AND tab IS NOT NULL",
+                nameKey);
+        Timestamp now = Timestamp.from(Instant.now());
+        if (!deposit.items().isEmpty()) {
+            jdbc.batchUpdate("INSERT INTO item_instance"
+                            + " (id, character_key, def_id, slot, tab, created_at)"
+                            + " VALUES (?, ?, ?, NULL, ?, ?)",
+                    deposit.items().stream()
+                            .map(item -> new Object[]{item.id(), nameKey, item.defId(),
+                                    item.tab(), now})
+                            .toList());
+        }
+        jdbc.update("DELETE FROM storage_currency WHERE character_key = ?", nameKey);
+        if (!deposit.coins().isEmpty()) {
+            jdbc.batchUpdate("INSERT INTO storage_currency (character_key, currency_id, amount)"
+                            + " VALUES (?, ?, ?)",
+                    deposit.coins().stream()
+                            .map(coin -> new Object[]{nameKey, coin.currencyId(), coin.amount()})
+                            .toList());
+        }
+    }
+
+    /** And the account's, which has a table to itself because it outlives them all. */
+    private void replaceAccountDeposit(long accountId, Deposit deposit) {
+        int updated = jdbc.update("UPDATE account_storage SET tabs = ? WHERE account_id = ?",
+                deposit.tabs(), accountId);
+        if (updated == 0) {
+            jdbc.update("INSERT INTO account_storage (account_id, tabs) VALUES (?, ?)",
+                    accountId, deposit.tabs());
+        }
+        jdbc.update("DELETE FROM account_item WHERE account_id = ?", accountId);
+        Timestamp now = Timestamp.from(Instant.now());
+        if (!deposit.items().isEmpty()) {
+            jdbc.batchUpdate("INSERT INTO account_item (id, account_id, def_id, tab, created_at)"
+                            + " VALUES (?, ?, ?, ?, ?)",
+                    deposit.items().stream()
+                            .map(item -> new Object[]{item.id(), accountId, item.defId(),
+                                    item.tab(), now})
+                            .toList());
+        }
+        jdbc.update("DELETE FROM account_currency WHERE account_id = ?", accountId);
+        if (!deposit.coins().isEmpty()) {
+            jdbc.batchUpdate("INSERT INTO account_currency (account_id, currency_id, amount)"
+                            + " VALUES (?, ?, ?)",
+                    deposit.coins().stream()
+                            .map(coin -> new Object[]{accountId, coin.currencyId(), coin.amount()})
+                            .toList());
         }
     }
 
@@ -212,13 +330,17 @@ public class CharacterRepository {
      * even for the instant between two statements.
      */
     private void replaceItems(String nameKey, List<StoredItem> items) {
-        jdbc.update("DELETE FROM item_instance WHERE character_key = ?", nameKey);
+        // The bag only. The same table holds the chest, and a delete that
+        // forgot to say so would empty somebody's storage every time they
+        // picked a coin purse up off the ground.
+        jdbc.update("DELETE FROM item_instance WHERE character_key = ? AND tab IS NULL", nameKey);
         if (items.isEmpty()) {
             return;
         }
         Timestamp now = Timestamp.from(Instant.now());
-        jdbc.batchUpdate("INSERT INTO item_instance (id, character_key, def_id, slot, created_at)"
-                        + " VALUES (?, ?, ?, ?, ?)",
+        jdbc.batchUpdate("INSERT INTO item_instance"
+                        + " (id, character_key, def_id, slot, tab, created_at)"
+                        + " VALUES (?, ?, ?, ?, NULL, ?)",
                 items.stream()
                         .map(item -> new Object[]{item.id(), nameKey, item.defId(),
                                 item.slot() == null ? null : item.slot().name(), now})

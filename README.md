@@ -150,11 +150,11 @@ Folding them together produces a `SHOPKEEPER` who cannot also give a quest, and
 then a `SHOPKEEPER_WITH_QUEST`. A noticeboard talks; a blacksmith sells, repairs
 and talks; neither is a different kind of thing from the other because of it.
 
-`DIALOGUE`, `HEALER`, `SHOP` and `MASTER` work today. Every other function says
-so and **stops the server** when content names it, exactly as an unspawnable mob
-tier does — `TELEPORT` because there is one map, `STORAGE` because there is
-nowhere to put a second bag, `QUEST` because there is nowhere to keep a
-progress. Content that
+`DIALOGUE`, `HEALER`, `SHOP`, `MASTER` and `STORAGE` work today. Every other
+function says so and **stops the server** when content names it, exactly as an
+unspawnable mob tier does — `TELEPORT` because a person who moves you is a
+different thing from a tile that leads outside, `QUEST` because there is nowhere
+to keep a progress. Content that
 names one would otherwise load an NPC who opens, offers nothing, and looks to
 every player like a bug in the client.
 
@@ -519,6 +519,32 @@ does not swallow a reward silently — nothing is dropped and you are told why.
 which is why the browser checks can be decisive rather than patient. It is not a
 balance proposal.
 
+### The chest, and one character at a time
+
+A bag holds twenty things and that is the hard ceiling: a full one ends a hunt,
+because the next rare drop has to be sold on the spot. The storekeeper is the
+second container — two chests, in tabs of twenty:
+
+* **the character's own**, one tab free and five more for gold;
+* **the account's**, shared by every character on it, one tab free and five more
+  for a premium currency nothing grants yet.
+
+Both keep money as well as things, and neither will take what is being worn —
+the same rule as selling, for the same reason.
+
+An item in a chest is the **same instance** as an item in a bag: one table, told
+apart by the column that says which tab it is in. Two tables would mean moving a
+row on every deposit and the same truth living in two homes. The account's chest
+has a table of its own, because it outlives any one character.
+
+That shared chest is the first state in this game that two map threads could
+write at once — two characters of one player, standing on two maps. There is no
+lock for them and there will not be one. Instead: **one character from an
+account is in the world at a time**, settled at the door by `WorldService`
+before anything joins. That rule is what stands in place of the lock, and it is
+why the account's chest can be held in memory beside the character's own and
+travel through a door with it.
+
 ### Disconnecting is not leaving
 
 Drop your connection and your character stays standing in the world for 30
@@ -700,8 +726,19 @@ They arrive one at a time.
 may mend you after a fight are both planned; the first needs currency and the
 second needs a new shape of bonus on an item.
 
-**Nothing is stored for money yet**, and nobody teaches anything at all — see
-above; masters discount and undo, they do not sell ranks.
+**Nobody teaches anything at all** — see above; masters discount and undo, they
+do not sell ranks.
+
+**The account's chest can be made bigger and nothing can pay for it.** Room in a
+character's own chest costs gold; room in the shared one costs a premium
+currency that exists in the registry, is shown in the purse, and is granted by
+nothing at all — no creature drops it and no NPC pays it. The first shared tab
+is free, so the shelf works from the first day; the button beside it is built
+and unreachable, the same deliberate state as the door thresholds below.
+
+**Money in a chest is a convenience, not a safeguard.** Dying costs nothing but
+time, so putting gold away protects it from nothing. It becomes a decision the
+day death takes something.
 
 **Prices are hand-written and barely balanced.** An item's worth is one number
 in its own file, which is the right shape; whether the numbers are any good has
@@ -721,8 +758,8 @@ outside, and it arrives with the rest of the door interactions.
 Also missing: instances with parties. No password reset or email confirmation
 either — both need to send mail, which means a service to run.
 
-Roughly in order: potions, then storage, then the remaining ways through a door.
-Instances and parties last, which is what heroes and colossi are waiting on.
+Roughly in order: potions, then the remaining ways through a door. Instances and
+parties last, which is what heroes and colossi are waiting on.
 
 ## Layout
 

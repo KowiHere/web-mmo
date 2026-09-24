@@ -367,7 +367,8 @@ class TradingTest {
     private FakeClient joinRich(String name, int x, int y, String currencyId, int amount) {
         SavedCharacter character = new SavedCharacter(PlayerNames.key(name), name, MARKET.id(),
                 x, y, Direction.DOWN, 1, 0L, -1, 0L, Attributes.FRESH, 0, List.of(), null, 1,
-                List.of(), List.of(new StoredCoin(currencyId, amount)));
+                List.of(), List.of(new StoredCoin(currencyId, amount)),
+                Deposit.EMPTY, Deposit.EMPTY);
         FakeClient client = new FakeClient();
         runner.submit(new Command.Join(client, 1L, character, 0));
         assertThat(client.await(f -> f.contains("\"type\":\"init\""))).isTrue();

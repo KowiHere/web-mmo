@@ -11,9 +11,11 @@ import java.util.Set;
  * @param dialogue its conversation, or null when it does not talk
  * @param shop     what it deals in, or null when it does not trade
  * @param master   whose class it keeps, or null when it keeps none
+ * @param vault    what it charges for room in a chest, or null when it keeps none
  */
 public record NpcDef(String id, String name, NpcKind kind,
-                     Set<NpcFunction> functions, Dialogue dialogue, Shop shop, Master master) {
+                     Set<NpcFunction> functions, Dialogue dialogue, Shop shop, Master master,
+                     Vault vault) {
 
     public NpcDef {
         functions = Set.copyOf(functions);

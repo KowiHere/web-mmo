@@ -285,19 +285,19 @@ class WalkingThroughDoorsTest {
                 List.of(new StoredItem("a-sword", "probny-miecz", null)),
                 "wojownik", 1,
                 List.of(new StoredSkill("regeneracja", 3)),
-                List.of(new StoredCoin("zloto", 77)));
+                List.of(new StoredCoin("zloto", 77)), Deposit.EMPTY, Deposit.EMPTY);
     }
 
     private FakeClient join(String name, int x, int y, int level) {
         return join(new SavedCharacter(PlayerNames.key(name), name, "dom", x, y, Direction.DOWN,
                 level, 0L, -1, 0L, Attributes.FRESH, 0, List.of(), "wojownik", 0,
-                List.of(), List.of()));
+                List.of(), List.of(), Deposit.EMPTY, Deposit.EMPTY));
     }
 
     private FakeClient joinTo(String mapId, String name, int x, int y, int level) {
         SavedCharacter character = new SavedCharacter(PlayerNames.key(name), name, mapId, x, y,
                 Direction.DOWN, level, 0L, -1, 0L, Attributes.FRESH, 0, List.of(),
-                "wojownik", 0, List.of(), List.of());
+                "wojownik", 0, List.of(), List.of(), Deposit.EMPTY, Deposit.EMPTY);
         FakeClient client = new FakeClient();
         whereTheyAre.put(client, runners.get(mapId));
         runners.get(mapId).submit(new Command.Join(client, 1L, character, 0));

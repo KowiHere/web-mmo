@@ -76,6 +76,10 @@ const state = {
     purse: null,
     /** The stall that is open, or null. */
     shop: null,
+    storage: null,
+    // Which tab of each chest is being looked at. The client's own business:
+    // the server sends every tab at once and has no idea one is on top.
+    openTab: { character: 0, account: 0 },
     version: 0,
     selfId: null,
     map: null,
@@ -116,6 +120,9 @@ const skillbarEl = document.getElementById('skillbar');
 const purseEl = document.getElementById('purse');
 const knockoutEl = document.getElementById('knockout');
 const knockoutCountEl = document.getElementById('knockout-count');
+const storageEl = document.getElementById('storage');
+const storageWhoEl = document.getElementById('storage-who');
+const storageChestsEl = document.getElementById('storage-chests');
 const shopEl = document.getElementById('shop');
 const shopWhoEl = document.getElementById('shop-who');
 const shopGoodsEl = document.getElementById('shop-goods');
@@ -163,6 +170,7 @@ function connect(characterKey) {
         else if (msg.type === 'dialogue') applyDialogue(msg);
         else if (msg.type === 'purse') applyPurse(msg);
         else if (msg.type === 'shop') applyShop(msg);
+        else if (msg.type === 'storage') applyStorage(msg);
         else if (msg.type === 'error') logSystem(msg.message);
     };
 
@@ -207,6 +215,7 @@ function applyInit(msg) {
     state.walkingUpTo = null;
     applyDialogue({});
     applyShop({});
+    applyStorage({});
 
     for (const dto of msg.actors || []) upsertActor(dto);
 
@@ -313,6 +322,7 @@ function applyPurse(msg) {
     state.purse = msg;
     renderPurse();
     renderShop();
+    renderStorage();
     renderPanel();
 }
 
@@ -394,6 +404,138 @@ function renderShop() {
     shopEl.hidden = false;
 }
 
+/** No chests means the window has closed, the same as an empty stall. */
+function applyStorage(msg) {
+    state.storage = msg.chests ? msg : null;
+    renderStorage();
+}
+
+function renderStorage() {
+    if (!state.storage) {
+        storageEl.hidden = true;
+        return;
+    }
+    storageWhoEl.textContent = state.storage.name;
+    storageChestsEl.innerHTML = '';
+    for (const chest of state.storage.chests || []) {
+        storageChestsEl.append(chestBlock(chest));
+    }
+    storageEl.hidden = false;
+}
+
+function chestBlock(chest) {
+    const shared = chest.scope === 'account';
+    const block = document.createElement('div');
+    block.className = shared ? 'chest shared' : 'chest';
+
+    const title = document.createElement('h3');
+    title.textContent = shared
+        ? 'Skład konta — wspólny dla wszystkich twoich postaci'
+        : 'Skład postaci';
+    block.append(title);
+
+    // Clamped, because a tab that was open a moment ago can stop existing when
+    // the same account is looked at from a character with fewer of them.
+    const open = Math.min(state.openTab[chest.scope] || 0, chest.tabs - 1);
+    state.openTab[chest.scope] = open;
+
+    const tabs = document.createElement('div');
+    tabs.className = 'chest-tabs';
+    for (let i = 0; i < chest.tabs; i++) {
+        const button = document.createElement('button');
+        button.textContent = `${i + 1}`;
+        if (i === open) button.classList.add('on');
+        button.addEventListener('click', () => {
+            state.openTab[chest.scope] = i;
+            renderStorage();
+        });
+        tabs.append(button);
+    }
+    if (chest.nextTab >= 0) {
+        const buy = document.createElement('button');
+        buy.className = 'buy';
+        buy.textContent = `+ ${chest.nextTab} ${chest.currencyShort}`;
+        buy.title = `Wynajmij następną zakładkę za ${chest.nextTab} ${chest.currencyShort}`;
+        buy.addEventListener('click', () => send({ type: 'buyTab', account: shared }));
+        tabs.append(buy);
+    }
+    block.append(tabs);
+
+    const cols = document.createElement('div');
+    cols.className = 'chest-cols';
+
+    const stored = document.createElement('div');
+    const storedTitle = document.createElement('h4');
+    storedTitle.textContent = `Zakładka ${open + 1}`;
+    const list = document.createElement('ul');
+    list.className = 'slots';
+    const inTab = (chest.items || []).filter((kept) => kept.tab === open);
+    if (!inTab.length) {
+        const empty = document.createElement('li');
+        empty.className = 'empty';
+        empty.textContent = 'Pusto — kliknij rzecz w plecaku, żeby ją tu odłożyć';
+        list.append(empty);
+    }
+    for (const kept of inTab) {
+        const row = tradeRow(kept.item.name, 'wyjmij');
+        row.title = 'Wyjmij do plecaka';
+        row.addEventListener('click', () => send({
+            type: 'withdraw', itemId: kept.item.id, account: shared,
+        }));
+        list.append(row);
+    }
+    stored.append(storedTitle, list);
+
+    // Only what is in the bag: the server refuses to take anything off the
+    // character's back, so offering the click would be a promise it breaks.
+    const carried = state.bag ? state.bag.carried || [] : [];
+    const hand = document.createElement('div');
+    const handTitle = document.createElement('h4');
+    handTitle.textContent = 'W plecaku';
+    const put = document.createElement('ul');
+    put.className = 'slots';
+    if (!carried.length) {
+        const empty = document.createElement('li');
+        empty.className = 'empty';
+        empty.textContent = 'Plecak pusty';
+        put.append(empty);
+    }
+    for (const item of carried) {
+        const row = tradeRow(item.name, 'odłóż');
+        row.title = `Odłóż do zakładki ${open + 1}`;
+        row.addEventListener('click', () => send({
+            type: 'deposit', itemId: item.id, tab: open, account: shared,
+        }));
+        put.append(row);
+    }
+    hand.append(handTitle, put);
+    cols.append(stored, hand);
+    block.append(cols);
+
+    const coin = (chest.coins || []).find((c) => c.primary);
+    if (coin) {
+        const money = document.createElement('div');
+        money.className = 'chest-money';
+        const label = document.createElement('span');
+        label.textContent = `W składzie: ${coin.amount} ${coin.shortName}`;
+        const inHand = document.createElement('span');
+        const deposit = document.createElement('button');
+        deposit.textContent = 'odłóż 100';
+        deposit.addEventListener('click', () => send({
+            type: 'depositCoins', currencyId: coin.id, amount: 100, account: shared,
+        }));
+        const withdraw = document.createElement('button');
+        withdraw.textContent = 'wyjmij 100';
+        withdraw.addEventListener('click', () => send({
+            type: 'withdrawCoins', currencyId: coin.id, amount: 100, account: shared,
+        }));
+        inHand.append(deposit, withdraw);
+        money.append(label, inHand);
+        block.append(money);
+    }
+    return block;
+}
+
 function tradeRow(name, price) {
     const row = document.createElement('li');
     const label = document.createElement('span');
@@ -408,6 +550,7 @@ function tradeRow(name, price) {
 function applyBag(msg) {
     state.bag = msg;
     renderShop();
+    renderStorage();
     renderPanel();
 }
 

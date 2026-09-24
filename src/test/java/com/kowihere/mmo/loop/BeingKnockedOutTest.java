@@ -249,7 +249,7 @@ class BeingKnockedOutTest {
     private static SavedCharacter out(MapDef where, String name, int x, int y, long wakesAt) {
         return new SavedCharacter(PlayerNames.key(name), name, where.id(), x, y, Direction.DOWN,
                 1, 0L, CombatRules.HEALTH_AFTER_DEATH, wakesAt, Attributes.FRESH, 0,
-                List.of(), null, 0, List.of(), List.of());
+                List.of(), null, 0, List.of(), List.of(), Deposit.EMPTY, Deposit.EMPTY);
     }
 
     private FakeClient joinTo(MapRunner map, MapDef where, SavedCharacter character) {

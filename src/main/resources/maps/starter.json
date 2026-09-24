@@ -43,7 +43,8 @@
     { "npc": "skrzynia", "x": 7, "y": 12, "dir": "DOWN" },
     { "npc": "mistrz-miecza", "x": 19, "y": 2, "dir": "DOWN" },
     { "npc": "tropicielka", "x": 4, "y": 17, "dir": "DOWN" },
-    { "npc": "magister-run", "x": 26, "y": 12, "dir": "DOWN" }
+    { "npc": "magister-run", "x": 26, "y": 12, "dir": "DOWN" },
+    { "npc": "magazynier", "x": 11, "y": 17, "dir": "DOWN" }
   ],
   "roaming": [
     {

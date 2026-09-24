@@ -22,7 +22,10 @@ public enum DialogueAction {
     OPEN_SHOP,
 
     /** Gives back every point spent on a skill, for a price. */
-    RESET_SKILLS;
+    RESET_SKILLS,
+
+    /** Opens this storekeeper's chest. Like a shop, the talk stays open behind it. */
+    OPEN_STORAGE;
 
     /**
      * Whether this is somewhere to go rather than something to do. Only

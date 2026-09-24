@@ -24,8 +24,11 @@ public enum NpcFunction {
      */
     HEALER(true, null),
 
-    /** A second bag, kept in one place. */
-    STORAGE(false, "skład wymaga drugiego pojemnika i migracji"),
+    /**
+     * A second bag, kept in one place. Two of them, in fact: the character's
+     * own and the one shared by every character on the account.
+     */
+    STORAGE(true, null),
 
     /**
      * Keeps one class. Sells nothing: a player spends their own points from

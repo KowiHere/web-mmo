@@ -37,7 +37,7 @@ class MoneyAsContentTest {
         assertThat(shipped.keySet())
                 .as("sorted by id, the odd currency would come first and that would be an"
                         + " accident dressed up as a decision")
-                .containsExactly("zloto", "kly");
+                .containsExactly("zloto", "kly", "krysztal");
         assertThat(shipped.get("zloto").shortName()).isEqualTo("zł");
     }
 

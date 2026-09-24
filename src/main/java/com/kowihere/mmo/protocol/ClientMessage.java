@@ -27,6 +27,15 @@ public record ClientMessage(
         String attribute,
         String skillId,
         Integer npcId,
-        Integer option
+        Integer option,
+        Integer tab,
+        Integer amount,
+        String currencyId,
+        Boolean account
 ) {
+
+    /** Whose chest a storage message means. Absent is the character's own. */
+    public boolean accountChest() {
+        return Boolean.TRUE.equals(account);
+    }
 }

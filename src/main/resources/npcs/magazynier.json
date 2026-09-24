@@ -1,0 +1,38 @@
+{
+  "id": "magazynier",
+  "name": "Magazynier Otton",
+  "kind": "PERSON",
+  "functions": ["DIALOGUE", "STORAGE"],
+  "vault": {
+    "currency": "zloto",
+    "tabPrices": [250, 600, 1500, 3500, 8000],
+    "accountCurrency": "krysztal",
+    "accountTabPrices": [2, 3, 5, 8, 12]
+  },
+  "dialogue": {
+    "start": "powitanie",
+    "nodes": {
+      "powitanie": {
+        "text": "Nosisz na plecach wszystko, co masz. Tak się kończy każde polowanie — na ostatnim wolnym miejscu.",
+        "options": [
+          { "text": "Otwieraj skład.", "action": "OPEN_STORAGE", "goto": "sklad" },
+          { "text": "Czym się różni ta druga półka?", "goto": "wspolna" },
+          { "text": "Nic dziś nie zostawiam.", "action": "END" }
+        ]
+      },
+      "sklad": {
+        "text": "Pierwsza zakładka jest moja dla ciebie za darmo. Za każdą następną płacisz — i płacisz z sakiewki, nie z tego, co już tu leży.",
+        "options": [
+          { "text": "Uczciwie.", "goto": "powitanie" },
+          { "text": "Bywaj.", "action": "END" }
+        ]
+      },
+      "wspolna": {
+        "text": "Ta pod spodem należy do ciebie całej — każda postać, jaką kiedykolwiek tu przyślesz, sięgnie do tej samej półki. Ale rozbudowuje się ją kryształami, a kryształów nikt w tych stronach jeszcze nie widział.",
+        "options": [
+          { "text": "To poczekam.", "goto": "powitanie" }
+        ]
+      }
+    }
+  }
+}

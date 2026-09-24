@@ -262,6 +262,40 @@ public final class ServerMessages {
         }
     }
 
+    /** One item lying in a chest, and which tab of it. */
+    public record KeptDto(int tab, ItemDto item) {
+    }
+
+    /**
+     * One chest: how many tabs are open, what is in them, what money is kept
+     * there, and what the next tab would cost.
+     *
+     * @param scope   "character" or "account", so the interface can say whose
+     *                this is rather than working it out from its position
+     * @param nextTab what the next tab costs, or -1 when there is none left to
+     *                sell. The currency is named beside it, because the two
+     *                chests are deliberately not paid for in the same money
+     */
+    public record ChestDto(String scope, int tabs, int tabSize, List<KeptDto> items,
+                           List<CoinDto> coins, int nextTab, String currencyId,
+                           String currencyShort) {
+    }
+
+    /**
+     * A storekeeper's chests, sent only to whoever opened them. Like the shop
+     * it sits beside: a frame with no chests closes the window.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Storage(String type, int npcId, String name, List<ChestDto> chests) {
+        public Storage(int npcId, String name, List<ChestDto> chests) {
+            this("storage", npcId, name, chests);
+        }
+
+        public static Storage closed(int npcId) {
+            return new Storage(npcId, null, null);
+        }
+    }
+
     public record Error(String type, String message) {
         public Error(String message) {
             this("error", message);

@@ -45,7 +45,8 @@ public class NpcDefLoader {
     private static final Map<DialogueAction, NpcFunction> DEEDS = Map.of(
             DialogueAction.HEAL, NpcFunction.HEALER,
             DialogueAction.OPEN_SHOP, NpcFunction.SHOP,
-            DialogueAction.RESET_SKILLS, NpcFunction.MASTER);
+            DialogueAction.RESET_SKILLS, NpcFunction.MASTER,
+            DialogueAction.OPEN_STORAGE, NpcFunction.STORAGE);
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final String location;
@@ -148,7 +149,16 @@ public class NpcDefLoader {
             throw new IllegalStateException(where + ": '" + id
                     + "' has a \"master\" but does not list MASTER among its functions.");
         }
-        return new NpcDef(id, name, kind, functions, dialogue, shop, master);
+        Vault vault = root.has("vault") ? vault(root.get("vault"), where, id) : null;
+        if (functions.contains(NpcFunction.STORAGE) && vault == null) {
+            throw new IllegalStateException(where + ": '" + id
+                    + "' keeps a STORAGE but no \"vault\" saying what room costs.");
+        }
+        if (vault != null && !functions.contains(NpcFunction.STORAGE)) {
+            throw new IllegalStateException(where + ": '" + id
+                    + "' has a \"vault\" but does not list STORAGE among its functions.");
+        }
+        return new NpcDef(id, name, kind, functions, dialogue, shop, master, vault);
     }
 
     /**
@@ -209,6 +219,64 @@ public class NpcDefLoader {
             throw new IllegalStateException(where + ": '" + id + "' has a shop with nothing in it.");
         }
         return new Shop(currencyId, sells);
+    }
+
+    private Vault vault(JsonNode root, String where, String id) {
+        String currencyId = currencyFor(root, "currency", where, id);
+        String accountCurrencyId = currencyFor(root, "accountCurrency", where, id);
+        return new Vault(currencyId, tabPrices(root.path("tabPrices"), where, id, "tabPrices"),
+                accountCurrencyId,
+                tabPrices(root.path("accountTabPrices"), where, id, "accountTabPrices"));
+    }
+
+    private String currencyFor(JsonNode root, String field, String where, String id) {
+        String currencyId = text(root, field, where);
+        if (!currencies.containsKey(currencyId)) {
+            throw new IllegalStateException(where + ": '" + id + "' charges for room in '"
+                    + currencyId + "', which is not a currency. Known: " + currencies.keySet());
+        }
+        return currencyId;
+    }
+
+    /**
+     * The price of each tab after the free one.
+     *
+     * <p>There is no formula behind these on purpose - they are five numbers a
+     * person will want to argue with one at a time - so every way of writing
+     * them wrongly has to be caught here. A list longer than there are tabs
+     * would price a tab that cannot exist, and the extra numbers would sit in
+     * the file looking like promises.
+     */
+    private static List<Integer> tabPrices(JsonNode list, String where, String id, String field) {
+        if (!list.isArray() || list.isEmpty()) {
+            throw new IllegalStateException(where + ": '" + id + "' has no \"" + field
+                    + "\", so every chest would be one tab and nothing could ever be bought.");
+        }
+        if (list.size() > Vault.MAX_TABS - 1) {
+            throw new IllegalStateException(where + ": '" + id + "' prices " + list.size()
+                    + " extra tabs in \"" + field + "\", but a chest can only ever have "
+                    + Vault.MAX_TABS + ".");
+        }
+        List<Integer> prices = new ArrayList<>();
+        int previous = 0;
+        for (JsonNode entry : list) {
+            int price = entry.asInt(-1);
+            if (price <= 0) {
+                throw new IllegalStateException(where + ": '" + id + "' prices a tab in \"" + field
+                        + "\" at " + entry.asText() + ", and a tab that costs nothing is a tab"
+                        + " everybody already has.");
+            }
+            if (price < previous) {
+                // Not a rule of the world, a rule about typing: prices that go
+                // down mean the fourth tab is cheaper than the third, which
+                // nobody means and everybody would notice far too late.
+                throw new IllegalStateException(where + ": '" + id + "' prices tabs in \"" + field
+                        + "\" out of order (" + previous + " then " + price + ").");
+            }
+            previous = price;
+            prices.add(price);
+        }
+        return prices;
     }
 
     private Master master(JsonNode root, String where, String id) {
