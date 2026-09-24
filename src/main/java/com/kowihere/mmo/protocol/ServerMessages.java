@@ -21,11 +21,15 @@ public final class ServerMessages {
      * @param kind PLAYER, MOB or NPC - the client draws them differently
      * @param tier only a mob has one; null for the rest and omitted from the wire
      * @param npcKind only an NPC has one; the same arrangement
+     * @param unconscious knocked out and waiting to come round. On the wire
+     *                    because everyone can see it: without it, somebody
+     *                    lying at the spawn is indistinguishable from somebody
+     *                    whose connection has gone
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ActorDto(int id, String name, int x, int y, String dir, boolean online,
                            String kind, String tier, String npcKind, int level, int hp, int maxHp,
-                           boolean inFight) {
+                           boolean inFight, boolean unconscious) {
     }
 
     /** One blow. {@code hp} is the target's health after it, so bars need no arithmetic. */
@@ -92,20 +96,20 @@ public final class ServerMessages {
     public record You(String type, String classId, String className,
                       int hp, int maxHp, int energy, int maxEnergy, int energyPerRound,
                       int level, long xp,
-                      long xpThisLevel, long xpForNextLevel, long weakenedUntil, boolean dead,
+                      long xpThisLevel, long xpForNextLevel, long wakesAt, boolean dead,
                       int strength, int agility, int intellect, int unspentPoints, int skillPoints,
                       int skillPointPrice, int skillResetPrice,
                       int attack, int armor, int dodgePercent, int secondBlowPercent) {
         public You(String classId, String className,
                    int hp, int maxHp, int energy, int maxEnergy, int energyPerRound,
                    int level, long xp, long xpThisLevel,
-                   long xpForNextLevel, long weakenedUntil, boolean dead,
+                   long xpForNextLevel, long wakesAt, boolean dead,
                    int strength, int agility, int intellect, int unspentPoints, int skillPoints,
                    int skillPointPrice, int skillResetPrice,
                    int attack, int armor, int dodgePercent, int secondBlowPercent) {
             this("you", classId, className, hp, maxHp, energy, maxEnergy, energyPerRound,
                     level, xp, xpThisLevel,
-                    xpForNextLevel, weakenedUntil, dead, strength, agility, intellect,
+                    xpForNextLevel, wakesAt, dead, strength, agility, intellect,
                     unspentPoints, skillPoints, skillPointPrice, skillResetPrice,
                     attack, armor, dodgePercent, secondBlowPercent);
         }

@@ -114,6 +114,8 @@ const skillsEl = document.getElementById('skills');
 const skillPointsEl = document.getElementById('skill-points');
 const skillbarEl = document.getElementById('skillbar');
 const purseEl = document.getElementById('purse');
+const knockoutEl = document.getElementById('knockout');
+const knockoutCountEl = document.getElementById('knockout-count');
 const shopEl = document.getElementById('shop');
 const shopWhoEl = document.getElementById('shop-who');
 const shopGoodsEl = document.getElementById('shop-goods');
@@ -439,7 +441,7 @@ function renderSheet() {
     const xpPercent = you.xpForNextLevel > 0
         ? Math.max(0, Math.min(100, Math.round((you.xpThisLevel / you.xpForNextLevel) * 100)))
         : 0;
-    const weakened = you.weakenedUntil > Date.now();
+    const out = you.wakesAt > Date.now();
 
     sheetEl.innerHTML = '';
     sheetEl.append(
@@ -450,12 +452,28 @@ function renderSheet() {
             you.maxEnergy > 0 ? (you.energy / you.maxEnergy) * 100 : 0),
         bar('xp', `poziom ${you.level}`, xpPercent),
     );
-    if (weakened) {
+    if (out) {
         const note = document.createElement('div');
-        note.className = 'weakened';
-        note.textContent = `osłabienie: ${Math.ceil((you.weakenedUntil - Date.now()) / 1000)} s`;
+        note.className = 'knocked-out';
+        note.textContent = `ocknienie za: ${Math.ceil((you.wakesAt - Date.now()) / 1000)} s`;
         sheetEl.append(note);
     }
+    renderKnockout(out ? you.wakesAt : 0);
+}
+
+/**
+ * The overlay a knocked out character waits behind.
+ *
+ * Deliberately not a modal: the world carries on underneath and the chat box
+ * still works, because the character is unconscious and the person is not.
+ */
+function renderKnockout(wakesAt) {
+    if (!wakesAt) {
+        knockoutEl.hidden = true;
+        return;
+    }
+    knockoutCountEl.textContent = `${Math.ceil((wakesAt - Date.now()) / 1000)} s`;
+    knockoutEl.hidden = false;
 }
 
 function bar(kind, label, percent) {
@@ -980,7 +998,10 @@ function drawActor(actor, ox, oy, now) {
     const look = mob || npc;
     const radius = look ? look.radius : 10;
 
-    ctx.globalAlpha = actor.online ? 1 : 0.4;
+    // Somebody lying there is drawn flat and dim. Without it a knocked out
+    // character is indistinguishable from one whose connection has gone.
+    const down = !!actor.unconscious;
+    ctx.globalAlpha = (actor.online ? 1 : 0.4) * (down ? 0.55 : 1);
 
     // The shadow stays on the ground while the body rises, which is what sells
     // the bob as a stride rather than the whole sprite sliding upward.
@@ -1002,7 +1023,11 @@ function drawActor(actor, ox, oy, now) {
     }
 
     ctx.beginPath();
-    ctx.arc(px, py, radius, 0, Math.PI * 2);
+    if (down) {
+        ctx.ellipse(px, py + radius - 3, radius, radius * 0.45, 0, 0, Math.PI * 2);
+    } else {
+        ctx.arc(px, py, radius, 0, Math.PI * 2);
+    }
     ctx.fillStyle = look ? look.fill : (isSelf ? '#6ea8fe' : `hsl(${(actor.id * 67) % 360} 45% 58%)`);
     ctx.fill();
     ctx.lineWidth = 2;
@@ -1602,7 +1627,7 @@ function sampleStats(now) {
     stats.deltas = 0;
     stats.sampledAt = now;
 
-    if (state.you && state.you.weakenedUntil > Date.now()) {
+    if (state.you && state.you.wakesAt > Date.now()) {
         renderSheet(); // the countdown has to tick down on its own
     }
 

@@ -38,9 +38,23 @@ public final class CombatRules {
 
     public static final double FLEE_CHANCE = 0.6;
 
-    /** What being newly dead costs, and for how long. */
-    public static final double WEAKENED_MULTIPLIER = 0.5;
-    public static final long WEAKENED_SECONDS = 60;
+    /**
+     * How long a character lies there before it can be played again, and the
+     * most it can ever be.
+     *
+     * <p>Rising with the level, like the price of a skill point: a death should
+     * cost more the further along you are, or by the tenth level it costs
+     * nothing at all. The ceiling is there because the other end of that rule
+     * turns one mistake into a quarter of an hour looking at a screen, and no
+     * lesson is worth that.
+     */
+    public static final long WAKE_SECONDS_PER_LEVEL = 20;
+    public static final long WAKE_SECONDS_MAX = 300;
+
+    /** How long being killed at this level puts a character out of action. */
+    public static long wakeSeconds(int level) {
+        return Math.min(WAKE_SECONDS_MAX, WAKE_SECONDS_PER_LEVEL * Math.max(1, level));
+    }
 
     /**
      * What a character wakes up with.
@@ -66,11 +80,6 @@ public final class CombatRules {
      * Nothing derived is stored, which was the whole point of deriving it from
      * the level in the first place.
      */
-
-    /** Applies the penalty a freshly killed character carries for a while. */
-    public static int weakened(int value) {
-        return Math.max(1, (int) Math.round(value * WEAKENED_MULTIPLIER));
-    }
 
     // ---- experience --------------------------------------------------------
 

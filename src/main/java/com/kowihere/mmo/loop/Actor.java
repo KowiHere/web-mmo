@@ -99,8 +99,15 @@ final class Actor {
     /** An actor this one is walking towards in order to attack it; 0 for nobody. */
     int approaching;
 
-    /** When the penalty for dying wears off, in epoch millis; 0 when unpenalised. */
-    long weakenedUntil;
+    /**
+     * When this character can be played again, in epoch millis; 0 when it can
+     * be played now.
+     *
+     * <p>A stamp rather than a countdown, so closing the tab shortens nothing
+     * and a restart of the server forgets nothing. It is written down for the
+     * same reason.
+     */
+    long wakesAt;
 
     final int id;
     final String name;
@@ -254,13 +261,13 @@ final class Actor {
 
     int attack() {
         if (isMob()) {
-            return applyWeakness(mob.attack());
+            return mob.attack();
         }
         Attributes total = totalAttributes();
         int fromClass = characterClass == null
                 ? total.attack()
                 : characterClass.attackFrom(total);
-        return applyWeakness(fromClass + inventory.grantedAttack());
+        return fromClass + inventory.grantedAttack();
     }
 
     /** How much of an opponent's armour this actor's blows pass through. */
@@ -269,9 +276,9 @@ final class Actor {
     }
 
     int armor() {
-        return applyWeakness(isMob()
+        return isMob()
                 ? mob.armor()
-                : totalAttributes().armor() + inventory.grantedArmor());
+                : totalAttributes().armor() + inventory.grantedArmor();
     }
 
     /** A creature never evades; only characters have agility. */
@@ -283,11 +290,15 @@ final class Actor {
         return isMob() ? 0 : totalAttributes().secondBlowChance();
     }
 
-    boolean isWeakened(long nowMillis) {
-        return weakenedUntil > nowMillis;
-    }
-
-    private int applyWeakness(int value) {
-        return isWeakened(System.currentTimeMillis()) ? CombatRules.weakened(value) : value;
+    /**
+     * Whether this character is still lying where it was killed.
+     *
+     * <p>Computed from the stamp every time it is asked rather than kept as a
+     * flag, so there is no second copy of the answer to fall out of step - and
+     * so a character that was unconscious when the process stopped is still
+     * unconscious when it starts again.
+     */
+    boolean isUnconscious(long nowMillis) {
+        return wakesAt > nowMillis;
     }
 }

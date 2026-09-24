@@ -33,7 +33,7 @@ public record ClassDef(
         int hpBonus
 ) {
 
-    /** What this class's blows are worth, before equipment and weakness. */
+    /** What this class's blows are worth, before equipment. */
     public int attackFrom(Attributes attributes) {
         return Attributes.attackFrom(attributes.of(damageFrom));
     }

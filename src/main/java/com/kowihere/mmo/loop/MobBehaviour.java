@@ -96,7 +96,10 @@ final class MobBehaviour {
         int bestDistance = Integer.MAX_VALUE;
 
         for (Actor other : everyone) {
-            if (!other.isPlayer() || !other.online() || !other.isAlive() || other.inFight()) {
+            // A knocked out character cannot fight back, cannot run and cannot even
+            // say no. Picking on one would turn a death into a second death.
+            if (!other.isPlayer() || !other.online() || !other.isAlive() || other.inFight()
+                    || other.isUnconscious(System.currentTimeMillis())) {
                 continue;
             }
             if (distance(other.x, other.y, map.spawnX(), map.spawnY()) <= SAFE_RADIUS) {

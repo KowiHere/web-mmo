@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Nothing attacks you where you appear.
  *
  * <p>Every character starts on the spawn tile and returns to it after dying,
- * already weakened. A creature free to attack there turns one death into a
+ * already knocked out. A creature free to attack there turns one death into a
  * loop that a new character cannot break, and the arena here is the worst
  * case: a hunter with an aggression range that covers the whole map, standing
  * two tiles from the spawn.

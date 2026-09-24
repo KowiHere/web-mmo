@@ -1,0 +1,14 @@
+-- Dying now puts a character out of action rather than merely weakening it.
+--
+-- The column is renamed rather than replaced. It already had exactly the shape
+-- this needs - an expiry stamp, null when it does not apply - so adding a
+-- second one would have left the first standing there dead, and the next person
+-- reading the schema wondering which of the two the game actually uses.
+--
+-- What the rename means: the halved attack and armour are gone entirely, and
+-- the penalty for dying is that the character lies there for a while instead.
+--
+-- One side effect, taken knowingly: anybody weakened at the moment this runs
+-- comes back unconscious for whatever was left of that minute. The database is
+-- local and the minute is a minute, so it is not worth a statement to clear.
+ALTER TABLE game_character ALTER COLUMN weakened_until RENAME TO wakes_at;

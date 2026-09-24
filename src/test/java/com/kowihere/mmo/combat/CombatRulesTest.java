@@ -258,10 +258,25 @@ class CombatRulesTest {
     }
 
     @Test
-    void beingNewlyDeadHalvesWhatYouBringToTheNextFight() {
-        assertThat(CombatRules.weakened(20)).isEqualTo(10);
-        assertThat(CombatRules.weakened(1))
-                .as("a penalty should never reduce anything to nothing")
-                .isEqualTo(1);
+    void beingKilledCostsLongerTheFurtherAlongYouAre() {
+        // This replaced the halved attack and armour a death used to carry.
+        // One event should be paid for once, and lying there for a while is
+        // both the clearer price and the one a player can plan around.
+        assertThat(CombatRules.wakeSeconds(5))
+                .isGreaterThan(CombatRules.wakeSeconds(1))
+                .isEqualTo(CombatRules.WAKE_SECONDS_PER_LEVEL * 5);
+    }
+
+    @Test
+    void butNeverLongerThanAnybodyWouldSitThrough() {
+        // The other end of "rising with the level" is a quarter of an hour
+        // looking at a screen, and no lesson is worth that.
+        assertThat(CombatRules.wakeSeconds(500)).isEqualTo(CombatRules.WAKE_SECONDS_MAX);
+    }
+
+    @Test
+    void nonsenseInDoesNotProduceNonsenseOut() {
+        assertThat(CombatRules.wakeSeconds(0)).isEqualTo(CombatRules.WAKE_SECONDS_PER_LEVEL);
+        assertThat(CombatRules.wakeSeconds(-4)).isPositive();
     }
 }

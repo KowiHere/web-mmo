@@ -190,21 +190,26 @@ class TalkingToNpcsTest {
     }
 
     @Test
-    void healingDoesNotWipeThePriceOfHavingDied() throws Exception {
-        // Weakness is what dying costs, not a wound. A healer who cleared it
-        // would make dying free - and dying is already a free trip home.
-        long weakened = System.currentTimeMillis() + 60_000;
-        FakeClient client = join(hurtAndWeakened("Ala", 5, 5, 4, weakened));
+    void nobodyGetsPatchedUpWhileTheyAreStillOut() throws Exception {
+        // This used to be "healing does not clear the death penalty". The
+        // penalty is no longer something to clear: it is being unable to act at
+        // all, and a character who cannot talk cannot ask to be healed either.
+        // Which is the point - otherwise being knocked out would be a minute of
+        // standing next to the herbalist getting better.
+        FakeClient client = join(hurtAndOut("Ala", 5, 5, 4,
+                System.currentTimeMillis() + 60_000));
+
         runner.submit(new Command.Talk(client, idOf(client, "Zielarka")));
-        client.await("\"Witaj.\"");
+        sleep(400);
 
-        runner.submit(new Command.Choose(client, optionSaying(client, "Opatrz mnie.")));
-        assertThat(client.await(f -> f.contains("\"type\":\"you\"")
-                && numberIn(f, "hp") == numberIn(f, "maxHp"))).isTrue();
-
-        assertThat(latestYou(client))
-                .as("the wound is mended; the penalty is not")
-                .doesNotContain("\"weakenedUntil\":0");
+        assertThat(client.frames())
+                .anyMatch(f -> f.contains("\"type\":\"error\"") && f.contains("ocknęłaś"));
+        assertThat(client.frames())
+                .as("and no conversation was ever opened to choose from")
+                .noneMatch(f -> f.contains("\"Witaj.\""));
+        assertThat(numberIn(latestYou(client), "hp"))
+                .as("so nothing mended it")
+                .isEqualTo(4);
     }
 
     @Test
@@ -293,10 +298,11 @@ class TalkingToNpcsTest {
 
     /** Somebody who has been in a fight and come out of it badly. */
     private FakeClient joinHurt(String name, int x, int y, int hp) {
-        return join(hurtAndWeakened(name, x, y, hp, 0L));
+        return join(hurtAndOut(name, x, y, hp, 0L));
     }
 
-    private static SavedCharacter hurtAndWeakened(String name, int x, int y, int hp, long until) {
+    /** Somebody hurt, and optionally still lying there from the last fight. */
+    private static SavedCharacter hurtAndOut(String name, int x, int y, int hp, long until) {
         return new SavedCharacter(PlayerNames.key(name), name, PEN.id(), x, y, Direction.DOWN,
                 1, 0L, hp, until, Attributes.FRESH, 0, List.of(), null, 1, List.of(), List.of());
     }

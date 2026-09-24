@@ -36,7 +36,7 @@ public class CharacterRepository {
     }
 
     private static final String SELECT =
-            "SELECT name_key, name, map_id, x, y, dir, level, xp, hp, weakened_until,"
+            "SELECT name_key, name, map_id, x, y, dir, level, xp, hp, wakes_at,"
                     + " strength, agility, intellect, unspent_points, class_id, skill_points"
                     + " FROM game_character";
 
@@ -87,7 +87,7 @@ public class CharacterRepository {
                                                  List<StoredSkill> skills, List<StoredCoin> coins) {
         return new SavedCharacter(character.nameKey(), character.name(), character.mapId(),
                 character.x(), character.y(), character.dir(), character.level(), character.xp(),
-                character.hp(), character.weakenedUntil(), character.attributes(),
+                character.hp(), character.wakesAt(), character.attributes(),
                 character.unspentPoints(), items, character.classId(),
                 character.skillPoints(), skills, coins);
     }
@@ -117,7 +117,7 @@ public class CharacterRepository {
     }
 
     private static SavedCharacter read(java.sql.ResultSet rs, int row) throws java.sql.SQLException {
-        Timestamp weakened = rs.getTimestamp("weakened_until");
+        Timestamp wakesAt = rs.getTimestamp("wakes_at");
         return new SavedCharacter(
                 rs.getString("name_key"),
                 rs.getString("name"),
@@ -128,7 +128,7 @@ public class CharacterRepository {
                 rs.getInt("level"),
                 rs.getLong("xp"),
                 rs.getInt("hp"),
-                weakened == null ? 0L : weakened.getTime(),
+                wakesAt == null ? 0L : wakesAt.getTime(),
                 new Attributes(rs.getInt("strength"), rs.getInt("agility"), rs.getInt("intellect")),
                 rs.getInt("unspent_points"),
                 List.of(),
@@ -148,14 +148,14 @@ public class CharacterRepository {
     public void save(ActorSnapshot snapshot) {
         int updated = jdbc.update(
                 "UPDATE game_character SET map_id = ?, x = ?, y = ?, dir = ?, last_seen = ?,"
-                        + " level = ?, xp = ?, hp = ?, weakened_until = ?,"
+                        + " level = ?, xp = ?, hp = ?, wakes_at = ?,"
                         + " strength = ?, agility = ?, intellect = ?, unspent_points = ?,"
                         + " class_id = ?, skill_points = ?"
                         + " WHERE name_key = ?",
                 snapshot.mapId(), snapshot.x(), snapshot.y(), snapshot.dir(),
                 Timestamp.from(Instant.now()),
                 snapshot.level(), snapshot.xp(), snapshot.hp(),
-                snapshot.weakenedUntil() <= 0 ? null : new Timestamp(snapshot.weakenedUntil()),
+                snapshot.wakesAt() <= 0 ? null : new Timestamp(snapshot.wakesAt()),
                 snapshot.attributes().strength(), snapshot.attributes().agility(),
                 snapshot.attributes().intellect(), snapshot.unspentPoints(), snapshot.classId(),
                 snapshot.skillPoints(),

@@ -18,7 +18,7 @@ import java.util.List;
  * @param coins   what there is to spend, in however many currencies
  */
 public record SavedCharacter(String nameKey, String name, String mapId, int x, int y, Direction dir,
-                             int level, long xp, int hp, long weakenedUntil,
+                             int level, long xp, int hp, long wakesAt,
                              Attributes attributes, int unspentPoints, List<StoredItem> items,
                              String classId, int skillPoints,
                              List<StoredSkill> skills, List<StoredCoin> coins) {

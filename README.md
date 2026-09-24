@@ -267,9 +267,21 @@ Kill a creature and it leaves the world, paying experience and whatever its loot
 table rolls; its spawn point counts down `respawnSeconds` and puts it back. An elite has no spawn point, so it dies for
 good and the next one arrives on the ordinary roll.
 
-Die and you wake at the spawn on **one point of health** and **weakened** —
-halved attack and armour for a minute, stored as an expiry timestamp so that
-restarting the server is not a way to shake off the penalty.
+Die and you are put back at the spawn on **one point of health** and left
+**lying there**: for a while the character cannot be played at all. How long
+rises with the level — twenty seconds a level, up to five minutes — because a
+death should cost more the further along you are, and because the other end of
+that rule turns one mistake into a quarter of an hour looking at a screen.
+
+The moment you may play again is stored as a timestamp, so closing the tab
+shortens nothing and a restart forgets nothing. You can still log in; there is
+simply nothing you can do. **Every command is refused except chat** — the
+character is unconscious, the person at the keyboard is not, and three minutes
+with no way to say "back shortly" punishes the wrong one of the two. Nothing
+will attack a body that cannot fight back, run or refuse.
+
+This replaced a minute of halved attack and armour, which had only ever been a
+stand-in for it. One event is paid for once.
 
 That single point is the rule the rest of the game hangs off: **nothing
 regenerates.** Health comes back from a healer, and from nothing else. Waking up
@@ -284,9 +296,10 @@ time:
   you can come back dead. The alternative is worse: the most effective combat
   tactic in the game would be closing the browser.
 - **Nothing will attack you within four tiles of the spawn.** Every character
-  appears there and returns there after dying, already weakened and on one point
-  of health; without a truce on that ground one death becomes a loop a new
-  character cannot break. A healer has to stand inside that ring for the same
+  appears there and returns there after dying, on one point of health and
+  unable to act for a while; without a truce on that ground one death becomes a
+  loop a new character cannot break — and lying there unconscious, it could not
+  even run from it. A healer has to stand inside that ring for the same
   reason, and a test on the shipped content refuses one that does not.
 
 ### What a character is made of
@@ -529,7 +542,7 @@ That covers what unit tests cannot — two people seeing each other move, the
 server refusing an illegal destination, a dropped socket resuming the same
 character, a fight fought from the browser — one attack command, health bars
 falling, a kill paying experience, and a death putting the character back at the
-spawn weakened — the loot from that kill being worn from the character panel,
+spawn and out of action — the loot from that kill being worn from the character panel,
 and energy filling round by round until a skill can be thrown with it.
 
 The combat checks are deliberately written as "something was wounded, something
@@ -647,10 +660,6 @@ They arrive one at a time.
 may mend you after a fight are both planned; the first needs currency and the
 second needs a new shape of bonus on an item.
 
-**Dying costs a minute of weakness and nothing else.** The intended rule is a
-wait before the character can be played again, and how long that is has not been
-decided — so the minute of halved attack and armour stands in for it.
-
 **Nothing is stored for money yet**, and nobody teaches anything at all — see
 above; masters discount and undo, they do not sell ranks.
 
@@ -671,9 +680,9 @@ first, which is the same mistake `Content.defaultClass()` already names and
 avoids. All three are invisible with one map and are the first work of the
 second-map milestone.
 
-Roughly in order: the trainer, then potions, then the second map with the three
-faults above, then the wait after dying, then storage. Instances and parties
-last, which is what heroes and colossi are waiting on.
+Roughly in order: potions, then the second map with the three faults above,
+then storage. Instances and parties last, which is what heroes and colossi are
+waiting on.
 
 ## Layout
 

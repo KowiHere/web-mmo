@@ -297,7 +297,7 @@ label {
 
 .bar-xp .bar-label { line-height: 10px; font-size: 10px; }
 
-.weakened {
+.knocked-out {
     text-align: center;
     font-size: 11px;
     color: var(--danger);
@@ -677,4 +677,40 @@ label {
     font-variant-numeric: tabular-nums;
     color: #e8c87a;
     white-space: nowrap;
+}
+
+
+/* Waiting to come round. Across the top of the view rather than over all of
+   it: the world carries on underneath, and so does the chat. */
+#knockout {
+    position: absolute;
+    left: 50%;
+    top: 96px;
+    transform: translateX(-50%);
+    z-index: 8;
+    padding: 12px 22px;
+    text-align: center;
+    border: 1px solid #5a2b32;
+    border-radius: 10px;
+    background: rgba(32, 14, 18, .94);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .5);
+    pointer-events: none;
+}
+
+#knockout h2 {
+    margin: 0 0 4px;
+    font-size: 15px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #e06c75;
+}
+
+#knockout p {
+    margin: 0;
+    color: #dfe5f1;
+}
+
+#knockout-count {
+    font-variant-numeric: tabular-nums;
+    color: #f0c07a;
 }

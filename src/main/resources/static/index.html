@@ -90,6 +90,14 @@
     <!-- What somebody is saying, and everything that may be said back. The
          options are built from the frame rather than written here: the server
          decides what is on offer, and the numbers it sends are what goes back. -->
+    <!-- What a knocked out character waits behind. Not a modal: the chat box
+         below it still works, because the character is unconscious and the
+         person at the keyboard is not. -->
+    <div id="knockout" hidden>
+        <h2>Leżysz bez przytomności</h2>
+        <p>Ocknienie za <span id="knockout-count"></span></p>
+    </div>
+
     <!-- A trader's stall. Prices come from the server: the client has no
          catalogue of items, and two places computing a price is two places
          that can disagree about one. -->

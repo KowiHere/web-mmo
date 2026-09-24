@@ -237,6 +237,7 @@ public final class MapRunner implements Runnable {
                 endConversationsOutOfEarshot();
                 resolveFights();
                 respawnTheFallen();
+                wakeTheSleeping();
                 reapExpiredActors();
                 saveDirtyActors();
                 flush();
@@ -272,6 +273,9 @@ public final class MapRunner implements Runnable {
             if (command == null) {
                 return;
             }
+            if (refusedWhileOut(command)) {
+                continue;
+            }
             switch (command) {
                 case Command.Join join -> handleJoin(join);
                 case Command.Detach detach -> handleDetach(detach);
@@ -289,6 +293,60 @@ public final class MapRunner implements Runnable {
                 case Command.StopTalking stop -> handleStopTalking(stop);
                 case Command.Buy buy -> handleBuy(buy);
                 case Command.Sell sell -> handleSell(sell);
+            }
+        }
+    }
+
+    /**
+     * Everything an unconscious character may not do, which is everything but
+     * three things.
+     *
+     * <p>One gate rather than a check inside each handler. Nine copies of a rule
+     * is nine chances for the tenth handler to be written without it, and the
+     * tenth handler is always the one somebody finds a way through.
+     *
+     * <p>{@code Join} and {@code Detach} are not the character acting - they are
+     * the socket arriving and leaving, and refusing them would mean a knocked
+     * out character could neither be reconnected nor cleaned up. {@code Chat} is
+     * allowed on purpose: the character is unconscious, the player is not, and
+     * three minutes with no way to say "back shortly" punishes the person rather
+     * than the character.
+     */
+    private boolean refusedWhileOut(Command command) {
+        if (command instanceof Command.Join || command instanceof Command.Detach
+                || command instanceof Command.Chat) {
+            return false;
+        }
+        Actor actor = byClient.get(command.client());
+        if (actor == null || !actor.isUnconscious(System.currentTimeMillis())) {
+            return false;
+        }
+        sendError(actor, "Jeszcze się nie ocknęłaś. Zostało " + secondsUntilWaking(actor) + " s.");
+        return true;
+    }
+
+    private long secondsUntilWaking(Actor actor) {
+        return Math.max(0, (actor.wakesAt - System.currentTimeMillis() + 999) / 1000);
+    }
+
+    /**
+     * Notices the moment somebody comes round.
+     *
+     * <p>Nothing here changes what the character may do - that is computed from
+     * the stamp every time it is asked. This exists only so the client is told
+     * once, rather than sitting behind an overlay until something else happens
+     * to send it a frame.
+     */
+    private void wakeTheSleeping() {
+        long now = System.currentTimeMillis();
+        for (Actor actor : actors.values()) {
+            if (actor.wakesAt > 0 && !actor.isUnconscious(now)) {
+                actor.wakesAt = 0;
+                actor.dirty = true;
+                if (actor.isPlayer()) {
+                    joined.add(toDto(actor)); // everyone sees the body get up
+                    sendYou(actor);
+                }
             }
         }
     }
@@ -366,7 +424,7 @@ public final class MapRunner implements Runnable {
         }
         actor.level = Math.max(1, saved.level());
         actor.xp = Math.max(0, saved.xp());
-        actor.weakenedUntil = saved.weakenedUntil();
+        actor.wakesAt = saved.wakesAt();
         actor.characterClass = content.classOrDefault(saved.classId());
         actor.attributes = saved.attributes();
         actor.unspentPoints = Math.max(0, saved.unspentPoints());
@@ -1398,7 +1456,11 @@ public final class MapRunner implements Runnable {
         player.fromY = player.y;
         player.path.clear();
         player.hp = CombatRules.HEALTH_AFTER_DEATH;
-        player.weakenedUntil = System.currentTimeMillis() + CombatRules.WEAKENED_SECONDS * 1000L;
+        // Out of action, for longer the further along they are. Written as the
+        // moment they may play again rather than as a countdown, so closing the
+        // tab shortens nothing.
+        player.wakesAt = System.currentTimeMillis()
+                + CombatRules.wakeSeconds(player.level) * 1000L;
         player.dirty = true;
 
         // Everyone needs to see them vanish from where they fell and reappear at
@@ -1837,7 +1899,7 @@ public final class MapRunner implements Runnable {
         // be something the tick is still writing to.
         persistence.save(new ActorSnapshot(actor.nameKey, actor.name, map.id(),
                 actor.x, actor.y, actor.dir.name(),
-                actor.level, actor.xp, actor.hp, actor.weakenedUntil,
+                actor.level, actor.xp, actor.hp, actor.wakesAt,
                 actor.attributes, actor.unspentPoints, items,
                 actor.characterClass == null ? null : actor.characterClass.id(),
                 actor.skillPoints, skills, coins));
@@ -1849,7 +1911,8 @@ public final class MapRunner implements Runnable {
                 actor.kind.name(),
                 actor.isMob() ? actor.mob.tier().name() : null,
                 actor.isNpc() ? actor.npc.kind().name() : null,
-                actor.level, actor.hp, actor.maxHp(), actor.inFight());
+                actor.level, actor.hp, actor.maxHp(), actor.inFight(),
+                actor.isUnconscious(System.currentTimeMillis()));
     }
 
     private void sendError(Actor actor, String message) {
@@ -1872,7 +1935,7 @@ public final class MapRunner implements Runnable {
             return;
         }
         // Queued rather than sent. A "you" frame written mid-tick overtakes the
-        // delta that explains it, so a client learns it is dead and weakened
+        // delta that explains it, so a client learns it has been knocked out
         // while its character is still standing where it fell.
         pendingYou.add(actor.id);
     }
@@ -1891,7 +1954,7 @@ public final class MapRunner implements Runnable {
                 actor.hp, actor.maxHp(),
                 actor.energy, Energy.MAX, Energy.perRound(regenerationRank(actor)),
                 actor.level, actor.xp, actor.xp - floor, ceiling - floor,
-                actor.weakenedUntil, !actor.isAlive(),
+                actor.wakesAt, !actor.isAlive(),
                 total.strength(), total.agility(), total.intellect(),
                 actor.unspentPoints, actor.skillPoints,
                 // What a point costs where this character is standing, which is

@@ -21,7 +21,7 @@ import java.util.List;
  *               by somebody who has neither killed nor bought anything since.
  */
 public record ActorSnapshot(String nameKey, String name, String mapId, int x, int y, String dir,
-                            int level, long xp, int hp, long weakenedUntil,
+                            int level, long xp, int hp, long wakesAt,
                             Attributes attributes, int unspentPoints, List<StoredItem> items,
                             String classId, int skillPoints,
                             List<StoredSkill> skills, List<StoredCoin> coins) {

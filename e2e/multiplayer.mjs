@@ -62,14 +62,14 @@ async function register(characterName, playAs) {
     // Keep every frame as it arrives. The client's own state cannot answer "was
     // this ever sent to me", which is exactly the question a leak asks.
     await page.evaluate(() => {
-        // Weakness lasts a minute, so "are you weakened" cannot tell a death
+        // Being knocked out lasts a while, so "are you out" cannot tell a death
         // that just happened from one two phases ago. Watch for the moment it
         // changes instead, and note where the character stood right then.
         window.deaths = 0;
-        let lastWeakened = 0;
+        let lastWakesAt = 0;
         setInterval(() => {
-            if (!state.you || state.you.weakenedUntil <= lastWeakened) return;
-            lastWeakened = state.you.weakenedUntil;
+            if (!state.you || state.you.wakesAt <= lastWakesAt) return;
+            lastWakesAt = state.you.wakesAt;
             const self = state.actors.get(state.selfId);
             if (self) window.atDeath = { at: [self.x, self.y] };
             window.deaths++;
@@ -127,7 +127,25 @@ const pickFreeDirection = (page) => page.evaluate(() => {
  * the game now has, not a quirk of the script: fight, lose, walk over, fight
  * again.
  */
+/**
+ * Waits for a knocked out character to come round.
+ *
+ * Every phase below assumes a character that can act, and since dying stopped
+ * being a free trip home that assumption holds only between deaths. This is the
+ * same thing a player does: sit there until the count runs out.
+ */
+async function waitIfOut(page) {
+    const out = await page.evaluate(() => !!(state.you && state.you.wakesAt > Date.now()));
+    if (!out) return true;
+    return page
+        .waitForFunction(() => !state.you.wakesAt || state.you.wakesAt <= Date.now(),
+            null, { timeout: 180_000 })
+        .then(() => true)
+        .catch(() => false);
+}
+
 async function mendIfHurt(page, below = 1) {
+    await waitIfOut(page);
     const now = await page.evaluate(() => (state.you ? { hp: state.you.hp, maxHp: state.you.maxHp } : null));
     if (!now || now.hp >= now.maxHp * below) return true;
 
@@ -157,6 +175,7 @@ async function mendIfHurt(page, below = 1) {
 }
 
 async function escapeAnyFight(page) {
+    await waitIfOut(page);
     for (let attempt = 0; attempt < 12; attempt++) {
         const fighting = await page.evaluate(() => {
             const self = state.actors.get(state.selfId);
@@ -177,6 +196,7 @@ async function escapeAnyFight(page) {
  * feature working rather than the key failing.
  */
 async function tryStep(page, stepMs) {
+    await waitIfOut(page);
     for (let attempt = 0; attempt < 3; attempt++) {
         await escapeAnyFight(page);
         const step = await pickFreeDirection(page);
@@ -409,7 +429,9 @@ try {
         if (!busy) {
             // Nobody picks a fight on their last point of health, and since
             // this milestone nobody survives one either. Going to be mended is
-            // part of hunting now, exactly as it is for a player.
+            // part of hunting now, exactly as it is for a player - and so is
+            // waiting to come round after losing one.
+            await waitIfOut(ala);
             await mendIfHurt(ala, 0.4);
             const prey = await nearestCreature(ala);
             if (!prey) break;
@@ -447,7 +469,7 @@ try {
         (window.raw || []).find((frame) => frame.includes('"type":"delta"') && frame.includes('"xp"')));
     !leak ? ok('no delta ever carried anybody\'s experience') : fail(`a broadcast delta carried xp: ${leak}`);
 
-    // ---- dying sends you home weakened -----------------------------------
+    // ---- dying puts you out of action ------------------------------------
     // A level-one character keeps attacking wolves until one wins. That it
     // eventually does is the design: the map is not safe.
     const deathsBefore = await ala.evaluate(() => window.deaths || 0);
@@ -471,7 +493,7 @@ try {
     }
 
     if (died) {
-        ok('dying left the character weakened');
+        ok('dying knocked the character out');
         if (shots) await ala.screenshot({ path: `${shots}/smierc.png` });
 
         // The client is never told where the spawn is, so this uses the place a
@@ -489,6 +511,67 @@ try {
             : fail(`waking up gave ${afterDeath.hp}/${afterDeath.maxHp}, expected 1`);
     } else {
         fail('the character never died, or died without a penalty');
+    }
+
+    // ---- and while it is out, nothing it sends does anything -------------
+    {
+        const stillOut = await ala.evaluate(() => state.you.wakesAt > Date.now());
+        if (!stillOut) {
+            fail('the character was playable again immediately after dying');
+        } else {
+            ok('and it cannot be played until it comes round');
+
+            const overlay = await ala.evaluate(() =>
+                !document.querySelector('#knockout').hidden);
+            overlay ? ok('the overlay says so') : fail('nothing on screen said why');
+            await ala.screenshot({ path: 'ocknienie.png' });
+
+            // Try to walk. The server should answer and nothing should move.
+            const before = await ala.evaluate(() => {
+                const self = state.actors.get(state.selfId);
+                return { x: self.x, y: self.y };
+            });
+            await ala.evaluate(() => requestMove(state.map.width - 2, 1));
+            await ala.waitForTimeout(2_500);
+            const after = await ala.evaluate(() => {
+                const self = state.actors.get(state.selfId);
+                return { x: self.x, y: self.y };
+            });
+            after.x === before.x && after.y === before.y
+                ? ok('walking is refused while it is out')
+                : fail(`it walked from ${before.x},${before.y} to ${after.x},${after.y}`);
+
+            // Chat is the one thing that still works, on purpose.
+            await ala.evaluate(() => state.ws.send(JSON.stringify({
+                type: 'chat', text: 'zaraz wracam' })));
+            const spoke = await ala
+                .waitForFunction(() => [...document.querySelectorAll('#chat-log *')]
+                    .some((el) => el.textContent.includes('zaraz wracam')),
+                    null, { timeout: 8_000 })
+                .then(() => true).catch(() => false);
+            spoke
+                ? ok('but the player can still say so in chat')
+                : fail('chat was refused too, which punishes the person not the character');
+
+            // And it comes round on its own. At level one that is twenty seconds.
+            const woke = await ala
+                .waitForFunction(() => state.you.wakesAt === 0, null, { timeout: 120_000 })
+                .then(() => true).catch(() => false);
+            woke
+                ? ok('it comes round on its own, with nothing sent to ask')
+                : fail('it never came round');
+
+            await ala.evaluate(() => requestMove(state.map.width - 2, 1));
+            const movedAgain = await ala
+                .waitForFunction((was) => {
+                    const self = state.actors.get(state.selfId);
+                    return self.x !== was.x || self.y !== was.y;
+                }, after, { timeout: 15_000 })
+                .then(() => true).catch(() => false);
+            movedAgain
+                ? ok('and then walking works again')
+                : fail('it came round but still could not move');
+        }
     }
 
     // ---- so the first thing anybody does next is go and get mended --------

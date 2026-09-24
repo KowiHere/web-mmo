@@ -147,13 +147,13 @@ class CombatInTheWorldTest {
     }
 
     @Test
-    void aPlayerWhoDiesWakesUpAtTheSpawnHurtAndWeakened() throws Exception {
+    void aPlayerWhoDiesLiesAtTheSpawnHurtAndOutOfAction() throws Exception {
         FakeClient client = join("Ala", 5, 5);
         int killer = creatureNamed(client.await("\"type\":\"init\""), "Zabojca");
 
         runner.submit(new Command.Attack(client, killer));
 
-        assertThat(client.await(f -> f.contains("\"weakenedUntil\"") && !f.contains("\"weakenedUntil\":0")))
+        assertThat(client.await(f -> f.contains("\"wakesAt\"") && !f.contains("\"wakesAt\":0")))
                 .as("dying should carry a penalty, not just a walk back")
                 .isTrue();
         assertThat(selfPosition(client))
@@ -169,18 +169,27 @@ class CombatInTheWorldTest {
         assertThat(numberIn(latestYou(client), "hp"))
                 .as("waking up should leave you barely standing, not fully healed")
                 .isEqualTo(CombatRules.HEALTH_AFTER_DEATH);
+
+        // And the moment it may be played again has to reach the database, or
+        // closing the tab would be the quickest way out of the penalty.
+        runner.submit(new Command.Detach(client));
+        sleep(500);
+        assertThat(saved.snapshots).anySatisfy(snapshot -> {
+            assertThat(snapshot.nameKey()).isEqualTo("ala");
+            assertThat(snapshot.wakesAt()).isGreaterThan(System.currentTimeMillis());
+        });
     }
 
     @Test
     void theNewsOfYourDeathArrivesAfterTheBodyHasMoved() throws Exception {
         // The private frame is written during the tick and the delta at the end
-        // of it, so the obvious implementation tells a client it is dead and
-        // weakened while its character is still drawn where it fell.
+        // of it, so the obvious implementation tells a client it has been
+        // knocked out while its character is still drawn where it fell.
         FakeClient client = join("Ala", 5, 5);
         int killer = creatureNamed(client.await("\"type\":\"init\""), "Zabojca");
 
         runner.submit(new Command.Attack(client, killer));
-        assertThat(client.await(f -> f.contains("\"weakenedUntil\"") && !f.contains("\"weakenedUntil\":0")))
+        assertThat(client.await(f -> f.contains("\"wakesAt\"") && !f.contains("\"wakesAt\":0")))
                 .isTrue();
 
         List<String> frames = client.frames();
@@ -188,7 +197,7 @@ class CombatInTheWorldTest {
         int moved = -1;
         for (int i = 0; i < frames.size(); i++) {
             String frame = frames.get(i);
-            if (told < 0 && frame.contains("\"weakenedUntil\"") && !frame.contains("\"weakenedUntil\":0")) {
+            if (told < 0 && frame.contains("\"wakesAt\"") && !frame.contains("\"wakesAt\":0")) {
                 told = i;
             }
             if (moved < 0 && frame.contains("\"joined\"") && frame.contains("* ginie *")) {
@@ -228,7 +237,7 @@ class CombatInTheWorldTest {
                 .isFalse();
         assertThat(client.frames())
                 .as("and it should be an escape, not a death")
-                .noneMatch(f -> f.contains("\"weakenedUntil\"") && !f.contains("\"weakenedUntil\":0"));
+                .noneMatch(f -> f.contains("\"wakesAt\"") && !f.contains("\"wakesAt\":0"));
     }
 
     @Test
