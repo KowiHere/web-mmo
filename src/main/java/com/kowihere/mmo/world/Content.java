@@ -68,6 +68,20 @@ public record Content(Map<String, MobDef> mobs, Map<String, ItemDef> items,
     }
 
     /**
+     * The money the game charges in when there is no trader to ask - spending a
+     * skill point from the character panel, and anything else priced by a rule
+     * rather than by somebody standing there.
+     */
+    public CurrencyDef primaryCurrency() {
+        for (CurrencyDef currency : currencies.values()) {
+            if (currency.primary()) {
+                return currency;
+            }
+        }
+        throw new IllegalStateException("No primary currency; the loader is meant to refuse that.");
+    }
+
+    /**
      * @param id a stored class, which may be null - the column allows it, and
      *           so does every character created before classes existed. Asked
      *           of a sorted map, a null key is an exception rather than a miss,

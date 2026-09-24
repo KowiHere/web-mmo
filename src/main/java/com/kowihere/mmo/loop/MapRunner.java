@@ -24,6 +24,7 @@ import com.kowihere.mmo.world.ItemDef;
 import com.kowihere.mmo.world.ItemSlot;
 import com.kowihere.mmo.world.LootEntry;
 import com.kowihere.mmo.world.DialogueAction;
+import com.kowihere.mmo.combat.SkillPrices;
 import com.kowihere.mmo.world.CoinDrop;
 import com.kowihere.mmo.world.CurrencyDef;
 import com.kowihere.mmo.world.Dialogue;
@@ -628,10 +629,23 @@ public final class MapRunner implements Runnable {
             return;
         }
 
+        CurrencyDef money = content.primaryCurrency();
+        int price = priceToRaise(actor, skill);
+        if (!actor.purse.take(money.id(), price)) {
+            sendError(actor, "Za mało: " + price + " " + money.shortName()
+                    + ", a masz " + actor.purse.amountOf(money.id())
+                    + ". U mistrza swojej klasy zapłacisz połowę.");
+            return;
+        }
+
         actor.skillPoints--;
         actor.skills.raise(skill.id());
         actor.dirty = true;
         actor.skillsDirty = true;
+        if (price > 0) {
+            actor.purseDirty = true;
+            sendPurse(actor);
+        }
         sendYou(actor);
         sendSkills(actor);
     }
@@ -666,6 +680,10 @@ public final class MapRunner implements Runnable {
         actor.talkingTo = npc.id;
         actor.atNode = dialogue.startId();
         sendDialogue(actor, npc, dialogue.start());
+        // Walking up to your own master halves what a skill point costs, and
+        // that price rides in "you" - so arriving is a change to this
+        // character's own state exactly as being hit is.
+        sendYou(actor);
     }
 
     private void handleChoose(Command.Choose choose) {
@@ -706,6 +724,7 @@ public final class MapRunner implements Runnable {
         switch (deed) {
             case HEAL -> heal(actor, npc);
             case OPEN_SHOP -> sendShop(actor, npc);
+            case RESET_SKILLS -> resetSkills(actor, npc);
             // END is somewhere to go rather than something to do, and never
             // arrives here - the loader refuses it as a deed.
             case END -> { }
@@ -762,6 +781,7 @@ public final class MapRunner implements Runnable {
         int npcId = actor.talkingTo;
         actor.talkingTo = 0;
         actor.atNode = null;
+        sendYou(actor); // and leaving puts the price back up
         if (actor.client != null) {
             String frame = serialise(ServerMessages.Dialogue.closed(npcId));
             if (frame != null) {
@@ -795,6 +815,81 @@ public final class MapRunner implements Runnable {
         if (frame != null) {
             actor.client.send(frame);
         }
+    }
+
+    /**
+     * The master this character is standing in front of, or null.
+     *
+     * <p>Theirs and nobody else's: a mage at the swordmaster is a mage having a
+     * chat. That restriction is the only thing that makes three masters three
+     * NPCs rather than one with three descriptions.
+     */
+    private Actor masterFor(Actor actor) {
+        Actor npc = actor.talkingTo == 0 ? null : actors.get(actor.talkingTo);
+        if (npc == null || !npc.isNpc() || npc.npc.master() == null) {
+            return null;
+        }
+        String classId = actor.characterClass == null ? null : actor.characterClass.id();
+        return npc.npc.master().classId().equals(classId) ? npc : null;
+    }
+
+    /** What one more rank of this skill costs where the character is standing. */
+    private int priceToRaise(Actor actor, SkillDef skill) {
+        int full = SkillPrices.toRaise(actor.skills.rankOf(skill.id()), actor.level);
+        return masterFor(actor) == null ? full : SkillPrices.atMaster(full);
+    }
+
+    /**
+     * What a point costs here, for a skill already begun.
+     *
+     * <p>One number for the whole panel rather than one per skill: the price
+     * does not depend on which skill it goes into, only on the level and on
+     * whether the right master is listening. The first rank of anything is
+     * free, and the interface says so on the button rather than in this number.
+     */
+    private int pointPriceHere(Actor actor) {
+        int full = SkillPrices.toRaise(1, actor.level);
+        return masterFor(actor) == null ? full : SkillPrices.atMaster(full);
+    }
+
+    /** What giving every spent point back would cost. Zero when nothing was paid. */
+    private int priceToReset(Actor actor) {
+        return SkillPrices.toReset(actor.skills.ranks(), actor.level);
+    }
+
+    /**
+     * Hands back every point spent on a skill.
+     *
+     * <p>Only a character's own master will do this, which the deed alone does
+     * not guarantee: an option carrying RESET_SKILLS can only sit on a master,
+     * but nothing stops a warrior from reading the mage master's conversation.
+     */
+    private void resetSkills(Actor actor, Actor npc) {
+        if (masterFor(actor) != npc) {
+            sendError(actor, npc.name + " uczy innej klasy.");
+            return;
+        }
+        int points = actor.skills.spent();
+        if (points <= 0) {
+            sendError(actor, "Nie masz czego cofać.");
+            return;
+        }
+        CurrencyDef money = content.primaryCurrency();
+        int price = priceToReset(actor);
+        if (!actor.purse.take(money.id(), price)) {
+            sendError(actor, "Cofnięcie kosztuje " + price + " " + money.shortName()
+                    + ", a masz " + actor.purse.amountOf(money.id()) + ".");
+            return;
+        }
+        actor.skills.forgetEverything();
+        actor.skillPoints += points;
+        actor.dirty = true;
+        actor.skillsDirty = true;
+        actor.purseDirty = true;
+        chat.add(new ChatDto(npc.id, npc.name, "* zwraca punkty: " + actor.name + " *"));
+        sendYou(actor);
+        sendSkills(actor);
+        sendPurse(actor);
     }
 
     // ------------------------------------------------------------------
@@ -1799,6 +1894,10 @@ public final class MapRunner implements Runnable {
                 actor.weakenedUntil, !actor.isAlive(),
                 total.strength(), total.agility(), total.intellect(),
                 actor.unspentPoints, actor.skillPoints,
+                // What a point costs where this character is standing, which is
+                // why it belongs here and not in the skills frame.
+                pointPriceHere(actor),
+                priceToReset(actor),
                 actor.attack(), actor.armor(),
                 (int) Math.round(actor.dodgeChance() * 100),
                 (int) Math.round(actor.secondBlowChance() * 100)));
@@ -1874,7 +1973,8 @@ public final class MapRunner implements Runnable {
         List<ServerMessages.CoinDto> coins = new ArrayList<>();
         for (CurrencyDef currency : content.currencies().values()) {
             coins.add(new ServerMessages.CoinDto(currency.id(), currency.name(),
-                    currency.shortName(), actor.purse.amountOf(currency.id())));
+                    currency.shortName(), actor.purse.amountOf(currency.id()),
+                    currency.primary()));
         }
         String frame = serialise(new ServerMessages.Purse(coins));
         if (frame != null) {

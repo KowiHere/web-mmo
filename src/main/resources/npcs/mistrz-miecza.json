@@ -1,0 +1,70 @@
+{
+  "id": "mistrz-miecza",
+  "name": "Mistrz Miecza",
+  "kind": "PERSON",
+  "functions": [
+    "DIALOGUE",
+    "MASTER"
+  ],
+  "master": {
+    "classId": "wojownik"
+  },
+  "dialogue": {
+    "start": "powitanie",
+    "nodes": {
+      "powitanie": {
+        "text": "Stój prosto. Miecz nie wybacza garbienia.",
+        "options": [
+          {
+            "text": "Dlaczego u ciebie taniej?",
+            "goto": "taniej"
+          },
+          {
+            "text": "Chcę zacząć od nowa.",
+            "goto": "reset"
+          },
+          {
+            "text": "Tylko zaglądam.",
+            "action": "END"
+          }
+        ]
+      },
+      "taniej": {
+        "text": "Za pół ceny rozdam ci punkt, bo u mnie się uczysz, nie u własnego odbicia w wodzie.",
+        "options": [
+          {
+            "text": "Rozumiem.",
+            "goto": "powitanie"
+          }
+        ]
+      },
+      "reset": {
+        "text": "Cofam wszystko, co w siebie wpakowałaś. Kosztuje tyle, ile rozdanie tego od nowa u mnie — nie więcej i nie mniej.",
+        "options": [
+          {
+            "text": "Zwróć mi punkty.",
+            "action": "RESET_SKILLS",
+            "goto": "po-resecie"
+          },
+          {
+            "text": "Jeszcze nie.",
+            "goto": "powitanie"
+          }
+        ]
+      },
+      "po-resecie": {
+        "text": "Gotowe. Tym razem pomyśl dłużej.",
+        "options": [
+          {
+            "text": "Dziękuję.",
+            "goto": "powitanie"
+          },
+          {
+            "text": "Bywaj.",
+            "action": "END"
+          }
+        ]
+      }
+    }
+  }
+}

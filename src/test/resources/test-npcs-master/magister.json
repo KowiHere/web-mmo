@@ -1,0 +1,40 @@
+{
+  "id": "magister",
+  "name": "Magister",
+  "kind": "PERSON",
+  "functions": [
+    "DIALOGUE",
+    "MASTER"
+  ],
+  "master": {
+    "classId": "mag"
+  },
+  "dialogue": {
+    "start": "a",
+    "nodes": {
+      "a": {
+        "text": "Witaj.",
+        "options": [
+          {
+            "text": "Zwroc mi punkty.",
+            "action": "RESET_SKILLS",
+            "goto": "b"
+          },
+          {
+            "text": "Nic.",
+            "action": "END"
+          }
+        ]
+      },
+      "b": {
+        "text": "Gotowe.",
+        "options": [
+          {
+            "text": "Dziekuje.",
+            "goto": "a"
+          }
+        ]
+      }
+    }
+  }
+}

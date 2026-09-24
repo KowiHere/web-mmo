@@ -1,0 +1,70 @@
+{
+  "id": "tropicielka",
+  "name": "Tropicielka Jaga",
+  "kind": "PERSON",
+  "functions": [
+    "DIALOGUE",
+    "MASTER"
+  ],
+  "master": {
+    "classId": "lowca"
+  },
+  "dialogue": {
+    "start": "powitanie",
+    "nodes": {
+      "powitanie": {
+        "text": "Cicho. Słyszysz? Ja też nie — i o to chodzi.",
+        "options": [
+          {
+            "text": "Dlaczego u ciebie taniej?",
+            "goto": "taniej"
+          },
+          {
+            "text": "Chcę zacząć od nowa.",
+            "goto": "reset"
+          },
+          {
+            "text": "Tylko zaglądam.",
+            "action": "END"
+          }
+        ]
+      },
+      "taniej": {
+        "text": "U mnie punkt kosztuje połowę. Za resztę płaci się tym, że trzeba było tu dojść.",
+        "options": [
+          {
+            "text": "Rozumiem.",
+            "goto": "powitanie"
+          }
+        ]
+      },
+      "reset": {
+        "text": "Odkręcę ci wszystko. Cena jest taka, jakbyś rozdawała to u mnie po raz pierwszy.",
+        "options": [
+          {
+            "text": "Zwróć mi punkty.",
+            "action": "RESET_SKILLS",
+            "goto": "po-resecie"
+          },
+          {
+            "text": "Jeszcze nie.",
+            "goto": "powitanie"
+          }
+        ]
+      },
+      "po-resecie": {
+        "text": "Gotowe. Tym razem pomyśl dłużej.",
+        "options": [
+          {
+            "text": "Dziękuję.",
+            "goto": "powitanie"
+          },
+          {
+            "text": "Bywaj.",
+            "action": "END"
+          }
+        ]
+      }
+    }
+  }
+}

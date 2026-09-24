@@ -79,23 +79,35 @@ public final class ServerMessages {
      *                      whole difference between it and the mana it replaced
      * @param energyPerRound what a round of fighting is worth, which is what a
      *                      point in regeneration buys
+     * @param skillPointPrice what putting a point into a skill costs *here* -
+     *                      half of it while standing at this character's own
+     *                      master. It rides in "you" rather than in "skills"
+     *                      because it changes on walking up to somebody, while
+     *                      "skills" goes out a few times an hour; a price in
+     *                      there would be a stale answer, which is the same
+     *                      mistake "affordable" was
+     * @param skillResetPrice what taking every spent point back would cost, or
+     *                      zero when there is nothing to take back
      */
     public record You(String type, String classId, String className,
                       int hp, int maxHp, int energy, int maxEnergy, int energyPerRound,
                       int level, long xp,
                       long xpThisLevel, long xpForNextLevel, long weakenedUntil, boolean dead,
                       int strength, int agility, int intellect, int unspentPoints, int skillPoints,
+                      int skillPointPrice, int skillResetPrice,
                       int attack, int armor, int dodgePercent, int secondBlowPercent) {
         public You(String classId, String className,
                    int hp, int maxHp, int energy, int maxEnergy, int energyPerRound,
                    int level, long xp, long xpThisLevel,
                    long xpForNextLevel, long weakenedUntil, boolean dead,
                    int strength, int agility, int intellect, int unspentPoints, int skillPoints,
+                   int skillPointPrice, int skillResetPrice,
                    int attack, int armor, int dodgePercent, int secondBlowPercent) {
             this("you", classId, className, hp, maxHp, energy, maxEnergy, energyPerRound,
                     level, xp, xpThisLevel,
                     xpForNextLevel, weakenedUntil, dead, strength, agility, intellect,
-                    unspentPoints, skillPoints, attack, armor, dodgePercent, secondBlowPercent);
+                    unspentPoints, skillPoints, skillPointPrice, skillResetPrice,
+                    attack, armor, dodgePercent, secondBlowPercent);
         }
     }
 
@@ -180,8 +192,13 @@ public final class ServerMessages {
         }
     }
 
-    /** One kind of money and how much of it there is. */
-    public record CoinDto(String id, String name, String shortName, int amount) {
+    /**
+     * One kind of money and how much of it there is.
+     *
+     * @param primary the money the game itself charges in, so the interface can
+     *                label a price without keeping its own idea of which that is
+     */
+    public record CoinDto(String id, String name, String shortName, int amount, boolean primary) {
     }
 
     /**

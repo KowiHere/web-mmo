@@ -55,6 +55,35 @@ class MoneyAsContentTest {
                 .hasMessageContaining("talar");
     }
 
+    @Test
+    void exactlyOneCurrencyIsTheOneTheGameChargesIn() {
+        // Spending a skill point from the character panel has a price and
+        // nobody standing there to say which coin they want.
+        assertThat(new CurrencyDefLoader().loadAll().values())
+                .filteredOn(CurrencyDef::primary)
+                .singleElement()
+                .extracting(CurrencyDef::id)
+                .isEqualTo("zloto");
+    }
+
+    @Test
+    void refusesARegistryWithNoPrimaryCurrency() {
+        assertThatThrownBy(() ->
+                new CurrencyDefLoader("classpath:bad-currencies-no-primary/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("primary");
+    }
+
+    @Test
+    void refusesARegistryWithTwoOfThem() {
+        // Two would mean the same thing has two prices, and which one you paid
+        // would depend on which currency the loader happened to see first.
+        assertThatThrownBy(() ->
+                new CurrencyDefLoader("classpath:bad-currencies-two-primary/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("primary");
+    }
+
     // ---- the stall ---------------------------------------------------
 
     @Test

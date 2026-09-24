@@ -1,1 +1,1 @@
-{ "id": "talar", "name": "Talar A", "short": "ta", "order": 1 }
+{ "id": "talar", "name": "Talar A", "short": "ta", "order": 1, "primary": true }

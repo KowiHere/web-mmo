@@ -41,6 +41,21 @@ final class Skills {
         return regeneration.energyPerRank() * rankOf(SkillDefLoader.REGENERATION_ID);
     }
 
+    /** How far each known skill has been taken - what a reset would give back. */
+    List<Integer> ranks() {
+        return ranks.values().stream().filter(rank -> rank > 0).toList();
+    }
+
+    /** How many points are sitting in skills, which is how many come back. */
+    int spent() {
+        return ranks.values().stream().filter(rank -> rank > 0).mapToInt(Integer::intValue).sum();
+    }
+
+    /** Gives every rank back. The points are the caller's business, not this one's. */
+    void forgetEverything() {
+        ranks.clear();
+    }
+
     /** Puts back what the database remembered, without applying any rules to it. */
     void restore(List<StoredSkill> stored, Map<String, SkillDef> definitions) {
         for (StoredSkill skill : stored) {

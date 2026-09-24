@@ -12,6 +12,17 @@ package com.kowihere.mmo.world;
  * @param order     where it sits in that list. In content rather than derived,
  *                  because sorting by id would put the odd currency ahead of
  *                  the ordinary one and call that a decision.
+ * @param primary   the money the game itself charges in when no trader is
+ *                  involved - spending a skill point from the character panel,
+ *                  with nobody to ask which coin they want. Exactly one carries
+ *                  it, and the loader refuses any other number: a game with no
+ *                  primary currency cannot price anything, and a game with two
+ *                  prices the same thing twice.
+ *
+ *                  <p>A flag rather than "the first by order", which would be
+ *                  the same field meaning two things - and somebody reordering
+ *                  the purse for looks would silently change what the game
+ *                  charges in.
  */
-public record CurrencyDef(String id, String name, String shortName, int order) {
+public record CurrencyDef(String id, String name, String shortName, int order, boolean primary) {
 }

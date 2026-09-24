@@ -57,6 +57,13 @@ public class CurrencyDefLoader {
                 throw new IllegalStateException("Duplicate currency id: " + def.id());
             }
         }
+        long primaries = found.stream().filter(CurrencyDef::primary).count();
+        if (!found.isEmpty() && primaries != 1) {
+            throw new IllegalStateException("Exactly one currency at " + location
+                    + " must be \"primary\" - the one the game charges in when no trader is"
+                    + " involved - and " + primaries + " are marked. Without it nothing outside"
+                    + " a shop can have a price; with two, the same thing has two.");
+        }
         return java.util.Collections.unmodifiableMap(loaded);
     }
 
@@ -69,7 +76,8 @@ public class CurrencyDefLoader {
         String id = text(root, "id", where);
         return new CurrencyDef(id, root.path("name").asText(id),
                 text(root, "short", where),
-                root.path("order").asInt(Integer.MAX_VALUE));
+                root.path("order").asInt(Integer.MAX_VALUE),
+                root.path("primary").asBoolean(false));
     }
 
     private static String text(JsonNode root, String field, String where) {

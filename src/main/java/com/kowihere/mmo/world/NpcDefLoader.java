@@ -44,12 +44,14 @@ public class NpcDefLoader {
      */
     private static final Map<DialogueAction, NpcFunction> DEEDS = Map.of(
             DialogueAction.HEAL, NpcFunction.HEALER,
-            DialogueAction.OPEN_SHOP, NpcFunction.SHOP);
+            DialogueAction.OPEN_SHOP, NpcFunction.SHOP,
+            DialogueAction.RESET_SKILLS, NpcFunction.MASTER);
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final String location;
     private final Map<String, ItemDef> items;
     private final Map<String, CurrencyDef> currencies;
+    private final Map<String, ClassDef> classes;
 
     public NpcDefLoader() {
         this(LOCATION);
@@ -68,9 +70,15 @@ public class NpcDefLoader {
      */
     public NpcDefLoader(String location, Map<String, ItemDef> items,
                         Map<String, CurrencyDef> currencies) {
+        this(location, items, currencies, new ClassDefLoader().loadAll());
+    }
+
+    public NpcDefLoader(String location, Map<String, ItemDef> items,
+                        Map<String, CurrencyDef> currencies, Map<String, ClassDef> classes) {
         this.location = location;
         this.items = items;
         this.currencies = currencies;
+        this.classes = classes;
     }
 
     public Map<String, NpcDef> loadAll() {
@@ -131,7 +139,16 @@ public class NpcDefLoader {
             throw new IllegalStateException(where + ": '" + id
                     + "' has a \"shop\" but does not list SHOP among its functions.");
         }
-        return new NpcDef(id, name, kind, functions, dialogue, shop);
+        Master master = root.has("master") ? master(root.get("master"), where, id) : null;
+        if (functions.contains(NpcFunction.MASTER) && master == null) {
+            throw new IllegalStateException(where + ": '" + id
+                    + "' is a MASTER but does not say whose class it keeps.");
+        }
+        if (master != null && !functions.contains(NpcFunction.MASTER)) {
+            throw new IllegalStateException(where + ": '" + id
+                    + "' has a \"master\" but does not list MASTER among its functions.");
+        }
+        return new NpcDef(id, name, kind, functions, dialogue, shop, master);
     }
 
     /**
@@ -192,6 +209,18 @@ public class NpcDefLoader {
             throw new IllegalStateException(where + ": '" + id + "' has a shop with nothing in it.");
         }
         return new Shop(currencyId, sells);
+    }
+
+    private Master master(JsonNode root, String where, String id) {
+        String classId = text(root, "classId", where);
+        if (!classes.containsKey(classId)) {
+            // A master of a class that does not exist keeps nobody: every
+            // character who walked up would be told they are the wrong class,
+            // and nothing at runtime would ever say why.
+            throw new IllegalStateException(where + ": '" + id + "' keeps the class '" + classId
+                    + "', which does not exist. Known: " + classes.keySet());
+        }
+        return new Master(classId);
     }
 
     private static Set<NpcFunction> functions(JsonNode root, String where, String id) {

@@ -27,8 +27,12 @@ public enum NpcFunction {
     /** A second bag, kept in one place. */
     STORAGE(false, "skład wymaga drugiego pojemnika i migracji"),
 
-    /** Sells ranks in a skill. */
-    TRAINER(false, "nauka umiejętności jest na razie darmowa, więc nie ma czym płacić"),
+    /**
+     * Keeps one class. Sells nothing: a player spends their own points from
+     * their own panel, wherever they are standing. What a master offers is that
+     * same point for half the price, and the only way to take points back.
+     */
+    MASTER(true, null),
 
     /**
      * Buys and sells, in one named currency. A trader who deals in something

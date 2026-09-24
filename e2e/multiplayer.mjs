@@ -934,6 +934,117 @@ try {
         await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
     }
 
+    // ---- what a skill point costs, and where it costs less ---------------
+    await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+    await escapeAnyFight(ala);
+
+    const myClass = await ala.evaluate(() => state.you.classId);
+    const masterNames = { wojownik: 'Mistrz Miecza', lowca: 'Tropicielka', mag: 'Magister Run' };
+    const myMaster = masterNames[myClass];
+
+    const fullPrice = await ala.evaluate(() => state.you.skillPointPrice);
+    fullPrice > 0
+        ? ok(`a skill point costs ${fullPrice} from the panel`)
+        : fail('a skill point costs nothing from the panel');
+
+    // Walk to this character's own master and watch the price fall on its own.
+    const walkTo = async (page, name) => {
+        const them = await page.evaluate((who) =>
+            [...state.actors.values()].find((a) => a.kind === 'NPC' && a.name.includes(who)) || null,
+            name);
+        if (!them) return false;
+        // The masters stand far apart on purpose, so this is a real walk across
+        // a map that hunts back - and a character on one point of health loses
+        // every fight it is dragged into on the way.
+        const arriveBy = Date.now() + 180_000;
+        while (Date.now() < arriveBy) {
+            await escapeAnyFight(page);
+            await mendIfHurt(page, 0.5);
+            await page.evaluate((t) => {
+                const spot = besideThem(t);
+                state.walkingUpTo = t.id;
+                requestMove(spot.x, spot.y);
+            }, them);
+            const there = await page
+                .waitForFunction((who) => {
+                    const panel = document.querySelector('#dialogue');
+                    return !panel.hidden
+                        && document.querySelector('#dialogue-who').textContent.includes(who);
+                }, name, { timeout: 15_000 })
+                .then(() => true).catch(() => false);
+            if (there) return true;
+        }
+        return false;
+    };
+
+    if (!(await walkTo(ala, myMaster))) {
+        fail(`${myMaster} never opened a conversation`);
+    } else {
+        ok(`walked up to ${myMaster}, who keeps the ${myClass} class`);
+
+        const atMaster = await ala
+            .waitForFunction((was) => state.you.skillPointPrice < was, fullPrice, { timeout: 8_000 })
+            .then(() => true).catch(() => false);
+        const discounted = await ala.evaluate(() => state.you.skillPointPrice);
+        atMaster && discounted === Math.round(fullPrice / 2)
+            ? ok(`and standing there halves it to ${discounted}, with nothing sent to ask`)
+            : fail(`the price at the master is ${discounted}, expected ${Math.round(fullPrice / 2)}`);
+
+        await ala.screenshot({ path: 'mistrz.png' });
+
+        // Spend one here, then have it given back.
+        const pointsBefore = await ala.evaluate(() => state.you.skillPoints);
+        const goldBefore = await ala.evaluate(() =>
+            state.purse.coins.find((c) => c.primary).amount);
+        if (pointsBefore > 0 && goldBefore >= discounted) {
+            await ala.keyboard.press('i');
+            await ala.evaluate(() => {
+                const learnable = (state.skills.skills || []).find((s) => s.rank > 0
+                    && s.rank < s.maxRank);
+                if (learnable) state.ws.send(JSON.stringify({ type: 'learn', skillId: learnable.id }));
+            });
+            const spent = await ala
+                .waitForFunction((was) => state.you.skillPoints < was, pointsBefore,
+                    { timeout: 8_000 })
+                .then(() => true).catch(() => false);
+            const goldAfter = await ala.evaluate(() =>
+                state.purse.coins.find((c) => c.primary).amount);
+            spent && goldAfter === goldBefore - discounted
+                ? ok(`spent a point here for ${goldBefore - goldAfter}, not ${fullPrice}`)
+                : fail(`spending a point at the master cost ${goldBefore - goldAfter}`);
+        } else {
+            ok(`no spare point or coin to spend here (${pointsBefore} point(s),`
+                + ` ${goldBefore} gold) - nothing to prove about the discount twice`);
+        }
+
+        // And the only thing a master really exists for.
+        const beforeReset = await ala.evaluate(() => ({
+            points: state.you.skillPoints,
+            ranks: (state.skills.skills || []).reduce((sum, s) => sum + s.rank, 0),
+        }));
+        if (beforeReset.ranks === 0) {
+            fail('nothing was ever learned, so there is nothing to take back');
+        } else {
+            await ala.click('#dialogue-options button:text-is("Chcę zacząć od nowa.")');
+            await ala.waitForFunction(() => [...document.querySelectorAll('#dialogue-options button')]
+                .some((b) => b.textContent.includes('Zwróć mi punkty')), null, { timeout: 8_000 });
+            await ala.click('#dialogue-options button:text-is("Zwróć mi punkty.")');
+
+            const undone = await ala
+                .waitForFunction((was) => state.you.skillPoints > was, beforeReset.points,
+                    { timeout: 8_000 })
+                .then(() => true).catch(() => false);
+            const after = await ala.evaluate(() => ({
+                points: state.you.skillPoints,
+                ranks: (state.skills.skills || []).reduce((sum, s) => sum + s.rank, 0),
+            }));
+            undone && after.ranks === 0 && after.points === beforeReset.points + beforeReset.ranks
+                ? ok(`the master gave back all ${beforeReset.ranks} point(s) and cleared the ranks`)
+                : fail(`after the reset: ${after.points} point(s), ${after.ranks} rank(s)`);
+        }
+        await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+    }
+
     // ---- a dropped socket resumes the same character ---------------------
     const previousActor = alaView.selfId;
     await ala.evaluate(() => state.ws.close());

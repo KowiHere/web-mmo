@@ -206,6 +206,34 @@ class NpcDefLoaderTest {
     }
 
     @Test
+    void refusesAMasterOfAClassThatDoesNotExist() {
+        // Every character who walked up would be told they are the wrong class,
+        // and nothing at runtime would ever say why.
+        assertThatThrownBy(() ->
+                new NpcDefLoader("classpath:bad-npcs-master-class/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("tancerz");
+    }
+
+    @Test
+    void refusesAMasterWhoKeepsNobody() {
+        assertThatThrownBy(() ->
+                new NpcDefLoader("classpath:bad-npcs-masterless/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("MASTER");
+    }
+
+    @Test
+    void refusesSkillsGivenBackBySomebodyWhoIsNotAMaster() {
+        // The third function to go through the same pair of checks, and the
+        // third to need no new logic for it - one entry in a map.
+        assertThatThrownBy(() ->
+                new NpcDefLoader("classpath:bad-npcs-reset-unlisted/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("MASTER");
+    }
+
+    @Test
     void everyFunctionThatIsNotReadyExplainsItself() {
         // Otherwise the refusal above would be a stack trace at startup with
         // nothing in it for whoever wrote the JSON.

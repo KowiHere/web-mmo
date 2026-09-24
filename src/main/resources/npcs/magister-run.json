@@ -1,0 +1,70 @@
+{
+  "id": "magister-run",
+  "name": "Magister Run",
+  "kind": "PERSON",
+  "functions": [
+    "DIALOGUE",
+    "MASTER"
+  ],
+  "master": {
+    "classId": "mag"
+  },
+  "dialogue": {
+    "start": "powitanie",
+    "nodes": {
+      "powitanie": {
+        "text": "Runy nie lubią pośpiechu. Ani pytań bez sensu.",
+        "options": [
+          {
+            "text": "Dlaczego u ciebie taniej?",
+            "goto": "taniej"
+          },
+          {
+            "text": "Chcę zacząć od nowa.",
+            "goto": "reset"
+          },
+          {
+            "text": "Tylko zaglądam.",
+            "action": "END"
+          }
+        ]
+      },
+      "taniej": {
+        "text": "Punkt u mnie kosztuje połowę tego, co sama sobie policzysz z panelu.",
+        "options": [
+          {
+            "text": "Rozumiem.",
+            "goto": "powitanie"
+          }
+        ]
+      },
+      "reset": {
+        "text": "Zwrócę ci wszystkie punkty. Zapłacisz tyle, ile kosztowałoby rozdanie ich tutaj.",
+        "options": [
+          {
+            "text": "Zwróć mi punkty.",
+            "action": "RESET_SKILLS",
+            "goto": "po-resecie"
+          },
+          {
+            "text": "Jeszcze nie.",
+            "goto": "powitanie"
+          }
+        ]
+      },
+      "po-resecie": {
+        "text": "Gotowe. Tym razem pomyśl dłużej.",
+        "options": [
+          {
+            "text": "Dziękuję.",
+            "goto": "powitanie"
+          },
+          {
+            "text": "Bywaj.",
+            "action": "END"
+          }
+        ]
+      }
+    }
+  }
+}

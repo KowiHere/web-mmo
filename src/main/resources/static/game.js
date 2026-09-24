@@ -299,12 +299,18 @@ function applyPurse(msg) {
     state.purse = msg;
     renderPurse();
     renderShop();
+    renderPanel();
 }
 
 /** A stall with no goods is one that has closed, the same as an empty dialogue. */
 function applyShop(msg) {
     state.shop = msg.goods ? msg : null;
     renderShop();
+}
+
+/** The money the game itself charges in, as the server labelled it. */
+function primaryCoin() {
+    return (state.purse ? state.purse.coins || [] : []).find((c) => c.primary) || null;
 }
 
 function amountOf(currencyId) {
@@ -569,7 +575,13 @@ function renderSkills() {
     skillsEl.innerHTML = '';
     const known = state.skills ? state.skills.skills || [] : [];
     const points = state.skills ? state.skills.skillPoints : 0;
-    skillPointsEl.textContent = points > 0 ? `${points} do rozdania` : '';
+    // The price rides in "you" rather than here, because it changes on walking
+    // up to your master while this frame goes out a few times an hour.
+    const price = state.you ? state.you.skillPointPrice || 0 : 0;
+    const money = primaryCoin();
+    skillPointsEl.textContent = points > 0
+        ? `${points} do rozdania · ${price} ${money ? money.shortName : ''}`
+        : '';
 
     if (!known.length) {
         const empty = document.createElement('li');
@@ -597,11 +609,23 @@ function renderSkills() {
         row.append(name, rank);
 
         if (points > 0 && skill.rank < skill.maxRank) {
+            // The first rank of anything is free, so the button says so rather
+            // than quoting a price the server would not charge.
+            const due = skill.rank === 0 ? 0 : price;
+            const held = money ? money.amount : 0;
             const raise = document.createElement('button');
             raise.type = 'button';
             raise.textContent = '+';
-            raise.title = `Rozwiń: ${skill.name}`;
-            raise.addEventListener('click', () => send({ type: 'learn', skillId: skill.id }));
+            if (due > held) {
+                raise.disabled = true;
+                raise.title = `Za mało: ${due} ${money ? money.shortName : ''}`
+                    + ' — u mistrza swojej klasy zapłacisz połowę';
+            } else {
+                raise.title = due === 0
+                    ? `Rozwiń: ${skill.name} — pierwsza ranga za darmo`
+                    : `Rozwiń: ${skill.name} za ${due} ${money ? money.shortName : ''}`;
+                raise.addEventListener('click', () => send({ type: 'learn', skillId: skill.id }));
+            }
             row.append(raise);
         }
         skillsEl.append(row);

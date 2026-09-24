@@ -1,0 +1,5 @@
+{ "id": "samozwaniec", "name": "Samozwaniec", "kind": "PERSON", "functions": ["DIALOGUE"],
+  "dialogue": { "start": "a", "nodes": {
+    "a": { "text": "Witaj.", "options": [
+      { "text": "Zwroc.", "action": "RESET_SKILLS", "goto": "b" }, { "text": "Nie.", "action": "END" } ] },
+    "b": { "text": "Gotowe.", "options": [ { "text": "Dosc.", "action": "END" } ] } } } }

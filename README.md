@@ -141,11 +141,11 @@ Folding them together produces a `SHOPKEEPER` who cannot also give a quest, and
 then a `SHOPKEEPER_WITH_QUEST`. A noticeboard talks; a blacksmith sells, repairs
 and talks; neither is a different kind of thing from the other because of it.
 
-`DIALOGUE`, `HEALER` and `SHOP` work today. Every other function says so and
-**stops the server** when content names it, exactly as an unspawnable mob tier
-does — `TELEPORT` because there is one map, `STORAGE` because there is nowhere
-to put a second bag, `QUEST` because there is nowhere to keep a progress.
-Content that
+`DIALOGUE`, `HEALER`, `SHOP` and `MASTER` work today. Every other function says
+so and **stops the server** when content names it, exactly as an unspawnable mob
+tier does — `TELEPORT` because there is one map, `STORAGE` because there is
+nowhere to put a second bag, `QUEST` because there is nowhere to keep a
+progress. Content that
 names one would otherwise load an NPC who opens, offers nothing, and looks to
 every player like a bug in the client.
 
@@ -192,6 +192,38 @@ inherits every door the conversation has — the range, the refusal in a fight,
 and the ending the moment you walk away. There was a second range check on
 buying; it never once fired, and a guard that cannot run is worse than no guard,
 because it reads like the rule lives in two places.
+
+### Masters keep a class; they do not sell one
+
+A player spends their own skill points from their own panel, wherever they are
+standing — there is no NPC who teaches. What a **master** offers is that same
+point for **half the price**, and the only way to take points back.
+
+A point costs a flat amount per rank, rising with the **level** rather than with
+the rank. Income rises with the level too, so the level is what makes the price
+weigh anything; a price that rose with the rank would mean spreading points
+thinly is a way of paying less for the same number of them. **The first rank of
+anything is free**, so a new character with one point and no money can see the
+system work before it has earned a coin.
+
+A reset gives every spent point back and costs **exactly what putting them back
+here would cost** — so it introduces no number of its own, and the free first
+ranks are free to undo, because nothing was paid for them.
+
+Each master keeps **one class and serves nobody else**. That restriction is the
+only thing that makes three masters three NPCs rather than one wearing three
+names: a warrior at the mage's master is a warrior having a chat, at full price.
+
+The price rides in the `you` frame rather than in `skills`, because it changes
+the moment you walk up to somebody while `skills` goes out a few times an hour —
+the same mistake `affordable` was, and avoided the same way. Walking up to your
+master and walking away both send a fresh `you`, so the panel's price halves and
+unhalves with nothing asked for.
+
+**One thing to say plainly**: with a single map, nobody will ever pay the panel
+price, because the master is ten seconds away. The discount starts to weigh
+something when the world is bigger and the master is two maps from where you
+levelled. Today its real job is to give the masters a reason to stand there.
 
 ### Fighting
 
@@ -553,7 +585,7 @@ Client to server:
 | `unequip`| slot           | take off what is in that slot          |
 | `spend`  | attribute      | spend one earned point                 |
 | `use`    | skillId        | use a skill in the coming round        |
-| `learn`  | skillId        | put one earned point into a skill      |
+| `learn`  | skillId        | put one earned point into a skill, for a price |
 | `buy`    | itemId         | buy that from the trader you are talking to |
 | `sell`   | itemId         | sell that particular copy of it        |
 | `talk`   | npcId          | start talking to somebody next to you  |
@@ -562,7 +594,8 @@ Client to server:
 | `chat`   | text           | say something on this map              |
 
 Server to client: `init` (the whole world once), `delta` (what changed), `you`
-(your own character, its class and its energy, to your socket only), `bag` (what
+(your own character, its class, its energy and what a skill point costs where
+it is standing, to your socket only), `bag` (what
 it is wearing and carrying, likewise), `skills` (what it has learned, likewise),
 `dialogue` (what somebody is saying to you, likewise — one with no text is the
 conversation closing, which happens by walking away as often as by saying
@@ -618,9 +651,8 @@ second needs a new shape of bonus on an item.
 wait before the character can be played again, and how long that is has not been
 decided — so the minute of halved attack and armour stands in for it.
 
-**Nothing is trained, stored or taught for money yet.** The trainer is next, and
-it is a small step now that money exists — the hard half was never the price, it
-was that there is more than one kind of it.
+**Nothing is stored for money yet**, and nobody teaches anything at all — see
+above; masters discount and undo, they do not sell ranks.
 
 **Prices are hand-written and barely balanced.** An item's worth is one number
 in its own file, which is the right shape; whether the numbers are any good has

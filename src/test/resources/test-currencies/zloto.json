@@ -1,1 +1,1 @@
-{ "id": "zloto", "name": "Zloto", "short": "zl", "order": 1 }
+{ "id": "zloto", "name": "Zloto", "short": "zl", "order": 1, "primary": true }

@@ -19,7 +19,10 @@ public enum DialogueAction {
     HEAL,
 
     /** Opens this trader's stall. The conversation stays open behind it. */
-    OPEN_SHOP;
+    OPEN_SHOP,
+
+    /** Gives back every point spent on a skill, for a price. */
+    RESET_SKILLS;
 
     /**
      * Whether this is somewhere to go rather than something to do. Only

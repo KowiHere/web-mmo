@@ -10,9 +10,10 @@ import java.util.Set;
  * @param functions what it does, one or more; see {@link NpcFunction}
  * @param dialogue its conversation, or null when it does not talk
  * @param shop     what it deals in, or null when it does not trade
+ * @param master   whose class it keeps, or null when it keeps none
  */
 public record NpcDef(String id, String name, NpcKind kind,
-                     Set<NpcFunction> functions, Dialogue dialogue, Shop shop) {
+                     Set<NpcFunction> functions, Dialogue dialogue, Shop shop, Master master) {
 
     public NpcDef {
         functions = Set.copyOf(functions);
