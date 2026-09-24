@@ -22,10 +22,13 @@ public final class MapDef {
     private final List<SpawnPoint> spawns;
     private final List<RoamingSpawn> roaming;
     private final List<NpcPlacement> npcs;
+    private final boolean starting;
 
     MapDef(String id, String name, int width, int height, int tileSize,
            int spawnX, int spawnY, BitSet blocked, List<String> collisionRows,
-           List<SpawnPoint> spawns, List<RoamingSpawn> roaming, List<NpcPlacement> npcs) {
+           List<SpawnPoint> spawns, List<RoamingSpawn> roaming, List<NpcPlacement> npcs,
+           boolean starting) {
+        this.starting = starting;
         this.id = id;
         this.name = name;
         this.width = width;
@@ -59,6 +62,17 @@ public final class MapDef {
 
     /** People and things that stand where they were put and stay there. */
     public List<NpcPlacement> npcs() { return npcs; }
+
+    /**
+     * Whether a character with nowhere else to be starts here.
+     *
+     * <p>Declared in content, and exactly one map may declare it. It used to be
+     * "whichever map the loader iterated first", which is an unspecified order
+     * - so which map the game began on could differ between two runs of the
+     * same build. That is the same mistake {@code Content.defaultClass()} names
+     * and avoids, and the same one the primary currency avoids.
+     */
+    public boolean isStarting() { return starting; }
 
     public boolean inBounds(int x, int y) {
         return x >= 0 && y >= 0 && x < width && y < height;

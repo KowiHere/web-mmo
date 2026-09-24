@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Owns the running maps and hands out references to them. This is the boundary
@@ -42,7 +43,21 @@ public class WorldService {
     private final Map<String, MapRunner> runners = new LinkedHashMap<>();
     private final List<Thread> threads = new ArrayList<>();
 
-    private String defaultMapId;
+    /**
+     * Which map each connected socket's character is on.
+     *
+     * <p>The one structure here that more than one thread touches: network
+     * threads read it to know where to send a command, and a map thread writes
+     * it when a character walks through a door. It is not world state - it is a
+     * signpost - so a concurrent map is the whole of the synchronisation, and
+     * the single-writer rule below it is untouched.
+     *
+     * <p>Identity, not equality: a {@code Client} is a socket, and two sockets
+     * are never the same socket.
+     */
+    private final Map<Client, MapRunner> whereTheyAre = new ConcurrentHashMap<>();
+
+    private String startingMapId;
 
     public WorldService(MapDefLoader loader, MobDefLoader mobLoader, ItemDefLoader itemLoader,
                         ClassDefLoader classLoader, ObjectMapper json,
@@ -60,20 +75,25 @@ public class WorldService {
         Content content = new Content(mobLoader.loadAll(), itemLoader.loadAll(),
                 classLoader.loadAll());
         Map<String, MobDef> mobs = content.mobs();
-        for (MapDef def : loader.loadAll().values()) {
+        Map<String, MapDef> defs = loader.loadAll();
+
+        // Settled before a single thread starts. A world with no beginning, or
+        // with two, is a world that should not come up at all - and finding
+        // that out after three map threads are already running means stopping
+        // them again in an exception path nobody ever tests.
+        startingMapId = theOneThatStarts(defs.values());
+
+        for (MapDef def : defs.values()) {
             MapRunner runner = new MapRunner(def, json, persistence, content);
             runners.put(def.id(), runner);
             Thread thread = new Thread(runner, "map-" + def.id());
             thread.setDaemon(false);
             threads.add(thread);
             thread.start();
-            if (defaultMapId == null) {
-                defaultMapId = def.id();
-            }
         }
         log.info("World started with {} map(s), {} creature definition(s) and {} item(s);"
-                        + " default map is '{}'",
-                runners.size(), mobs.size(), content.items().size(), defaultMapId);
+                        + " starting map is '{}'",
+                runners.size(), mobs.size(), content.items().size(), startingMapId);
         log.info("Content also carries {} class(es) and {} skill(s)",
                 content.classes().size(), content.skills().size());
     }
@@ -99,7 +119,78 @@ public class WorldService {
         return runner;
     }
 
-    public MapRunner defaultMap() {
-        return map(defaultMapId);
+    /**
+     * Which map a character with nowhere else to be begins on.
+     *
+     * <p>Asked here rather than in the loader: whether one file is coherent is
+     * the loader's question, and whether this world has a beginning is this
+     * one's. A fixture map used by a single test is content too, and has no
+     * business declaring where the game starts.
+     */
+    private static String theOneThatStarts(Iterable<MapDef> defs) {
+        String found = null;
+        for (MapDef def : defs) {
+            if (!def.isStarting()) {
+                continue;
+            }
+            if (found != null) {
+                throw new IllegalStateException("Both '" + found + "' and '" + def.id()
+                        + "' declare themselves the starting map, so which one the game begins on"
+                        + " would be decided by iteration order - the very accident this field"
+                        + " exists to remove.");
+            }
+            found = def.id();
+        }
+        if (found == null) {
+            throw new IllegalStateException("No map declares itself \"starting\", so there is"
+                    + " nowhere for a character with no usable stored map to begin.");
+        }
+        return found;
+    }
+
+    /** Where a character with no usable stored map begins. Declared in content. */
+    public MapRunner startingMap() {
+        return map(startingMapId);
+    }
+
+    /**
+     * The map named, or the starting one when content no longer has it.
+     *
+     * <p>A stored map can disappear between sessions - it is content, and
+     * content gets edited. Refusing to let somebody play because the wood they
+     * logged out in was renamed would be the wrong answer.
+     */
+    public MapRunner mapOrStarting(String id) {
+        MapRunner runner = id == null ? null : runners.get(id);
+        if (runner == null) {
+            if (id != null) {
+                log.info("No map '{}' any more; starting on '{}' instead", id, startingMapId);
+            }
+            return startingMap();
+        }
+        return runner;
+    }
+
+    /** Remembers which map this socket's commands should go to from now on. */
+    public void nowOn(Client client, MapRunner map) {
+        whereTheyAre.put(client, map);
+    }
+
+    public void forget(Client client) {
+        whereTheyAre.remove(client);
+    }
+
+    /**
+     * Where this socket's commands belong.
+     *
+     * <p>Null before the handshake has settled, and for a socket that has been
+     * forgotten. A command with nowhere to go is dropped, which is also what
+     * happens to one that arrives during the instant a character is between two
+     * maps: the source no longer has it and the destination does not have it
+     * yet, so whichever map receives the command ignores it. Losing a keystroke
+     * to a doorway is not worth a lock across the whole world.
+     */
+    public MapRunner mapOf(Client client) {
+        return whereTheyAre.get(client);
     }
 }

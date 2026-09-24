@@ -116,11 +116,12 @@ public class MapDefLoader {
         // Built once without its creatures purely so the spawn validation below
         // can ask walkable() instead of re-deriving collision from the bitset.
         MapDef map = new MapDef(id, name, width, height, tileSize, spawnX, spawnY, blocked, rows,
-                List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), false);
         return new MapDef(id, name, width, height, tileSize, spawnX, spawnY, blocked, rows,
                 spawnPoints(root, map, creatures, where),
                 roamingSpawns(root, creatures, where),
-                npcPlacements(root, map, people, where));
+                npcPlacements(root, map, people, where),
+                root.path("starting").asBoolean(false));
     }
 
     /**

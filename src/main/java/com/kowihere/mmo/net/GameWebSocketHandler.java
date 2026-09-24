@@ -78,9 +78,19 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        MapRunner map = world.defaultMap();
+        if ("hello".equals(message.type())) {
+            enterWorld(session, client, message);
+            return;
+        }
+
+        // Where this socket's character actually is, not where the world
+        // happens to begin. Sending everything to the starting map worked for
+        // exactly as long as there was only one map to send it to.
+        MapRunner map = world.mapOf(client);
+        if (map == null) {
+            return; // no character yet, or one between two maps
+        }
         switch (message.type()) {
-            case "hello" -> enterWorld(session, client, map, message);
             case "move" -> {
                 if (message.x() != null && message.y() != null) {
                     map.submit(new Command.MoveTo(client, message.x(), message.y()));
@@ -143,7 +153,14 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         PlayerSession client = client(session);
         if (client != null) {
-            world.defaultMap().submit(new Command.Detach(client));
+            MapRunner map = world.mapOf(client);
+            if (map != null) {
+                // To the map they are actually on. Sent to the starting map, a
+                // character standing anywhere else would be saved by a map that
+                // has never heard of them - which is to say, not saved at all.
+                map.submit(new Command.Detach(client));
+            }
+            world.forget(client);
             client.disconnect("Socket closed");
         }
         log.debug("Socket closed: {} ({})", session.getId(), status);
@@ -163,7 +180,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
      * query.
      */
     private void enterWorld(WebSocketSession session, PlayerSession client,
-                            MapRunner map, ClientMessage message) {
+                            ClientMessage message) {
         Long accountId = (Long) session.getAttributes().get(AuthHandshakeInterceptor.ACCOUNT_ID);
         String characterKey = (String) session.getAttributes().get(AuthHandshakeInterceptor.CHARACTER_KEY);
         if (accountId == null || characterKey == null) {
@@ -178,6 +195,11 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
+        // The map the character was last on, which is the whole point of
+        // storing it. Content can have dropped that map since, and the world
+        // answers with the starting one rather than refusing to let them play.
+        MapRunner map = world.mapOrStarting(character.mapId());
+        world.nowOn(client, map);
         map.submit(new Command.Join(client, accountId, character,
                 message.since() == null ? 0L : message.since()));
     }

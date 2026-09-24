@@ -166,7 +166,7 @@ public class AccountService {
         }
         ClassDef chosen = requireValidClass(rawClassId);
 
-        MapRunner map = world.defaultMap();
+        MapRunner map = world.startingMap();
         SavedCharacter character = SavedCharacter.fresh(PlayerNames.key(name), name,
                 map.mapId(), map.spawnX(), map.spawnY(), Direction.DOWN,
                 chosen.id(), chosen.startingAttributes());

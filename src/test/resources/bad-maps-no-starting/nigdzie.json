@@ -1,0 +1,5 @@
+{
+  "id": "nigdzie", "name": "Nigdzie", "tileSize": 32, "spawn": [2, 2],
+  "collision": ["######", "#....#", "#....#", "#....#", "######"],
+  "spawns": [], "roaming": []
+}
