@@ -28,6 +28,7 @@ public class MapDefLoader {
     private final MobDefLoader mobs;
     private final NpcDefLoader npcs;
     private final String location;
+    private final Map<String, ItemDef> items;
 
     public MapDefLoader() {
         this(new MobDefLoader());
@@ -43,9 +44,21 @@ public class MapDefLoader {
     }
 
     public MapDefLoader(MobDefLoader mobs, NpcDefLoader npcs, String location) {
+        this(mobs, npcs, location, new ItemDefLoader().loadAll());
+    }
+
+    /**
+     * @param items what a door is allowed to ask for as a key, checked while
+     *              loading. A door demanding something that does not exist is a
+     *              door nobody can ever open, and nothing at runtime would say
+     *              so - it would simply refuse everybody for ever.
+     */
+    public MapDefLoader(MobDefLoader mobs, NpcDefLoader npcs, String location,
+                        Map<String, ItemDef> items) {
         this.mobs = mobs;
         this.npcs = npcs;
         this.location = location;
+        this.items = items;
     }
 
     public Map<String, MapDef> loadAll() {
@@ -66,7 +79,56 @@ public class MapDefLoader {
         if (loaded.isEmpty()) {
             throw new IllegalStateException("No map definitions found at " + location);
         }
+        checkTheDoorsLeadSomewhere(loaded);
         return Map.copyOf(loaded);
+    }
+
+    /**
+     * The checks that need every map at once, and so cannot be made while one
+     * file is being read.
+     *
+     * <p>All of them are about a door that looks fine on its own page: it names
+     * a map, a tile and sometimes a key, and each of those is only right or
+     * wrong in the company of the others.
+     */
+    private void checkTheDoorsLeadSomewhere(Map<String, MapDef> maps) {
+        for (MapDef from : maps.values()) {
+            for (Door door : from.doors()) {
+                String where = from.id() + " (" + door.x() + "," + door.y() + ")";
+                MapDef to = maps.get(door.toMap());
+                if (to == null) {
+                    throw new IllegalStateException(where + ": leads to '" + door.toMap()
+                            + "', which is not a map. Known: " + maps.keySet());
+                }
+                if (!to.walkable(door.toX(), door.toY())) {
+                    throw new IllegalStateException(where + ": leads onto " + door.toX() + ","
+                            + door.toY() + " of '" + to.id()
+                            + "', which is not a tile anything can stand on");
+                }
+                if (to.doorAt(door.toX(), door.toY()) != null) {
+                    // Arriving on a door would take the same step twice: through,
+                    // and straight back. Whoever walked in would be thrown
+                    // between two maps until they closed the tab.
+                    throw new IllegalStateException(where + ": leads onto another door on '"
+                            + to.id() + "', so walking in would bounce straight back out");
+                }
+                if (door.requiresItem() != null && !items.containsKey(door.requiresItem())) {
+                    throw new IllegalStateException(where + ": asks for '" + door.requiresItem()
+                            + "', which is not an item, so nobody could ever open it");
+                }
+            }
+            RespawnPoint respawn = from.respawn();
+            MapDef wakesOn = maps.get(respawn.mapId());
+            if (wakesOn == null) {
+                throw new IllegalStateException(from.id() + ": wakes its dead on '"
+                        + respawn.mapId() + "', which is not a map");
+            }
+            if (!wakesOn.walkable(respawn.x(), respawn.y())) {
+                throw new IllegalStateException(from.id() + ": wakes its dead at " + respawn.x()
+                        + "," + respawn.y() + " of '" + wakesOn.id()
+                        + "', which is not a tile anything can stand on");
+            }
+        }
     }
 
     private MapDef parse(Resource resource, Map<String, MobDef> creatures,
@@ -116,12 +178,14 @@ public class MapDefLoader {
         // Built once without its creatures purely so the spawn validation below
         // can ask walkable() instead of re-deriving collision from the bitset.
         MapDef map = new MapDef(id, name, width, height, tileSize, spawnX, spawnY, blocked, rows,
-                List.of(), List.of(), List.of(), false);
+                List.of(), List.of(), List.of(), false, List.of(), null);
         return new MapDef(id, name, width, height, tileSize, spawnX, spawnY, blocked, rows,
                 spawnPoints(root, map, creatures, where),
                 roamingSpawns(root, creatures, where),
                 npcPlacements(root, map, people, where),
-                root.path("starting").asBoolean(false));
+                root.path("starting").asBoolean(false),
+                doors(root, map, where),
+                respawn(root, where));
     }
 
     /**
@@ -205,6 +269,70 @@ public class MapDefLoader {
             placements.add(new NpcPlacement(def, x, y, facing));
         }
         return placements;
+    }
+
+    /**
+     * Tiles that lead somewhere else. Everything here can be judged from this
+     * one file; where the door <em>arrives</em> needs the other map, and is
+     * checked once they are all read.
+     */
+    private static List<Door> doors(JsonNode root, MapDef map, String where) {
+        List<Door> doors = new ArrayList<>();
+        for (JsonNode node : root.path("doors")) {
+            int x = node.path("x").asInt(-1);
+            int y = node.path("y").asInt(-1);
+            String toMap = node.path("to").asText(null);
+            if (toMap == null || toMap.isBlank()) {
+                throw new IllegalStateException(where + ": a door at " + x + "," + y
+                        + " does not say where it leads");
+            }
+            if (!map.walkable(x, y)) {
+                throw new IllegalStateException(where + ": a door at " + x + "," + y
+                        + " is not on a tile anything can stand on");
+            }
+            if (x == map.spawnX() && y == map.spawnY()) {
+                // Everybody arrives there, so everybody would be sent straight
+                // out again - including somebody who has just woken up dead.
+                throw new IllegalStateException(where + ": a door sits on the tile players"
+                        + " arrive at");
+            }
+            if (doors.stream().anyMatch(other -> other.isAt(x, y))) {
+                throw new IllegalStateException(where + ": two doors on " + x + "," + y
+                        + "; which one a step takes would be whichever was read first");
+            }
+            int fromLevel = atLeastZero(node, "fromLevel", where);
+            int untilLevel = atLeastZero(node, "untilLevel", where);
+            if (fromLevel > 0 && untilLevel > 0 && untilLevel < fromLevel) {
+                throw new IllegalStateException(where + ": a door at " + x + "," + y
+                        + " opens from level " + fromLevel + " and closes above " + untilLevel
+                        + ", so nobody is ever the right level for it");
+            }
+            String key = node.path("requiresItem").asText(null);
+            doors.add(new Door(x, y, toMap, node.path("toX").asInt(-1), node.path("toY").asInt(-1),
+                    node.path("name").asText(toMap), fromLevel, untilLevel,
+                    key == null || key.isBlank() ? null : key));
+        }
+        return doors;
+    }
+
+    private static RespawnPoint respawn(JsonNode root, String where) {
+        JsonNode node = root.get("respawn");
+        if (node == null || node.isNull()) {
+            return null; // this map's own spawn, which is what MapDef answers
+        }
+        String mapId = node.path("map").asText(null);
+        if (mapId == null || mapId.isBlank()) {
+            throw new IllegalStateException(where + ": \"respawn\" does not say which map");
+        }
+        return new RespawnPoint(mapId, node.path("x").asInt(-1), node.path("y").asInt(-1));
+    }
+
+    private static int atLeastZero(JsonNode node, String field, String where) {
+        int value = node.path(field).asInt(0);
+        if (value < 0) {
+            throw new IllegalStateException(where + ": " + field + " cannot be negative");
+        }
+        return value;
     }
 
     private static String requireKnownMob(JsonNode node, String field,

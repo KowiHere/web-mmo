@@ -34,6 +34,9 @@
     { "mob": "wilk", "x": 26, "y": 17 },
     { "mob": "wilk", "x": 13, "y": 2 }
   ],
+  "doors": [
+    { "x": 27, "y": 9, "to": "las", "toX": 3, "toY": 9, "name": "Las Wilczy" }
+  ],
   "npcs": [
     { "npc": "zielarka", "x": 12, "y": 16, "dir": "DOWN" },
     { "npc": "kupiec", "x": 17, "y": 17, "dir": "DOWN" },

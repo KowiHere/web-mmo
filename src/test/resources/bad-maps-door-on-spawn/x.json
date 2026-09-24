@@ -1,0 +1,4 @@
+{ "id": "progi", "name": "Progi", "starting": true, "tileSize": 32, "spawn": [2, 2],
+  "collision": ["######","#....#","#....#","#....#","######"],
+  "doors": [ { "x": 2, "y": 2, "to": "progi", "toX": 4, "toY": 3 } ],
+  "spawns": [], "roaming": [] }

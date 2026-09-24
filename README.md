@@ -25,6 +25,15 @@ lock-free queue and that thread is their only consumer — which is also the onl
 thread that ever touches actors, positions or paths. There is no lock on world
 state anywhere in this repository, because nothing else can reach it.
 
+**Two maps are where that claim is tested.** A character walking through a door
+is the only moment two map threads have anything to do with each other, and
+what crosses between them is an immutable `SavedCharacter` and a socket —
+never a live actor, which is exactly the thing one thread must not read while
+another writes it. The map giving the character up removes its own copy first;
+the map receiving it takes the ordinary `Command.Join` path, so there is one way
+into a map and not two. The world keeps a signpost of which map each socket is
+on, and that concurrent map is the entire synchronisation between them.
+
 Spring's role stops at the door: dependency injection, configuration and the
 WebSocket transport. Below `WorldService` there is no Spring, no JPA and no
 framework of any kind — just a loop.
@@ -224,6 +233,37 @@ unhalves with nothing asked for.
 price, because the master is ten seconds away. The discount starts to weigh
 something when the world is bigger and the master is two maps from where you
 levelled. Today its real job is to give the masters a reason to stand there.
+
+### Doors, and where you wake
+
+A **door** is a tile. Step on it and you are somewhere else; there is nothing to
+click and nothing to confirm, because a door that needed a second action is a
+door people walk onto and wonder about.
+
+Doors are content, and the loader checks them **against every other map at
+once** — a door names a map, a tile and sometimes a key, and each of those is
+only right or wrong in the company of the others. It refuses one that leads to a
+map that is not there, one that lands in a wall, one that sits on the tile
+everybody arrives at, and **one that lands on another door**: walking in would
+take the same step twice, through and straight back, and whoever tried it would
+be thrown between two maps until they closed the tab. That last check caught the
+first pair of doors this game ever had, written by me, half an hour after I
+wrote the check.
+
+A door may ask for a minimum level, a maximum level, or an item in the bag. The
+item is **not taken** — it is a key, not a ticket, and a door that eats what
+opened it can be walked through exactly once.
+
+Where you **wake up** after dying is a property of the map you died on, written
+in its content rather than worked out from a graph of maps: "the nearest town"
+is a judgement about the world, and deriving it from distances would mean the
+answer changing because somebody moved a door. The wood sends its dead back to
+the glade, which is where the healer is — and since nothing regenerates, a map
+that woke its own dead would be a map you wake up on with one point of health
+and no way to mend.
+
+Dying far from home uses the same handover a door does, with the character still
+unconscious when it lands.
 
 ### Fighting
 
@@ -667,22 +707,22 @@ above; masters discount and undo, they do not sell ranks.
 in its own file, which is the right shape; whether the numbers are any good has
 had exactly one pass.
 
-Also missing: more than one map, and instances with parties. No password reset
-or email confirmation either — both need to send mail, which means a service to
-run.
+**A door can ask for a level range or a key, and no shipped door asks for
+anything.** The three thresholds exist because they were specified, and they are
+covered by tests on fixture maps — but the only two doors in the game are open
+to everybody, so nothing in the shipped content exercises them. That is a
+deliberate state rather than a forgotten one.
 
-**Three things are wrong the day a second map exists**, and are written down
-here so they are not rediscovered as a mystery. Every command goes to
-`world.defaultMap()` regardless of where the character stands; `Detach` goes
-there too, so a character on another map would be saved by a map that has never
-heard of them; and `defaultMapId` is whichever map an unordered map iterated
-first, which is the same mistake `Content.defaultClass()` already names and
-avoids. All three are invisible with one map and are the first work of the
-second-map milestone.
+**Two maps, and no way between them but on foot.** `NpcFunction.TELEPORT` is
+still refused at startup: an NPC who moves you somewhere — for money, for a
+finished quest, for anything — is a different thing from a tile that leads
+outside, and it arrives with the rest of the door interactions.
 
-Roughly in order: potions, then the second map with the three faults above,
-then storage. Instances and parties last, which is what heroes and colossi are
-waiting on.
+Also missing: instances with parties. No password reset or email confirmation
+either — both need to send mail, which means a service to run.
+
+Roughly in order: potions, then storage, then the remaining ways through a door.
+Instances and parties last, which is what heroes and colossi are waiting on.
 
 ## Layout
 

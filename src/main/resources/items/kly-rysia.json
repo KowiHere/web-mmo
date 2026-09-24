@@ -1,0 +1,8 @@
+{
+  "id": "kly-rysia",
+  "name": "Pazury rysia",
+  "slot": "TRINKET",
+  "requiresLevel": 4,
+  "value": 160,
+  "bonuses": { "agility": 7, "attack": 2 }
+}

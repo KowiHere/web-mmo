@@ -1,0 +1,19 @@
+{
+  "id": "niedzwiedz",
+  "name": "Niedźwiedź",
+  "tier": "MOB",
+  "level": 7,
+  "hp": 130,
+  "attack": 16,
+  "armor": 6,
+  "stepTicks": 5,
+  "aggroRadius": 3,
+  "leashRadius": 8,
+  "respawnSeconds": 90,
+  "coins": [
+    { "currency": "zloto", "min": 15, "max": 25 }
+  ],
+  "loot": [
+    { "item": "niedzwiedzia-skora", "chance": 0.35 }
+  ]
+}

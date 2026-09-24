@@ -1,0 +1,21 @@
+{
+  "id": "matecznik",
+  "name": "Pan Matecznika",
+  "tier": "ELITE",
+  "level": 12,
+  "hp": 420,
+  "attack": 30,
+  "armor": 12,
+  "stepTicks": 3,
+  "aggroRadius": 7,
+  "leashRadius": 14,
+  "respawnSeconds": 900,
+  "coins": [
+    { "currency": "zloto", "min": 60, "max": 110 },
+    { "currency": "kly", "min": 4, "max": 8 }
+  ],
+  "loot": [
+    { "item": "niedzwiedzia-skora", "chance": 1.0 },
+    { "item": "kly-rysia", "chance": 0.6 }
+  ]
+}

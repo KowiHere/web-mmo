@@ -1,0 +1,4 @@
+{ "id": "zpowrotem", "name": "Z powrotem", "tileSize": 32, "spawn": [1, 1],
+  "collision": ["######","#....#","#....#","#....#","######"],
+  "doors": [ { "x": 4, "y": 3, "to": "tam", "toX": 4, "toY": 3 } ],
+  "spawns": [], "roaming": [] }

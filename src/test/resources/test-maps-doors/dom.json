@@ -1,0 +1,11 @@
+{
+  "id": "dom", "name": "Dom", "starting": true, "tileSize": 32, "spawn": [2, 2],
+  "collision": ["############","#..........#","#..........#","#..........#","#..........#","#..........#","#..........#","#..........#","############"],
+  "doors": [
+    { "x": 8, "y": 2, "to": "ogrod", "toX": 2, "toY": 6, "name": "Ogród" },
+    { "x": 8, "y": 4, "to": "ogrod", "toX": 3, "toY": 6, "name": "Loch", "fromLevel": 5 },
+    { "x": 8, "y": 5, "to": "ogrod", "toX": 4, "toY": 6, "name": "Żłobek", "untilLevel": 2 },
+    { "x": 8, "y": 6, "to": "ogrod", "toX": 5, "toY": 6, "name": "Skarbiec", "requiresItem": "probny-miecz" }
+  ],
+  "spawns": [], "roaming": []
+}

@@ -1,0 +1,4 @@
+{ "id": "sama", "name": "Sama", "starting": true, "tileSize": 32, "spawn": [2, 2],
+  "collision": ["######","#....#","#....#","#....#","######"],
+  "doors": [ { "x": 4, "y": 3, "to": "krainalagodnosci", "toX": 1, "toY": 1 } ],
+  "spawns": [], "roaming": [] }

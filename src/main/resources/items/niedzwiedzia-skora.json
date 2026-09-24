@@ -1,0 +1,8 @@
+{
+  "id": "niedzwiedzia-skora",
+  "name": "Niedźwiedzia skóra",
+  "slot": "CHEST",
+  "requiresLevel": 5,
+  "value": 240,
+  "bonuses": { "armor": 8, "strength": 3 }
+}

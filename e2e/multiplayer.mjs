@@ -1128,8 +1128,111 @@ try {
         await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
     }
 
+    // ---- through the door, and back --------------------------------------
+    await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+    await escapeAnyFight(ala);
+    await mendIfHurt(ala);
+
+    const homeMap = await ala.evaluate(() => state.map.id);
+    const doorHere = await ala.evaluate(() => (state.map.doors || [])[0] || null);
+
+    if (!doorHere) {
+        fail('the starting map has no way out of it');
+    } else {
+        ok(`${homeMap} has a door to ${doorHere.name}`);
+
+        // Walked onto, not messaged: stepping on the tile is the whole
+        // interaction, and that is what has to work.
+        const crossed = await (async () => {
+            const until = Date.now() + 180_000;
+            while (Date.now() < until) {
+                await escapeAnyFight(ala);
+                await mendIfHurt(ala, 0.5);
+                await ala.evaluate((d) => requestMove(d.x, d.y), doorHere);
+                const there = await ala
+                    .waitForFunction((was) => state.map.id !== was, homeMap, { timeout: 20_000 })
+                    .then(() => true).catch(() => false);
+                if (there) return true;
+            }
+            return false;
+        })();
+
+        if (!crossed) {
+            fail('walking onto the door never led anywhere');
+        } else {
+            const wood = await ala.evaluate(() => ({
+                id: state.map.id,
+                name: state.map.name,
+                creatures: [...state.actors.values()]
+                    .filter((a) => a.kind === 'MOB').map((a) => a.name),
+            }));
+            ok(`stepping on it arrived in ${wood.name}`);
+            wood.creatures.some((name) => !['Dzik', 'Wilk', 'Wilczyca Watahy'].includes(name))
+                ? ok(`with creatures the glade does not have: ${[...new Set(wood.creatures)].join(', ')}`)
+                : fail(`the wood is full of glade creatures: ${wood.creatures.join(', ')}`);
+
+            await ala.screenshot({ path: 'las.png' });
+
+            // Everything came along. A transfer that lost the purse would look
+            // exactly like a working one until somebody tried to buy something.
+            const carried = await ala.evaluate(() => ({
+                hp: state.you.hp,
+                gold: (state.purse.coins.find((c) => c.primary) || {}).amount,
+                bag: (state.bag.carried || []).length,
+            }));
+            typeof carried.gold === 'number' && carried.hp > 0
+                ? ok(`and the character came with it: ${carried.hp} hp, ${carried.gold} gold,`
+                    + ` ${carried.bag} thing(s) in the bag`)
+                : fail('something was left on the other side');
+
+            // The new map is the one that listens now - the whole point of the
+            // routing fix that went in before any of this.
+            const walked = await (async () => {
+                const before = await ala.evaluate(() => {
+                    const self = state.actors.get(state.selfId);
+                    return { x: self.x, y: self.y };
+                });
+                // A tile that is open on this map. Sent at a wall, the server
+                // refuses and the test learns nothing about routing.
+                await ala.evaluate(() => requestMove(6, 9));
+                return ala
+                    .waitForFunction((was) => {
+                        const self = state.actors.get(state.selfId);
+                        return self.x !== was.x || self.y !== was.y;
+                    }, before, { timeout: 15_000 })
+                    .then(() => true).catch(() => false);
+            })();
+            walked
+                ? ok('and commands sent afterwards reach the map it is actually on')
+                : fail('the character could not move on the new map');
+
+            // And home again through the other door.
+            const doorBack = await ala.evaluate(() => (state.map.doors || [])[0] || null);
+            const home = await (async () => {
+                const until = Date.now() + 180_000;
+                while (Date.now() < until) {
+                    await escapeAnyFight(ala);
+                    await mendIfHurt(ala, 0.5);
+                    await ala.evaluate((d) => requestMove(d.x, d.y), doorBack);
+                    const back = await ala
+                        .waitForFunction((want) => state.map.id === want, homeMap, { timeout: 20_000 })
+                        .then(() => true).catch(() => false);
+                    if (back) return true;
+                }
+                return false;
+            })();
+            home
+                ? ok(`and the door back leads to ${homeMap}`)
+                : fail('there was no way home');
+        }
+    }
+
     // ---- a dropped socket resumes the same character ---------------------
-    const previousActor = alaView.selfId;
+    // Read now rather than at the start of the run. An actor id belongs to the
+    // map that issued it, so a character that has been through a door has a
+    // different one - and comparing against the first would be testing that
+    // nobody travelled rather than that a reconnect resumes.
+    const previousActor = await ala.evaluate(() => state.selfId);
     await ala.evaluate(() => state.ws.close());
     await ala.waitForTimeout(2_500);
     const resumed = await snapshot(ala);

@@ -85,8 +85,13 @@ public class WorldService {
 
         for (MapDef def : defs.values()) {
             MapRunner runner = new MapRunner(def, json, persistence, content);
+            runner.transfersThrough(this::handOver);
             runners.put(def.id(), runner);
-            Thread thread = new Thread(runner, "map-" + def.id());
+        }
+        // Every map built before any of them runs: a map that started early
+        // could hand somebody to one that does not exist yet.
+        for (MapRunner runner : runners.values()) {
+            Thread thread = new Thread(runner, "map-" + runner.mapId());
             thread.setDaemon(false);
             threads.add(thread);
             thread.start();
@@ -169,6 +174,25 @@ public class WorldService {
             return startingMap();
         }
         return runner;
+    }
+
+    /**
+     * Takes a character one map is giving up and gives it to another.
+     *
+     * <p>Called on the giving map's thread. Everything it receives is either
+     * immutable or a socket, and what it does with them is to put an ordinary
+     * {@link Command.Join} in the other map's inbox - so a character arriving
+     * through a door and one arriving through the front door take exactly the
+     * same path into the world.
+     */
+    private void handOver(Client client, String toMapId, long accountId,
+                          SavedCharacter character) {
+        MapRunner destination = mapOrStarting(toMapId);
+        // Pointed at the new map before the join is queued. A command arriving
+        // in between goes to a map that does not have this character, and is
+        // ignored there - which costs a keystroke and saves a lock on the world.
+        whereTheyAre.put(client, destination);
+        destination.submit(new Command.Join(client, accountId, character, 0L));
     }
 
     /** Remembers which map this socket's commands should go to from now on. */

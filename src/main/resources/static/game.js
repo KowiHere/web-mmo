@@ -192,16 +192,28 @@ function send(message) {
 // ------------------------------------------------------------- state updates
 
 function applyInit(msg) {
+    const arrivedSomewhereElse = state.map && state.map.id !== msg.map.id;
+
     state.version = msg.v;
     state.selfId = msg.selfId;
     state.map = msg.map;
 
     state.actors.clear();
+    // Everything drawn about the last map goes with it. A damage number left
+    // over from the wood would float over the glade, pinned to a tile that
+    // means something else now.
+    state.floaters.length = 0;
+    state.marker = null;
+    state.walkingUpTo = null;
+    applyDialogue({});
+    applyShop({});
+
     for (const dto of msg.actors || []) upsertActor(dto);
 
     mapNameEl.textContent = msg.map.name;
     setStatus('połączono');
-    if (state.everConnected) logSystem('Wczytano świat od nowa.');
+    if (arrivedSomewhereElse) logSystem(`Wchodzisz: ${msg.map.name}.`);
+    else if (state.everConnected) logSystem('Wczytano świat od nowa.');
     state.everConnected = true;
 }
 
@@ -862,6 +874,7 @@ function frame(now) {
     ctx.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
 
     drawTiles(ox, oy);
+    drawDoors(ox, oy);
     drawHover(ox, oy);
     drawMarker(ox, oy, now);
 
@@ -925,6 +938,31 @@ function advanceAnimation(actor, now) {
     }
 }
 
+/**
+ * The way out, on the tiles that are one.
+ *
+ * <p>Every door is drawn the same, because whether this particular character
+ * may use it is the server's business: one map description is shared by
+ * everybody standing on the map, and a threshold is about the one asking.
+ */
+function drawDoors(ox, oy) {
+    for (const door of (state.map.doors || [])) {
+        const sx = Math.round(door.x * TILE - ox);
+        const sy = Math.round(door.y * TILE - oy);
+
+        ctx.fillStyle = '#2c2119';
+        ctx.fillRect(sx + 6, sy + 3, TILE - 12, TILE - 5);
+        ctx.strokeStyle = '#c8a24a';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(sx + 6, sy + 3, TILE - 12, TILE - 5);
+        // A handle, so it reads as a door rather than as a crate.
+        ctx.beginPath();
+        ctx.arc(sx + TILE - 11, sy + TILE / 2 + 1, 1.8, 0, Math.PI * 2);
+        ctx.fillStyle = '#e8c87a';
+        ctx.fill();
+    }
+}
+
 function drawTiles(ox, oy) {
     const firstX = Math.max(0, Math.floor(ox / TILE));
     const firstY = Math.max(0, Math.floor(oy / TILE));
@@ -961,10 +999,28 @@ function drawHover(ox, oy) {
     const sx = Math.round(x * TILE - ox);
     const sy = Math.round(y * TILE - oy);
 
+    const door = doorAt(x, y);
     ctx.lineWidth = 2;
     ctx.strokeStyle = creatureAt(x, y) ? 'rgba(240,192,122,.9)'
+            : door ? 'rgba(232,200,122,.95)'
             : isBlocked(x, y) ? 'rgba(224,108,117,.75)' : 'rgba(110,168,254,.75)';
     ctx.strokeRect(sx + 1, sy + 1, TILE - 2, TILE - 2);
+
+    if (door) {
+        // Where it goes, over the tile. Whether you may go there is not said -
+        // the server answers that when you step on it, and saying it twice is
+        // how the two answers start disagreeing.
+        ctx.font = '11px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#0f1116';
+        ctx.fillText(door.name, sx + TILE / 2 + 1, sy - 3);
+        ctx.fillStyle = '#e8c87a';
+        ctx.fillText(door.name, sx + TILE / 2, sy - 4);
+    }
+}
+
+function doorAt(x, y) {
+    return (state.map && state.map.doors || []).find((d) => d.x === x && d.y === y) || null;
 }
 
 /** Shows where you asked to go. Not where you are going - the server decides that. */

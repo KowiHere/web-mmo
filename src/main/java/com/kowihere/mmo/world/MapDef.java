@@ -23,12 +23,16 @@ public final class MapDef {
     private final List<RoamingSpawn> roaming;
     private final List<NpcPlacement> npcs;
     private final boolean starting;
+    private final List<Door> doors;
+    private final RespawnPoint respawn;
 
     MapDef(String id, String name, int width, int height, int tileSize,
            int spawnX, int spawnY, BitSet blocked, List<String> collisionRows,
            List<SpawnPoint> spawns, List<RoamingSpawn> roaming, List<NpcPlacement> npcs,
-           boolean starting) {
+           boolean starting, List<Door> doors, RespawnPoint respawn) {
         this.starting = starting;
+        this.doors = List.copyOf(doors);
+        this.respawn = respawn;
         this.id = id;
         this.name = name;
         this.width = width;
@@ -73,6 +77,28 @@ public final class MapDef {
      * and avoids, and the same one the primary currency avoids.
      */
     public boolean isStarting() { return starting; }
+
+    /** Tiles that lead somewhere else. */
+    public List<Door> doors() { return doors; }
+
+    /** The door on this tile, or null when it is an ordinary one. */
+    public Door doorAt(int x, int y) {
+        for (Door door : doors) {
+            if (door.isAt(x, y)) {
+                return door;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Where somebody killed here wakes up. Never null: a map that names no
+     * respawn point answers with its own spawn, which is what every map did
+     * before respawn points existed.
+     */
+    public RespawnPoint respawn() {
+        return respawn != null ? respawn : new RespawnPoint(id, spawnX, spawnY);
+    }
 
     public boolean inBounds(int x, int y) {
         return x >= 0 && y >= 0 && x < width && y < height;

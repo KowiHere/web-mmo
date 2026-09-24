@@ -1,0 +1,4 @@
+{ "id": "nigdy", "name": "Nigdy", "starting": true, "tileSize": 32, "spawn": [1, 1],
+  "collision": ["######","#....#","#....#","#....#","######"],
+  "doors": [ { "x": 4, "y": 3, "to": "nigdy", "toX": 2, "toY": 1, "fromLevel": 9, "untilLevel": 3 } ],
+  "spawns": [], "roaming": [] }

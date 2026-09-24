@@ -49,7 +49,21 @@ public final class ServerMessages {
     public record PresenceDto(int id, boolean online) {
     }
 
-    public record MapDto(String id, String name, int width, int height, int tileSize, List<String> collision) {
+    /**
+     * A tile that leads somewhere else, and what the place on the other side is
+     * called.
+     *
+     * <p>Deliberately says nothing about whether the viewer may use it. One
+     * MapDto is built per map and shared by everybody on it, while a threshold
+     * is a question about the one asking - so the rule stays on the server, and
+     * a door that refuses says why when it is stepped on.
+     */
+    public record DoorDto(int x, int y, String name) {
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public record MapDto(String id, String name, int width, int height, int tileSize,
+                         List<String> collision, List<DoorDto> doors) {
     }
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)

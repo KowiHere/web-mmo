@@ -25,6 +25,7 @@ import com.kowihere.mmo.world.ItemSlot;
 import com.kowihere.mmo.world.LootEntry;
 import com.kowihere.mmo.world.DialogueAction;
 import com.kowihere.mmo.combat.SkillPrices;
+import com.kowihere.mmo.world.Door;
 import com.kowihere.mmo.world.CoinDrop;
 import com.kowihere.mmo.world.CurrencyDef;
 import com.kowihere.mmo.world.Dialogue;
@@ -36,6 +37,7 @@ import com.kowihere.mmo.world.Shop;
 import com.kowihere.mmo.world.NpcPlacement;
 import com.kowihere.mmo.world.SkillDef;
 import com.kowihere.mmo.world.SkillDefLoader;
+import com.kowihere.mmo.world.RespawnPoint;
 import com.kowihere.mmo.world.RoamingSpawn;
 import com.kowihere.mmo.world.SpawnPoint;
 import org.slf4j.Logger;
@@ -138,6 +140,20 @@ public final class MapRunner implements Runnable {
     private final List<Integer> died = new ArrayList<>();
     private final List<FightDto> fightChanges = new ArrayList<>();
     private final List<Actor> pendingMoves = new ArrayList<>();
+    /** Characters on their way to another map, handed over at the end of the tick. */
+    private final List<Leaving> leaving = new ArrayList<>();
+
+    /**
+     * How this map hands somebody to another one.
+     *
+     * <p>Set once, before the thread starts, rather than taken in a constructor:
+     * the world has to build every map before any of them can be told about the
+     * others. After that it is read only by this thread.
+     */
+    private MapTransfers transfers = MapTransfers.NOWHERE;
+
+    private record Leaving(Actor actor, String toMapId, int toX, int toY) {
+    }
 
     private long version;
     private long tick;
@@ -191,8 +207,20 @@ public final class MapRunner implements Runnable {
         this.combat = new CombatRules(random);
         // MapDef is immutable, so this never changes - build it once instead of
         // rebuilding the whole collision grid on every player's arrival.
+        List<ServerMessages.DoorDto> doors = new ArrayList<>();
+        for (Door door : map.doors()) {
+            // Where it is and what is on the other side, and nothing about
+            // whether this particular player may use it: one MapDto is shared
+            // by everybody on the map, and a threshold is about the one asking.
+            doors.add(new ServerMessages.DoorDto(door.x(), door.y(), door.name()));
+        }
         this.mapDto = new MapDto(map.id(), map.name(), map.width(), map.height(),
-                map.tileSize(), map.collisionRows());
+                map.tileSize(), map.collisionRows(), List.copyOf(doors));
+    }
+
+    /** Told once, at startup, before this map is running. */
+    public void transfersThrough(MapTransfers transfers) {
+        this.transfers = transfers;
     }
 
     public String mapId() {
@@ -239,6 +267,7 @@ public final class MapRunner implements Runnable {
                 respawnTheFallen();
                 wakeTheSleeping();
                 reapExpiredActors();
+                carryOutTransfers();
                 saveDirtyActors();
                 flush();
             } catch (RuntimeException e) {
@@ -1097,7 +1126,103 @@ public final class MapRunner implements Runnable {
             actor.dirty = actor.isPlayer(); // only a character's position is worth keeping
             moved.add(new MoveDto(actor.id, actor.fromX, actor.fromY, actor.x, actor.y,
                     actor.dir.name(), actor.stepTicks * TICK_MS));
+            arriveOnTile(actor);
         }
+    }
+
+    /**
+     * What the tile just stepped onto does, if anything.
+     *
+     * <p>Queued rather than acted on: this runs inside a walk over every actor
+     * on the map, and handing one of them away means removing it from that very
+     * collection.
+     */
+    private void arriveOnTile(Actor actor) {
+        if (!actor.isPlayer()) {
+            return;
+        }
+        Door door = map.doorAt(actor.x, actor.y);
+        if (door == null) {
+            return;
+        }
+        String no = door.refuse(actor.level, carries(actor, door.requiresItem()),
+                nameOf(door.requiresItem()));
+        if (no != null) {
+            // Stopped on the threshold rather than pushed back: being bounced a
+            // tile by a rule nobody explained is worse than being told.
+            actor.path.clear();
+            sendError(actor, no);
+            return;
+        }
+        leaving.add(new Leaving(actor, door.toMap(), door.toX(), door.toY()));
+    }
+
+    private boolean carries(Actor actor, String itemId) {
+        if (itemId == null) {
+            return true;
+        }
+        for (ItemStack stack : actor.inventory.bag()) {
+            if (stack.def().id().equals(itemId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String nameOf(String itemId) {
+        ItemDef def = itemId == null ? null : content.items().get(itemId);
+        return def == null ? String.valueOf(itemId) : def.name();
+    }
+
+    /**
+     * Hands over everybody who stepped through something this tick.
+     *
+     * <p>The order matters: the character is written down as already being on
+     * the other map <em>before</em> it leaves this one. A crash in between then
+     * leaves a row saying where they were going, which is recoverable; the
+     * other order leaves a row saying where they no longer are.
+     */
+    private void carryOutTransfers() {
+        for (Leaving move : leaving) {
+            Actor actor = move.actor();
+            SavedCharacter character = asSavedCharacter(actor, move.toMapId(),
+                    move.toX(), move.toY());
+            persistence.save(new ActorSnapshot(actor.nameKey, actor.name, move.toMapId(),
+                    move.toX(), move.toY(), actor.dir.name(),
+                    actor.level, actor.xp, actor.hp, actor.wakesAt,
+                    actor.attributes, actor.unspentPoints, actor.inventory.stored(),
+                    actor.characterClass == null ? null : actor.characterClass.id(),
+                    actor.skillPoints, actor.skills.stored(), actor.purse.stored()));
+            actor.dirty = false;
+            actor.itemsDirty = false;
+            actor.skillsDirty = false;
+            actor.purseDirty = false;
+
+            endConversation(actor);
+            actors.remove(actor.id);
+            byNameKey.remove(actor.nameKey);
+            byClient.remove(actor.client);
+            left.add(actor.id);
+
+            transfers.move(actor.client, move.toMapId(), actor.accountId, character);
+        }
+        leaving.clear();
+    }
+
+    /**
+     * Everything worth keeping about a live character, in the immutable shape
+     * the database already speaks.
+     *
+     * <p>This is what crosses between map threads, and the reason crossing is
+     * safe: a copy taken by the thread that owns the actor, read by the thread
+     * that will own it next, with nothing shared in between.
+     */
+    private SavedCharacter asSavedCharacter(Actor actor, String mapId, int x, int y) {
+        return new SavedCharacter(actor.nameKey, actor.name, mapId, x, y, actor.dir,
+                actor.level, actor.xp, actor.hp, actor.wakesAt, actor.attributes,
+                actor.unspentPoints, actor.inventory.stored(),
+                actor.characterClass == null ? null : actor.characterClass.id(),
+                actor.skillPoints, actor.skills.stored(), actor.purse.stored());
     }
 
     private void reapExpiredActors() {
@@ -1450,11 +1575,12 @@ public final class MapRunner implements Runnable {
         died.add(player.id);
         leaveFight(player, fight);
 
-        player.x = map.spawnX();
-        player.y = map.spawnY();
+        RespawnPoint wakeUpAt = map.respawn();
+        player.path.clear();
+        player.x = wakeUpAt.x();
+        player.y = wakeUpAt.y();
         player.fromX = player.x;
         player.fromY = player.y;
-        player.path.clear();
         player.hp = CombatRules.HEALTH_AFTER_DEATH;
         // Out of action, for longer the further along they are. Written as the
         // moment they may play again rather than as a countdown, so closing the
@@ -1463,11 +1589,19 @@ public final class MapRunner implements Runnable {
                 + CombatRules.wakeSeconds(player.level) * 1000L;
         player.dirty = true;
 
+        chat.add(new ChatDto(player.id, player.name, "* ginie *"));
+        if (!wakeUpAt.mapId().equals(map.id())) {
+            // Killed somewhere that wakes its dead elsewhere. The same handover
+            // a door uses, with the character still unconscious when it lands -
+            // the waking stamp travels with everything else.
+            leaving.add(new Leaving(player, wakeUpAt.mapId(), wakeUpAt.x(), wakeUpAt.y()));
+            return;
+        }
+
         // Everyone needs to see them vanish from where they fell and reappear at
         // the spawn; a plain move would have them walk the whole way back.
         joined.add(toDto(player));
         sendYou(player);
-        chat.add(new ChatDto(player.id, player.name, "* ginie *"));
     }
 
     private void awardExperience(Actor player, Actor creature) {
