@@ -5,7 +5,7 @@
   "functions": ["DIALOGUE", "SHOP"],
   "shop": {
     "currency": "zloto",
-    "sells": ["zardzewialy-miecz", "skorznia", "kostur-ucznia", "pierscien-sily"]
+    "sells": ["pochodnia", "zardzewialy-miecz", "skorznia", "kostur-ucznia", "pierscien-sily"]
   },
   "dialogue": {
     "start": "powitanie",

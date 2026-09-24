@@ -76,12 +76,13 @@ class NpcDefLoaderTest {
 
     @Test
     void refusesAFunctionNothingCanHonourYet() {
-        // A ferryman in a world with one map would open, offer nothing, and
-        // look to every player like a bug in the client rather than content
-        // that was written too early.
+        // A ferryman would open, offer nothing, and look to every player like a
+        // bug in the client rather than content written ahead of the rules it
+        // needs. What he is waiting for is the talking at a passage, which is
+        // deliberately not the stepping through one.
         assertThatThrownBy(() -> new NpcDefLoader("classpath:bad-npcs-function/*.json").loadAll())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("jedna mapa");
+                .hasMessageContaining("rozmowa przy przejściu");
     }
 
     @Test

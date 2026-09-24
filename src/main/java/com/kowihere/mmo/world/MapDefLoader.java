@@ -116,6 +116,10 @@ public class MapDefLoader {
                     throw new IllegalStateException(where + ": asks for '" + door.requiresItem()
                             + "', which is not an item, so nobody could ever open it");
                 }
+                if (door.consumesItem() != null && !items.containsKey(door.consumesItem())) {
+                    throw new IllegalStateException(where + ": takes '" + door.consumesItem()
+                            + "', which is not an item, so nobody could ever pay it");
+                }
             }
             RespawnPoint respawn = from.respawn();
             MapDef wakesOn = maps.get(respawn.mapId());
@@ -307,12 +311,23 @@ public class MapDefLoader {
                         + " opens from level " + fromLevel + " and closes above " + untilLevel
                         + ", so nobody is ever the right level for it");
             }
-            String key = node.path("requiresItem").asText(null);
+            String key = blankToNull(node.path("requiresItem").asText(null));
+            String ticket = blankToNull(node.path("consumesItem").asText(null));
+            if (key != null && key.equals(ticket)) {
+                // It would be taken by passing and demanded by the same passing,
+                // so the door would open exactly once and then refuse its own
+                // owner for ever.
+                throw new IllegalStateException(where + ": a door at " + x + "," + y
+                        + " both keeps and consumes '" + key + "'");
+            }
             doors.add(new Door(x, y, toMap, node.path("toX").asInt(-1), node.path("toY").asInt(-1),
-                    node.path("name").asText(toMap), fromLevel, untilLevel,
-                    key == null || key.isBlank() ? null : key));
+                    node.path("name").asText(toMap), fromLevel, untilLevel, key, ticket));
         }
         return doors;
+    }
+
+    private static String blankToNull(String raw) {
+        return raw == null || raw.isBlank() ? null : raw;
     }
 
     private static RespawnPoint respawn(JsonNode root, String where) {

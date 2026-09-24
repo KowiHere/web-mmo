@@ -27,6 +27,27 @@ class ItemDefLoaderTest {
     }
 
     @Test
+    void somethingCanBeCarriedRatherThanWorn() {
+        // A torch burnt to get into a cave, and before long a potion. It grants
+        // nothing while it sits in the bag, which is the whole point of saying
+        // so in the file rather than leaving it to look like a mistake.
+        ItemDef torch = items.get("pochodnia");
+
+        assertThat(torch.slot()).isEqualTo(ItemSlot.NONE);
+        assertThat(torch.slot().isWorn()).isFalse();
+        assertThat(torch.value()).isPositive();
+    }
+
+    @Test
+    void refusesBonusesOnSomethingNobodyCanPutOn() {
+        // They would sit in the file looking as though somebody will one day
+        // have them, and nobody ever could.
+        assertThatThrownBy(() -> new ItemDefLoader("classpath:bad-items-carried/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("could never reach anybody");
+    }
+
+    @Test
     void anItemCanGrantAttributesRatherThanStatistics() {
         ItemDef ring = items.get("pierscien-sily");
 

@@ -58,7 +58,14 @@ public final class ServerMessages {
      * is a question about the one asking - so the rule stays on the server, and
      * a door that refuses says why when it is stepped on.
      */
-    public record DoorDto(int x, int y, String name) {
+    /**
+     * @param takes what stepping through costs, by name, or null when it is
+     *              free. A property of the door rather than of whoever is
+     *              looking at it, which is why it may live in this shared
+     *              object while the thresholds may not
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record DoorDto(int x, int y, String name, String takes) {
     }
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
@@ -259,6 +266,24 @@ public final class ServerMessages {
 
         public static Shop closed(int npcId) {
             return new Shop(npcId, null, null, null, null);
+        }
+    }
+
+    /**
+     * A passage asking before it opens, sent only to whoever is standing in it.
+     *
+     * <p>The one question in the game that is not a conversation: a step onto a
+     * tile that would burn something. A frame with no {@code takes} closes it,
+     * the same way an empty dialogue closes a talk.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Passage(String type, int x, int y, String name, String takes) {
+        public Passage(int x, int y, String name, String takes) {
+            this("passage", x, y, name, takes);
+        }
+
+        public static Passage closed() {
+            return new Passage(-1, -1, null, null);
         }
     }
 

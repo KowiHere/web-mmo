@@ -1,0 +1,8 @@
+{
+  "id": "pochodnia",
+  "name": "Pochodnia",
+  "slot": "NONE",
+  "requiresLevel": 1,
+  "value": 30,
+  "bonuses": {}
+}

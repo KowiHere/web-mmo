@@ -250,9 +250,29 @@ be thrown between two maps until they closed the tab. That last check caught the
 first pair of doors this game ever had, written by me, half an hour after I
 wrote the check.
 
-A door may ask for a minimum level, a maximum level, or an item in the bag. The
-item is **not taken** — it is a key, not a ticket, and a door that eats what
-opened it can be walked through exactly once.
+A door may ask for a minimum level, a maximum level, and something in the bag.
+There are two kinds of something, and the difference is the whole of it:
+
+* `requiresItem` is a **key**. It is not taken, because a door that eats what
+  opened it can be walked through exactly once.
+* `consumesItem` is a **ticket**. It is taken, and that is the one passage in
+  the game that **asks first**.
+
+The question is not a conversation and never becomes one: one line saying where
+it leads and what it costs, and a yes. The server does not remember having
+asked. A yes carries the tile it is about and is checked from scratch — standing
+there, still that door, still within the thresholds, ticket still in the bag —
+so a client that answers a question nobody asked has simply taken the step and
+agreed to it in one go, through exactly the same checks. Two yeses in the same
+tick pay once, because the handover happens at the end of a tick and until then
+the character is still standing on the door with the ticket in hand.
+
+The glade's trader sells a torch, and the wood has a cave mouth that burns one
+to let you in — the first shipped door to use a threshold at all: it opens from
+level 6. A torch is the first item in the game with **no slot**: carried, never
+worn, granting nothing while it sits in the bag. The item loader refuses a worn
+item that grants nothing *and* a carried one that grants something, because
+either way the file says one thing and means another.
 
 Where you **wake up** after dying is a property of the map you died on, written
 in its content rather than worked out from a graph of maps: "the nearest town"
@@ -744,16 +764,23 @@ day death takes something.
 in its own file, which is the right shape; whether the numbers are any good has
 had exactly one pass.
 
-**A door can ask for a level range or a key, and no shipped door asks for
-anything.** The three thresholds exist because they were specified, and they are
-covered by tests on fixture maps — but the only two doors in the game are open
-to everybody, so nothing in the shipped content exercises them. That is a
-deliberate state rather than a forgotten one.
+**A door can ask for a maximum level, and no shipped door does.** The other two
+thresholds are used now — the cave opens from level 6 and takes a torch — but
+`untilLevel`, a way in for beginners that stops being one, is still only
+exercised on fixture maps. Deliberate rather than forgotten.
 
-**Two maps, and no way between them but on foot.** `NpcFunction.TELEPORT` is
-still refused at startup: an NPC who moves you somewhere — for money, for a
-finished quest, for anything — is a different thing from a tile that leads
-outside, and it arrives with the rest of the door interactions.
+**The browser checks cannot walk through the cave door.** The character an
+end-to-end run produces reaches about level 3, and the cave opens from 6, so
+what a browser proves is the door advertising its cost, the question naming it,
+the threshold refusing with a reason, and a yes from the wrong tile being
+refused by the server. The ticket actually burning is proven at the loop level,
+by eight tests with two map threads running.
+
+**Nothing costs money to walk through.** A toll taken by a tile is the first
+thing in the game that would take coins without a click on a price, so it waits
+for the conversation at a door — and so does `NpcFunction.TELEPORT`, still
+refused at startup, because an NPC who moves you somewhere is that conversation
+by another name.
 
 Also missing: instances with parties. No password reset or email confirmation
 either — both need to send mail, which means a service to run.

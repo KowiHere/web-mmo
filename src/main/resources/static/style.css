@@ -682,6 +682,56 @@ label {
 
 /* The chests. Same corner as the stall, and only one of the two is ever open
    at a time, because only one deed can be the last one chosen. */
+/* The passage question. Middle of the view, because it is the only thing in
+   the game that stops a step and waits. */
+#passage {
+    position: absolute;
+    left: 50%;
+    top: 40%;
+    transform: translate(-50%, -50%);
+    z-index: 9;
+    width: min(360px, calc(100% - 24px));
+    padding: 14px 16px;
+    border: 1px solid #d98a53;
+    border-radius: 10px;
+    background: rgba(18, 16, 20, .98);
+    box-shadow: 0 10px 34px rgba(0, 0, 0, .55);
+    text-align: center;
+}
+
+#passage p {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: #f0d9c4;
+}
+
+.passage-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.passage-buttons button {
+    flex: 0 0 auto;
+    width: auto;
+    padding: 6px 18px;
+    border: 1px solid #2b3550;
+    border-radius: 8px;
+    background: rgba(24, 30, 44, .9);
+    color: #c7cedd;
+    font: inherit;
+    cursor: pointer;
+}
+
+#passage-go {
+    border-color: #d98a53;
+    color: #f0b07a;
+}
+
+.passage-buttons button:hover {
+    border-color: #e8c87a;
+}
+
 /* The chests. Bottom right: clear of the conversation they open from on the
    left and of the character sheet above, because a chest is read with both of
    those on screen - you put away what the panel says you are not using. */

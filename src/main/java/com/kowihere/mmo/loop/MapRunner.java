@@ -210,10 +210,12 @@ public final class MapRunner implements Runnable {
         // rebuilding the whole collision grid on every player's arrival.
         List<ServerMessages.DoorDto> doors = new ArrayList<>();
         for (Door door : map.doors()) {
-            // Where it is and what is on the other side, and nothing about
-            // whether this particular player may use it: one MapDto is shared
-            // by everybody on the map, and a threshold is about the one asking.
-            doors.add(new ServerMessages.DoorDto(door.x(), door.y(), door.name()));
+            // Where it is, what is on the other side, and what it burns - all
+            // properties of the door. Nothing about whether this particular
+            // player may use it: one MapDto is shared by everybody on the map,
+            // and a threshold is about the one asking.
+            doors.add(new ServerMessages.DoorDto(door.x(), door.y(), door.name(),
+                    door.takesSomething() ? nameOf(door.consumesItem()) : null));
         }
         this.mapDto = new MapDto(map.id(), map.name(), map.width(), map.height(),
                 map.tileSize(), map.collisionRows(), List.copyOf(doors));
@@ -328,6 +330,7 @@ public final class MapRunner implements Runnable {
                 case Command.DepositCoins put -> handleDepositCoins(put);
                 case Command.WithdrawCoins take -> handleWithdrawCoins(take);
                 case Command.BuyTab buy -> handleBuyTab(buy);
+                case Command.Pass pass -> handlePass(pass);
             }
         }
     }
@@ -506,6 +509,10 @@ public final class MapRunner implements Runnable {
             return;
         }
         actor.approaching = 0;
+        // Asking to be somewhere else answers the question this tile was
+        // asking. Leaving it on screen would be a "yes" about a threshold the
+        // character is walking away from.
+        closePassage(actor);
         // Remember the request; do not search yet. Pathfinding is the most
         // expensive thing a client can ask for, and resolving once per tick caps
         // what one socket can spend no matter how fast it clicks.
@@ -585,6 +592,10 @@ public final class MapRunner implements Runnable {
         ItemStack stack = actor.inventory.inBag(equip.itemId());
         if (stack == null) {
             return; // nothing of that name in the bag; nothing to say about it
+        }
+        if (!stack.def().slot().isWorn()) {
+            sendError(actor, stack.def().name() + " się nie nosi - to się niesie.");
+            return;
         }
         if (actor.level < stack.def().requiresLevel()) {
             sendError(actor, stack.def().name() + " wymaga poziomu "
@@ -1277,6 +1288,34 @@ public final class MapRunner implements Runnable {
         sendStorage(actor, npc);
     }
 
+    /**
+     * Sent straight out rather than queued, like the dialogue and the stall:
+     * the tile it is about is one this client was told of on arrival, so there
+     * is no later delta for it to overtake.
+     */
+    private void sendPassage(Actor actor, Door door) {
+        if (actor.client == null) {
+            return;
+        }
+        String frame = serialise(new ServerMessages.Passage(door.x(), door.y(), door.name(),
+                nameOf(door.consumesItem())));
+        if (frame != null) {
+            actor.client.send(frame);
+        }
+    }
+
+    /** The question goes when the character does - answering it from two tiles
+     * away would be answering about somewhere they are not. */
+    private void closePassage(Actor actor) {
+        if (actor == null || actor.client == null) {
+            return;
+        }
+        String frame = serialise(ServerMessages.Passage.closed());
+        if (frame != null) {
+            actor.client.send(frame);
+        }
+    }
+
     private void handleChat(Command.Chat message) {
         Actor actor = byClient.get(message.client());
         if (actor == null || message.text() == null) {
@@ -1338,8 +1377,7 @@ public final class MapRunner implements Runnable {
         if (door == null) {
             return;
         }
-        String no = door.refuse(actor.level, carries(actor, door.requiresItem()),
-                nameOf(door.requiresItem()));
+        String no = refuseToPass(actor, door);
         if (no != null) {
             // Stopped on the threshold rather than pushed back: being bounced a
             // tile by a rule nobody explained is worse than being told.
@@ -1347,7 +1385,96 @@ public final class MapRunner implements Runnable {
             sendError(actor, no);
             return;
         }
+        if (door.takesSomething()) {
+            // The one passage that asks first. Everything else in this game
+            // that costs something is a click on a price; this is a step, and a
+            // step that quietly burns what you are carrying is the kind of rule
+            // players learn by losing something.
+            actor.path.clear();
+            sendPassage(actor, door);
+            return;
+        }
         leaving.add(new Leaving(actor, door.toMap(), door.toX(), door.toY()));
+    }
+
+    /** The thresholds, asked in one place, because two places would drift. */
+    private String refuseToPass(Actor actor, Door door) {
+        return door.refuse(actor.level,
+                carries(actor, door.requiresItem()), carries(actor, door.consumesItem()),
+                nameOf(door.requiresItem()), nameOf(door.consumesItem()));
+    }
+
+    /**
+     * Yes to a passage that takes something.
+     *
+     * <p>Nothing was remembered about having asked, and nothing needs to be:
+     * every condition is asked again here, from the tile the character is
+     * actually standing on. A client that says yes without ever being asked has
+     * simply taken the step and agreed to it in one go, through exactly these
+     * checks.
+     */
+    private void handlePass(Command.Pass pass) {
+        Actor actor = byClient.get(pass.client());
+        if (actor == null) {
+            return;
+        }
+        if (alreadyLeaving(actor)) {
+            // A second yes arriving in the same tick as the first. The handover
+            // happens at the end of the tick, so until then the character is
+            // still standing on the door with a ticket in the bag - and the
+            // answer would be charged for all over again.
+            return;
+        }
+        Door door = map.doorAt(actor.x, actor.y);
+        if (door == null || !door.isAt(pass.x(), pass.y()) || !door.takesSomething()) {
+            // Moved off it, or answered about a different tile entirely.
+            sendError(actor, "Nie stoisz w tym przejściu.");
+            return;
+        }
+        String no = refuseToPass(actor, door);
+        if (no != null) {
+            sendError(actor, no);
+            return;
+        }
+        String copy = aCopyInTheBag(actor, door.consumesItem());
+        if (copy == null || !actor.inventory.removeFromBag(copy)) {
+            // Cannot happen: the refusal above has just seen one. Said out loud
+            // rather than transferring anyway, because passing for free through
+            // a passage that charges is the one failure nobody would report.
+            sendError(actor, "Potrzebujesz: " + nameOf(door.consumesItem()) + ".");
+            return;
+        }
+        actor.dirty = true;
+        actor.itemsDirty = true;
+        chat.add(new ChatDto(actor.id, actor.name,
+                "* zostawia w przejściu: " + nameOf(door.consumesItem()) + " *"));
+        sendBag(actor);
+        closePassage(actor);
+        leaving.add(new Leaving(actor, door.toMap(), door.toX(), door.toY()));
+    }
+
+    private boolean alreadyLeaving(Actor actor) {
+        for (Leaving move : leaving) {
+            if (move.actor() == actor) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Which copy of it is handed over. Any of them: an item is its definition,
+     * so two torches are the same torch.
+     *
+     * @return the instance id of one in the bag, or null when there is none
+     */
+    private String aCopyInTheBag(Actor actor, String itemId) {
+        for (ItemStack stack : actor.inventory.bag()) {
+            if (stack.def().id().equals(itemId)) {
+                return stack.id();
+            }
+        }
+        return null;
     }
 
     private boolean carries(Actor actor, String itemId) {

@@ -78,13 +78,22 @@ public class ItemDefLoader {
                 // accident would be exactly that.
                 atLeast(root, "value", 1, 0, where));
 
-        if (granted.equals(new Attributes(0, 0, 0)) && def.attack() == 0 && def.armor() == 0) {
+        boolean grantsNothing = granted.equals(new Attributes(0, 0, 0))
+                && def.attack() == 0 && def.armor() == 0;
+        if (slot.isWorn() && grantsNothing) {
             // Not pedantry: an item that grants nothing cannot be told apart from
             // one whose bonuses were misspelled, and the second is a bug that
             // would otherwise be discovered by a player wondering why nothing
             // changed when they put it on.
             throw new IllegalStateException(where + ": '" + id + "' grants nothing at all."
                     + " Check the spelling inside \"bonuses\".");
+        }
+        if (!slot.isWorn() && !grantsNothing) {
+            // The other way round, and the same mistake: bonuses on something
+            // nobody can put on are bonuses nobody will ever have, sitting in
+            // the file looking as though somebody will.
+            throw new IllegalStateException(where + ": '" + id + "' is carried rather than worn,"
+                    + " so its bonuses could never reach anybody.");
         }
         return def;
     }

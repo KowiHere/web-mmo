@@ -93,6 +93,23 @@ class EquipmentInTheWorldTest {
     }
 
     @Test
+    void somethingCarriedRatherThanWornStaysInTheBag() throws Exception {
+        // A torch is not a trinket with no bonuses - it is a thing you hold
+        // until it is spent. Putting it on would take up the one slot a real
+        // trinket belongs in and grant nothing for it.
+        FakeClient client = join("Ala", "probna-pochodnia");
+        String torch = idOf("probna-pochodnia");
+        int after = client.frames().size();
+
+        runner.submit(new Command.Equip(client, torch));
+
+        assertThat(client.awaitAfter(after, f -> f.contains("się nie nosi"))).isTrue();
+        assertThat(latest(client, "\"type\":\"bag\""))
+                .as("and it is still in the bag, not on anybody")
+                .contains("\"worn\":[]");
+    }
+
+    @Test
     void anItemGrantingAnAttributeRaisesEverythingThatAttributeFeeds() throws Exception {
         // The jerkin grants strength, and strength is health. Nothing stores
         // maximum health, so this is the whole chain working or not at all.
@@ -365,9 +382,16 @@ class EquipmentInTheWorldTest {
         }
 
         boolean await(Predicate<String> match) {
+            return awaitAfter(0, match);
+        }
+
+        /** The same, counting only frames that arrived after {@code from}. */
+        boolean awaitAfter(int from, Predicate<String> match) {
             long deadline = System.currentTimeMillis() + TIMEOUT_MS;
             while (System.currentTimeMillis() < deadline) {
-                if (frames().stream().anyMatch(match)) {
+                List<String> seen = frames();
+                if (seen.subList(Math.min(from, seen.size()), seen.size()).stream()
+                        .anyMatch(match)) {
                     return true;
                 }
                 sleep(20);

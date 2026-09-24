@@ -220,6 +220,144 @@ class WalkingThroughDoorsTest {
                 .contains("probny-miecz");
     }
 
+    // ---- the passage that burns a ticket --------------------------------
+
+    @Test
+    void aPassageThatTakesSomethingAsksBeforeItOpens() throws Exception {
+        FakeClient client = join(carrying("Ala", 7, 7, 1));
+
+        walkTo(client, 8, 7);
+
+        assertThat(client.await(f -> f.contains("\"type\":\"passage\"")
+                && f.contains("Próbny miecz"))).isTrue();
+        sleep(400);
+        assertThat(client.frames())
+                .as("and does not move anybody until they say so")
+                .noneMatch(f -> f.contains("\"id\":\"ogrod\""));
+        assertThat(latest(client, "\"type\":\"bag\"")).contains("probny-miecz");
+    }
+
+    @Test
+    void sayingYesBurnsItAndOpens() throws Exception {
+        FakeClient client = join(carrying("Ala", 7, 7, 1));
+        walkTo(client, 8, 7);
+        assertThat(client.await(f -> f.contains("\"type\":\"passage\""))).isTrue();
+
+        mapOf(client).submit(new Command.Pass(client, 8, 7));
+
+        assertThat(client.await(f -> f.contains("\"id\":\"ogrod\""))).isTrue();
+        assertThat(latest(client, "\"type\":\"bag\""))
+                .as("the ticket is gone, unlike the key one tile up")
+                .doesNotContain("probny-miecz");
+    }
+
+    @Test
+    void whatIsWrittenDownIsTheBagWithoutTheTicket() throws Exception {
+        // The snapshot is taken as the character leaves, so a ticket burned on
+        // the way out must not come back with the next login.
+        FakeClient client = join(carrying("Ala", 7, 7, 1));
+        walkTo(client, 8, 7);
+        assertThat(client.await(f -> f.contains("\"type\":\"passage\""))).isTrue();
+
+        mapOf(client).submit(new Command.Pass(client, 8, 7));
+        assertThat(client.await(f -> f.contains("\"id\":\"ogrod\""))).isTrue();
+
+        assertThat(saved.snapshots).anySatisfy(snapshot -> {
+            assertThat(snapshot.mapId()).isEqualTo("ogrod");
+            assertThat(snapshot.items()).isEmpty();
+        });
+    }
+
+    @Test
+    void sayingYesFromSomewhereElseDoesNothing() throws Exception {
+        // The server never remembered asking, so the answer has to carry the
+        // tile - and standing anywhere else makes it an answer about a passage
+        // this character is not in.
+        FakeClient client = join(carrying("Ala", 2, 2, 1));
+
+        mapOf(client).submit(new Command.Pass(client, 8, 7));
+        sleep(400);
+
+        assertThat(client.frames()).anyMatch(f -> f.contains("Nie stoisz w tym przejściu"));
+        assertThat(client.frames()).noneMatch(f -> f.contains("\"id\":\"ogrod\""));
+        assertThat(latest(client, "\"type\":\"bag\"")).contains("probny-miecz");
+    }
+
+    @Test
+    void anAnswerIsAboutTheTileItNames() throws Exception {
+        // Standing in one passage and answering about another. Both burn
+        // something, so without the tile in the answer this would pay the
+        // wrong toll and open the wrong door.
+        FakeClient client = join(new SavedCharacter(PlayerNames.key("Ala"), "Ala", "dom", 7, 3,
+                Direction.DOWN, 1, 0L, -1, 0L, Attributes.FRESH, 0,
+                List.of(new StoredItem("bilet", "probny-miecz", null),
+                        new StoredItem("kaftan", "probny-kaftan", null)),
+                "wojownik", 0, List.of(), List.of(), Deposit.EMPTY, Deposit.EMPTY));
+        walkTo(client, 8, 3);
+        assertThat(client.await(f -> f.contains("\"type\":\"passage\"")
+                && f.contains("Bród"))).isTrue();
+        int after = client.frames().size();
+
+        mapOf(client).submit(new Command.Pass(client, 8, 7));
+
+        assertThat(client.awaitAfter(after, f -> f.contains("Nie stoisz w tym przejściu")))
+                .isTrue();
+        assertThat(client.frames()).noneMatch(f -> f.contains("\"id\":\"ogrod\""));
+        assertThat(carriedIn(latest(client, "\"type\":\"bag\"")))
+                .as("and nothing was paid for the answer")
+                .containsExactlyInAnyOrder("probny-miecz", "probny-kaftan");
+    }
+
+    @Test
+    void sayingYesWithoutTheTicketDoesNothing() throws Exception {
+        FakeClient client = join("Ala", 7, 7, 1);
+        walkTo(client, 8, 7);
+        sleep(600);
+
+        mapOf(client).submit(new Command.Pass(client, 8, 7));
+        sleep(400);
+
+        assertThat(client.frames()).anyMatch(f -> f.contains("Potrzebujesz"));
+        assertThat(client.frames()).noneMatch(f -> f.contains("\"id\":\"ogrod\""));
+    }
+
+    @Test
+    void oneCrossingCostsOneTicket() throws Exception {
+        // Two yeses in a row, from a bag with two tickets in it. The second
+        // arrives while the character is already being handed over, which is
+        // exactly when a rule that trusted the question would charge twice.
+        FakeClient client = join(new SavedCharacter(PlayerNames.key("Ala"), "Ala", "dom", 7, 7,
+                Direction.DOWN, 1, 0L, -1, 0L, Attributes.FRESH, 0,
+                List.of(new StoredItem("bilet-1", "probny-miecz", null),
+                        new StoredItem("bilet-2", "probny-miecz", null)),
+                "wojownik", 0, List.of(), List.of(), Deposit.EMPTY, Deposit.EMPTY));
+        walkTo(client, 8, 7);
+        assertThat(client.await(f -> f.contains("\"type\":\"passage\""))).isTrue();
+
+        mapOf(client).submit(new Command.Pass(client, 8, 7));
+        mapOf(client).submit(new Command.Pass(client, 8, 7));
+
+        assertThat(client.await(f -> f.contains("\"id\":\"ogrod\""))).isTrue();
+        sleep(400);
+        assertThat(carriedIn(latest(client, "\"type\":\"bag\"")))
+                .as("one crossing, one ticket - the other is still in the bag")
+                .containsExactly("probny-miecz");
+    }
+
+    @Test
+    void walkingOffTheTileWithdrawsTheQuestion() throws Exception {
+        FakeClient client = join(carrying("Ala", 7, 7, 1));
+        walkTo(client, 8, 7);
+        assertThat(client.await(f -> f.contains("\"type\":\"passage\"")
+                && f.contains("Próbny miecz"))).isTrue();
+        int after = client.frames().size();
+
+        walkTo(client, 4, 4);
+
+        assertThat(client.awaitAfter(after, f -> f.contains("\"type\":\"passage\"")
+                && !f.contains("takes"))).isTrue();
+    }
+
     // ---- dying far from home -------------------------------------------
 
     @Test
@@ -240,6 +378,14 @@ class WalkingThroughDoorsTest {
     }
 
     // ------------------------------------------------------------------
+
+    private static List<String> carriedIn(String bagFrame) throws Exception {
+        List<String> ids = new ArrayList<>();
+        for (JsonNode item : JSON.readTree(bagFrame).path("carried")) {
+            ids.add(item.path("defId").asText());
+        }
+        return ids;
+    }
 
     private void walkTo(FakeClient client, int x, int y) {
         mapOf(client).submit(new Command.MoveTo(client, x, y));
@@ -372,9 +518,21 @@ class WalkingThroughDoorsTest {
         }
 
         boolean await(Predicate<String> match) {
+            return awaitAfter(0, match);
+        }
+
+        /**
+         * The same, counting only frames that arrived after {@code from}. A
+         * plain await scans the whole history, so a wait for "a passage frame"
+         * matches the one that opened the question when what is wanted is the
+         * one that withdrew it.
+         */
+        boolean awaitAfter(int from, Predicate<String> match) {
             long deadline = System.currentTimeMillis() + TIMEOUT_MS;
             while (System.currentTimeMillis() < deadline) {
-                if (frames().stream().anyMatch(match)) {
+                List<String> seen = frames();
+                if (seen.subList(Math.min(from, seen.size()), seen.size()).stream()
+                        .anyMatch(match)) {
                     return true;
                 }
                 sleep(20);

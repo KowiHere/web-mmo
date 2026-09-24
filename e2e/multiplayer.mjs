@@ -1241,7 +1241,10 @@ try {
     await mendIfHurt(ala);
 
     const homeMap = await ala.evaluate(() => state.map.id);
-    const doorHere = await ala.evaluate(() => (state.map.doors || [])[0] || null);
+    // The free one. Picking doors[0] made the order inside a JSON file a rule
+    // nobody had written down, and the wood has two of them now.
+    const doorHere = await ala.evaluate(() =>
+        (state.map.doors || []).find((d) => !d.takes) || null);
 
     if (!doorHere) {
         fail('the starting map has no way out of it');
@@ -1265,7 +1268,23 @@ try {
         })();
 
         if (!crossed) {
-            fail('walking onto the door never led anywhere');
+            // Said out loud, because "never led anywhere" on its own has twice
+            // now cost a run without saying whether the character was stuck in
+            // a fight, standing on the tile, or somewhere else entirely.
+            const stuck = await ala.evaluate((d) => {
+                const self = state.actors.get(state.selfId);
+                return {
+                    at: self ? `${self.x},${self.y}` : 'nowhere',
+                    want: `${d.x},${d.y}`,
+                    inFight: !!(self && self.inFight),
+                    hp: state.you.hp,
+                    wakesAt: state.you.wakesAt,
+                    map: state.map.id,
+                    lastLines: [...document.querySelectorAll('#chat-log li')]
+                        .slice(-4).map((li) => li.textContent),
+                };
+            }, doorHere);
+            fail(`walking onto the door never led anywhere: ${JSON.stringify(stuck)}`);
         } else {
             const wood = await ala.evaluate(() => ({
                 id: state.map.id,
@@ -1313,8 +1332,124 @@ try {
                 ? ok('and commands sent afterwards reach the map it is actually on')
                 : fail('the character could not move on the new map');
 
+            // ---- the passage that costs something --------------------------
+            const gate = await ala.evaluate(() =>
+                (state.map.doors || []).find((d) => d.takes) || null);
+            if (!gate) {
+                fail('the wood has no passage that costs anything');
+            } else {
+                ok(`the wood has a passage that burns something: ${gate.name}`
+                    + ` — zabierze: ${gate.takes}`);
+
+                const level = await ala.evaluate(() => state.you.level);
+                const torch = await ala.evaluate((takes) =>
+                    (state.bag.carried || []).find((i) => i.name === takes) || null, gate.takes);
+
+                // Walking across the wood means being attacked on the way, so
+                // this keeps asking rather than assuming one request arrives.
+                const reachedIt = await (async () => {
+                    const until = Date.now() + 120_000;
+                    while (Date.now() < until) {
+                        await escapeAnyFight(ala);
+                        await mendIfHurt(ala, 0.5);
+                        await ala.evaluate((d) => requestMove(d.x, d.y), gate);
+                        const answered = await ala
+                            .waitForFunction((d) => {
+                                if (state.passage) return 'asked';
+                                const self = state.actors.get(state.selfId);
+                                const onIt = self && self.x === d.x && self.y === d.y;
+                                const told = [...document.querySelectorAll('#chat-log li')]
+                                    .map((li) => li.textContent)
+                                    .some((t) => /otwiera si\u0119 od|Potrzebujesz/.test(t));
+                                return told ? 'refused' : (onIt ? 'standing' : null);
+                            }, gate, { timeout: 20_000 })
+                            .then((handle) => handle.jsonValue()).catch(() => null);
+                        if (answered === 'asked' || answered === 'refused') return answered;
+                    }
+                    return null;
+                })();
+                const asked = reachedIt === 'asked';
+
+                if (!asked) {
+                    // Under the threshold, which is the usual case for a
+                    // character this young: the server refuses before it asks,
+                    // and the refusal is the thing being checked.
+                    const refused = await ala.evaluate(() =>
+                        [...document.querySelectorAll('#chat-log li')]
+                            .map((li) => li.textContent)
+                            .some((t) => /otwiera si\u0119 od/.test(t)));
+                    await ala.screenshot({ path: 'przejscie.png' });
+                    refused && level < 6
+                        ? ok(`a level ${level} character is turned away from it, and told why`)
+                        : fail(`the passage neither asked nor explained itself (level ${level},`
+                            + ` torch: ${!!torch}, outcome: ${reachedIt})`);
+
+                    // The window itself, with the real button and the real
+                    // socket. A young character cannot reach the far side of
+                    // this passage, but the yes it sends is the same yes - and
+                    // the server answering "you are not standing in it" is the
+                    // check that the question is never taken on trust.
+                    await ala.evaluate((d) => applyPassage({
+                        type: 'passage', x: d.x, y: d.y, name: d.name, takes: d.takes,
+                    }), gate);
+                    const shown = await ala.evaluate(() =>
+                        !document.querySelector('#passage').hidden
+                        && document.querySelector('#passage-text').textContent);
+                    shown && shown.includes(gate.takes)
+                        ? ok(`the question names what it costs: "${shown}"`)
+                        : fail('the passage window said nothing about the cost');
+                    await ala.screenshot({ path: 'przejscie.png' });
+
+                    await ala.click('#passage-go');
+                    const answered = await ala
+                        .waitForFunction(() => [...document.querySelectorAll('#chat-log li')]
+                            .map((li) => li.textContent)
+                            .some((t) => /Nie stoisz w tym przej\u015bciu|otwiera si\u0119 od/
+                                .test(t)), null, { timeout: 10_000 })
+                        .then(() => true).catch(() => false);
+                    answered
+                        ? ok('and a yes sent from the wrong tile is refused by the server')
+                        : fail('a yes from the wrong tile was not answered at all');
+                    await ala.evaluate(() => applyPassage({}));
+                } else {
+                    ok('stepping into it asks first rather than burning anything');
+                    const stillCarried = await ala.evaluate((takes) =>
+                        (state.bag.carried || []).some((i) => i.name === takes), gate.takes);
+                    stillCarried || !torch
+                        ? ok('and nothing has been spent while the question is open')
+                        : fail('the ticket went before the answer did');
+                    await ala.screenshot({ path: 'przejscie.png' });
+
+                    if (torch) {
+                        await ala.click('#passage-go');
+                        const inside = await ala
+                            .waitForFunction((was) => state.map.id !== was, 'las',
+                                { timeout: 20_000 })
+                            .then(() => true).catch(() => false);
+                        const left = await ala.evaluate((takes) =>
+                            (state.bag.carried || []).some((i) => i.name === takes), gate.takes);
+                        inside && !left
+                            ? ok(`saying yes opened it and burned the ${gate.takes}`)
+                            : fail(`after saying yes: inside=${inside}, ticket left=${left}`);
+                        // Back out the way we came in, so the rest of the run
+                        // starts where it expects to.
+                        const out = await ala.evaluate(() =>
+                            (state.map.doors || []).find((d) => !d.takes) || null);
+                        if (out) {
+                            await ala.evaluate((d) => requestMove(d.x, d.y), out);
+                            await ala.waitForFunction(() => state.map.id === 'las',
+                                null, { timeout: 20_000 }).catch(() => {});
+                        }
+                    } else {
+                        await ala.click('#passage-stay');
+                        ok('and saying no leaves everything where it was');
+                    }
+                }
+            }
+
             // And home again through the other door.
-            const doorBack = await ala.evaluate(() => (state.map.doors || [])[0] || null);
+            const doorBack = await ala.evaluate(() =>
+                (state.map.doors || []).find((d) => !d.takes) || null);
             const home = await (async () => {
                 const until = Date.now() + 180_000;
                 while (Date.now() < until) {

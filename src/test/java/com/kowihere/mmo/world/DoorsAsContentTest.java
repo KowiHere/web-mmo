@@ -106,11 +106,56 @@ class DoorsAsContentTest {
     }
 
     @Test
-    void aDoorSaysWhyItWillNotOpen() {
-        Door gated = new Door(1, 1, "gdzies", 2, 2, "Gdzieś", 5, 0, null);
+    void refusesADoorTakingAnItemThatIsNotAnItem() {
+        // The twin of the key above, and the same failure: refused for ever,
+        // with nothing at runtime saying why.
+        assertThatThrownBy(() -> maps("classpath:bad-maps-door-ticket/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("bilet-ktorego-nie-ma");
+    }
 
-        assertThat(gated.refuse(4, true, null)).contains("5");
-        assertThat(gated.refuse(5, true, null))
+    @Test
+    void refusesADoorThatBothKeepsAndBurnsTheSameThing() {
+        // It would take the ticket on the way through and demand it back on the
+        // way in, so it would open exactly once and then refuse its own owner.
+        assertThatThrownBy(() -> maps("classpath:bad-maps-door-both/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("keeps and consumes");
+    }
+
+    @Test
+    void aKeyAndATicketAreTheSameDoorUntilYouPassIt() {
+        MapDef house = maps("classpath:test-maps-doors/*.json").loadAll().get("dom");
+        Door key = house.doorAt(8, 6);
+        Door ticket = house.doorAt(8, 7);
+
+        assertThat(key.refuse(1, false, true, "Miecz", null)).contains("Miecz");
+        assertThat(ticket.refuse(1, true, false, null, "Miecz"))
+                .as("both refuse the same way when the thing is missing")
+                .contains("Miecz");
+        assertThat(key.takesSomething()).isFalse();
+        assertThat(ticket.takesSomething())
+                .as("and only one of them costs anything to walk through")
+                .isTrue();
+    }
+
+    @Test
+    void theShippedCaveIsPaidForWithATorch() {
+        Door cave = new MapDefLoader().loadAll().get("las").doorAt(4, 12);
+
+        assertThat(cave.toMap()).isEqualTo("jaskinia");
+        assertThat(cave.consumesItem()).isEqualTo("pochodnia");
+        assertThat(cave.fromLevel())
+                .as("and is the first shipped door to use a threshold at all")
+                .isEqualTo(6);
+    }
+
+    @Test
+    void aDoorSaysWhyItWillNotOpen() {
+        Door gated = new Door(1, 1, "gdzies", 2, 2, "Gdzieś", 5, 0, null, null);
+
+        assertThat(gated.refuse(4, true, true, null, null)).contains("5");
+        assertThat(gated.refuse(5, true, true, null, null))
                 .as("and says nothing at all when it will")
                 .isNull();
     }

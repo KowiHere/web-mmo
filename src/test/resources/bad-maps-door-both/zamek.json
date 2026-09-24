@@ -1,0 +1,5 @@
+{ "id": "zamek", "name": "Zamek", "starting": true, "tileSize": 32, "spawn": [1, 1],
+  "collision": ["######","#....#","#....#","#....#","######"],
+  "doors": [ { "x": 4, "y": 3, "to": "zamek", "toX": 2, "toY": 1,
+               "requiresItem": "probny-miecz", "consumesItem": "probny-miecz" } ],
+  "spawns": [], "roaming": [] }

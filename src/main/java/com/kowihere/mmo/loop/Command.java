@@ -108,6 +108,15 @@ public sealed interface Command {
             implements Command {
     }
 
+    /**
+     * Yes to a passage that takes something to open.
+     *
+     * <p>Carries the tile it is answering about, so that an answer which
+     * arrives after the character has walked on cannot open a different door.
+     */
+    record Pass(Client client, int x, int y) implements Command {
+    }
+
     /** Buys the next tab of one chest, at whatever the storekeeper charges. */
     record BuyTab(Client client, boolean account) implements Command {
     }

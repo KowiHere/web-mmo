@@ -5,7 +5,9 @@
     { "x": 8, "y": 2, "to": "ogrod", "toX": 2, "toY": 6, "name": "Ogród" },
     { "x": 8, "y": 4, "to": "ogrod", "toX": 3, "toY": 6, "name": "Loch", "fromLevel": 5 },
     { "x": 8, "y": 5, "to": "ogrod", "toX": 4, "toY": 6, "name": "Żłobek", "untilLevel": 2 },
-    { "x": 8, "y": 6, "to": "ogrod", "toX": 5, "toY": 6, "name": "Skarbiec", "requiresItem": "probny-miecz" }
+    { "x": 8, "y": 6, "to": "ogrod", "toX": 5, "toY": 6, "name": "Skarbiec", "requiresItem": "probny-miecz" },
+    { "x": 8, "y": 7, "to": "ogrod", "toX": 6, "toY": 6, "name": "Przeprawa", "consumesItem": "probny-miecz" },
+    { "x": 8, "y": 3, "to": "ogrod", "toX": 7, "toY": 6, "name": "Br\u00f3d", "consumesItem": "probny-kaftan" }
   ],
   "spawns": [], "roaming": []
 }

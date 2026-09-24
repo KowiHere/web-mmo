@@ -77,6 +77,7 @@ const state = {
     /** The stall that is open, or null. */
     shop: null,
     storage: null,
+    passage: null,
     // Which tab of each chest is being looked at. The client's own business:
     // the server sends every tab at once and has no idea one is on top.
     openTab: { character: 0, account: 0 },
@@ -120,6 +121,10 @@ const skillbarEl = document.getElementById('skillbar');
 const purseEl = document.getElementById('purse');
 const knockoutEl = document.getElementById('knockout');
 const knockoutCountEl = document.getElementById('knockout-count');
+const passageEl = document.getElementById('passage');
+const passageTextEl = document.getElementById('passage-text');
+const passageGoEl = document.getElementById('passage-go');
+const passageStayEl = document.getElementById('passage-stay');
 const storageEl = document.getElementById('storage');
 const storageWhoEl = document.getElementById('storage-who');
 const storageChestsEl = document.getElementById('storage-chests');
@@ -171,6 +176,7 @@ function connect(characterKey) {
         else if (msg.type === 'purse') applyPurse(msg);
         else if (msg.type === 'shop') applyShop(msg);
         else if (msg.type === 'storage') applyStorage(msg);
+        else if (msg.type === 'passage') applyPassage(msg);
         else if (msg.type === 'error') logSystem(msg.message);
     };
 
@@ -216,6 +222,7 @@ function applyInit(msg) {
     applyDialogue({});
     applyShop({});
     applyStorage({});
+    applyPassage({});
 
     for (const dto of msg.actors || []) upsertActor(dto);
 
@@ -402,6 +409,35 @@ function renderShop() {
         shopSellEl.append(row);
     }
     shopEl.hidden = false;
+}
+
+/**
+ * A passage asking before it opens. No {@code takes} means the question has
+ * been withdrawn - which happens by walking off the tile as often as by saying
+ * no to it.
+ */
+function applyPassage(msg) {
+    state.passage = msg.takes ? msg : null;
+    renderPassage();
+}
+
+function renderPassage() {
+    if (!state.passage) {
+        passageEl.hidden = true;
+        return;
+    }
+    passageTextEl.textContent =
+        `${state.passage.name} — to przejście zabierze: ${state.passage.takes}.`;
+    passageEl.hidden = false;
+    passageGoEl.focus();
+}
+
+function confirmPassage() {
+    if (!state.passage) return;
+    send({ type: 'pass', x: state.passage.x, y: state.passage.y });
+    // Not closed here: the server answers with the map on the other side, or
+    // with a reason. Closing on the click would be the client deciding it
+    // worked.
 }
 
 /** No chests means the window has closed, the same as an empty stall. */
@@ -1093,15 +1129,19 @@ function drawDoors(ox, oy) {
         const sx = Math.round(door.x * TILE - ox);
         const sy = Math.round(door.y * TILE - oy);
 
-        ctx.fillStyle = '#2c2119';
+        // A door that burns something is drawn in its own colour, so that the
+        // one passage in the game which costs anything never looks like the
+        // free ones next to it.
+        const burns = !!door.takes;
+        ctx.fillStyle = burns ? '#2a1a16' : '#2c2119';
         ctx.fillRect(sx + 6, sy + 3, TILE - 12, TILE - 5);
-        ctx.strokeStyle = '#c8a24a';
+        ctx.strokeStyle = burns ? '#d98a53' : '#c8a24a';
         ctx.lineWidth = 2;
         ctx.strokeRect(sx + 6, sy + 3, TILE - 12, TILE - 5);
         // A handle, so it reads as a door rather than as a crate.
         ctx.beginPath();
         ctx.arc(sx + TILE - 11, sy + TILE / 2 + 1, 1.8, 0, Math.PI * 2);
-        ctx.fillStyle = '#e8c87a';
+        ctx.fillStyle = burns ? '#f0b07a' : '#e8c87a';
         ctx.fill();
     }
 }
@@ -1145,6 +1185,7 @@ function drawHover(ox, oy) {
     const door = doorAt(x, y);
     ctx.lineWidth = 2;
     ctx.strokeStyle = creatureAt(x, y) ? 'rgba(240,192,122,.9)'
+            : door && door.takes ? 'rgba(217,138,83,.95)'
             : door ? 'rgba(232,200,122,.95)'
             : isBlocked(x, y) ? 'rgba(224,108,117,.75)' : 'rgba(110,168,254,.75)';
     ctx.strokeRect(sx + 1, sy + 1, TILE - 2, TILE - 2);
@@ -1153,12 +1194,13 @@ function drawHover(ox, oy) {
         // Where it goes, over the tile. Whether you may go there is not said -
         // the server answers that when you step on it, and saying it twice is
         // how the two answers start disagreeing.
+        const label = door.takes ? `${door.name} — zabierze: ${door.takes}` : door.name;
         ctx.font = '11px system-ui, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillStyle = '#0f1116';
-        ctx.fillText(door.name, sx + TILE / 2 + 1, sy - 3);
-        ctx.fillStyle = '#e8c87a';
-        ctx.fillText(door.name, sx + TILE / 2, sy - 4);
+        ctx.fillText(label, sx + TILE / 2 + 1, sy - 3);
+        ctx.fillStyle = door.takes ? '#f0b07a' : '#e8c87a';
+        ctx.fillText(label, sx + TILE / 2, sy - 4);
     }
 }
 
@@ -1472,6 +1514,22 @@ document.addEventListener('keydown', (event) => {
         return;
     }
 
+    // A passage waiting for an answer takes Enter and Escape first. It is the
+    // only question in the game that blocks a step, so answering it beats
+    // opening the chat box.
+    if (state.passage) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            confirmPassage();
+            return;
+        }
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            applyPassage({});
+            return;
+        }
+    }
+
     if (event.key === 'Enter') {
         event.preventDefault();
         chatInput.focus();
@@ -1497,6 +1555,11 @@ document.addEventListener('keydown', (event) => {
         stepInDirection(direction, performance.now());
     }
 });
+
+passageGoEl.addEventListener('click', confirmPassage);
+// Saying no is entirely the client's business: the server never recorded that
+// it asked, so there is nothing to tell it.
+passageStayEl.addEventListener('click', () => applyPassage({}));
 
 panelToggle.addEventListener('click', () => togglePanel());
 

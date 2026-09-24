@@ -1,0 +1,7 @@
+{
+  "id": "amulet-w-kieszeni",
+  "name": "Amulet w kieszeni",
+  "slot": "NONE",
+  "value": 10,
+  "bonuses": { "strength": 5 }
+}

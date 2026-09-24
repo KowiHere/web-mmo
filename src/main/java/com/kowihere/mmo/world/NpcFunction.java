@@ -44,8 +44,12 @@ public enum NpcFunction {
      */
     SHOP(true, null),
 
-    /** Moves a character to another map. */
-    TELEPORT(false, "jest tylko jedna mapa, więc nie ma dokąd przenosić"),
+    /**
+     * Moves a character to another map. A conversation by another name, which
+     * is why it waits: passages are steps, not talks, and the talking at them
+     * is a milestone of its own.
+     */
+    TELEPORT(false, "NPC, który przenosi, to rozmowa przy przejściu - a te przyjdą osobno"),
 
     /** Gives and settles tasks. */
     QUEST(false, "nie ma gdzie zapisać postępu zadania");
