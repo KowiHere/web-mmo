@@ -188,6 +188,16 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
+        // One character from an account in the world at a time. Said here, at
+        // the door, because it is the last moment at which refusing costs
+        // nothing: a step later there would be two characters to choose
+        // between, and one of them would have to be thrown out of a world it
+        // had already joined.
+        if (!world.claim(accountId, client)) {
+            client.disconnect("Inna postać z tego konta jest już w grze.");
+            return;
+        }
+
         SavedCharacter character = characters.find(characterKey).orElse(null);
         if (character == null) {
             // Deleted between the handshake and the first message.

@@ -57,6 +57,23 @@ public class WorldService {
      */
     private final Map<Client, MapRunner> whereTheyAre = new ConcurrentHashMap<>();
 
+    /**
+     * Which socket each account is playing on, and which account each socket
+     * belongs to.
+     *
+     * <p>One character from an account may be in the world at a time. That is a
+     * rule of the game, but it is also what keeps the account's own storage
+     * honest: there is then exactly one live copy of it, loaded with the
+     * character that holds it, so nothing shared is ever written from two map
+     * threads at once. The alternative is a lock across accounts, and the whole
+     * design of this world is that there is no such lock.
+     *
+     * <p>Two maps rather than one so that a closing socket can give back its
+     * claim without the caller having to remember whose it was.
+     */
+    private final Map<Long, Client> accountsInTheWorld = new ConcurrentHashMap<>();
+    private final Map<Client, Long> whoseSocket = new ConcurrentHashMap<>();
+
     private String startingMapId;
 
     public WorldService(MapDefLoader loader, MobDefLoader mobLoader, ItemDefLoader itemLoader,
@@ -195,13 +212,44 @@ public class WorldService {
         destination.submit(new Command.Join(client, accountId, character, 0L));
     }
 
+    /**
+     * Reserves an account for one socket.
+     *
+     * <p>Atomic, because two sockets of the same account can arrive on two
+     * container threads within the same millisecond, and "check then put" would
+     * let both of them through.
+     *
+     * @return true when this socket now holds the account; false when somebody
+     *         else already does
+     */
+    public boolean claim(long accountId, Client client) {
+        Client holder = accountsInTheWorld.putIfAbsent(accountId, client);
+        if (holder != null && holder != client) {
+            return false;
+        }
+        whoseSocket.put(client, accountId);
+        return true;
+    }
+
     /** Remembers which map this socket's commands should go to from now on. */
     public void nowOn(Client client, MapRunner map) {
         whereTheyAre.put(client, map);
     }
 
+    /**
+     * Forgets a socket entirely: where it was, and what it was holding.
+     *
+     * <p>A socket turned away because its account was busy has nothing to give
+     * back: a refused claim records nothing, so closing it - which the handler
+     * does immediately - cannot take the account away from whoever is actually
+     * playing it.
+     */
     public void forget(Client client) {
         whereTheyAre.remove(client);
+        Long accountId = whoseSocket.remove(client);
+        if (accountId != null) {
+            accountsInTheWorld.remove(accountId);
+        }
     }
 
     /**
