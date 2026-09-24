@@ -1,0 +1,36 @@
+{
+  "id": "kupiec",
+  "name": "Kupiec Bartosz",
+  "kind": "PERSON",
+  "functions": ["DIALOGUE", "SHOP"],
+  "shop": {
+    "currency": "zloto",
+    "sells": ["zardzewialy-miecz", "skorznia", "kostur-ucznia", "pierscien-sily"]
+  },
+  "dialogue": {
+    "start": "powitanie",
+    "nodes": {
+      "powitanie": {
+        "text": "Kupuję, sprzedaję, nie pytam skąd. Rozkładać?",
+        "options": [
+          { "text": "Rozkładaj.", "action": "OPEN_SHOP", "goto": "stragan" },
+          { "text": "A co z kłami, które noszę?", "goto": "kly" },
+          { "text": "Innym razem.", "action": "END" }
+        ]
+      },
+      "stragan": {
+        "text": "Patrz do woli. Odkupuję za czterdzieści od sta — za resztę płaci się za to, że ktoś to tu przyniósł.",
+        "options": [
+          { "text": "Rozumiem.", "goto": "powitanie" },
+          { "text": "Bywaj.", "action": "END" }
+        ]
+      },
+      "kly": {
+        "text": "Kły? Na złoto ci ich nie przeliczę. Idź do skrzyni traperskiej pod lasem — tam biorą tylko kły i tylko za kły dają.",
+        "options": [
+          { "text": "Dzięki.", "goto": "powitanie" }
+        ]
+      }
+    }
+  }
+}

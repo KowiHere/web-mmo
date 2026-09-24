@@ -141,10 +141,11 @@ Folding them together produces a `SHOPKEEPER` who cannot also give a quest, and
 then a `SHOPKEEPER_WITH_QUEST`. A noticeboard talks; a blacksmith sells, repairs
 and talks; neither is a different kind of thing from the other because of it.
 
-`DIALOGUE` and `HEALER` work today. Every other function says so and **stops the
-server** when content names it, exactly as an unspawnable mob tier does —
-`SHOP` because this world has no currency of any kind, `TELEPORT` because there
-is one map, `QUEST` because there is nowhere to keep a progress. Content that
+`DIALOGUE`, `HEALER` and `SHOP` work today. Every other function says so and
+**stops the server** when content names it, exactly as an unspawnable mob tier
+does — `TELEPORT` because there is one map, `STORAGE` because there is nowhere
+to put a second bag, `QUEST` because there is nowhere to keep a progress.
+Content that
 names one would otherwise load an NPC who opens, offers nothing, and looks to
 every player like a bug in the client.
 
@@ -161,12 +162,36 @@ answer; splitting that into two clicks would be an interface chore pretending to
 be a rule. `END` is the one action that is itself somewhere to go, so it is the
 only one allowed to have no `goto` beside it.
 
-The one NPC the game ships with is a herbalist who **talks and heals**, which is
-the design being tested rather than a shortage of imagination: a function is a
-list, so one person does two things without ever becoming a kind of thing that
-does both. Every deed is checked against that list in both directions — a healer
-nobody can ask to heal, and healing offered by somebody who is not listed as a
-healer, are each refused at startup.
+The NPCs the game ships with are the design being tested rather than a shortage
+of imagination. A herbalist **talks and heals** — a function is a list, so one
+person does two things without ever becoming a kind of thing that does both. A
+trapper's chest **talks and trades** — kind and function are independent, so a
+*thing* can keep a shop. Every deed is checked against the function list in both
+directions, and that check is one entry in a map per function rather than any
+new logic: a healer nobody can ask to heal, and a stall opened by somebody who
+is not listed as a shopkeeper, are each refused at startup.
+
+### Money is plural
+
+There is no column called `gold`, and there never will be. Currencies are a
+registry in `resources/currencies/`, and what a character holds is rows in
+`character_currency` — one per kind of money. The starter map ships two: gold,
+which boars and wolves carry, and wolf fangs, which only wolves drop and only
+the trapper's chest accepts. **A purse full of gold buys nothing from the
+chest**, and that is the single test this whole shape exists for.
+
+A price is a property of an item, not of a shop: a trader says which goods and
+which currency, and `value` on the item says the rest. Buying costs `value`;
+selling returns a fraction of it. That fraction is the only place money leaves
+this world — at the full price, buying and selling the same thing is a free loop
+and loot is worth nothing.
+
+A trader buys back **what they sell and nothing else**, which is why the chest
+does not pay fangs for swords. A stall opens from a dialogue option, so it
+inherits every door the conversation has — the range, the refusal in a fight,
+and the ending the moment you walk away. There was a second range check on
+buying; it never once fired, and a guard that cannot run is worse than no guard,
+because it reads like the rule lives in two places.
 
 ### Fighting
 
@@ -529,6 +554,8 @@ Client to server:
 | `spend`  | attribute      | spend one earned point                 |
 | `use`    | skillId        | use a skill in the coming round        |
 | `learn`  | skillId        | put one earned point into a skill      |
+| `buy`    | itemId         | buy that from the trader you are talking to |
+| `sell`   | itemId         | sell that particular copy of it        |
 | `talk`   | npcId          | start talking to somebody next to you  |
 | `choose` | option         | answer, by the index you were offered  |
 | `endTalk`| —              | close the conversation                 |
@@ -539,7 +566,9 @@ Server to client: `init` (the whole world once), `delta` (what changed), `you`
 it is wearing and carrying, likewise), `skills` (what it has learned, likewise),
 `dialogue` (what somebody is saying to you, likewise — one with no text is the
 conversation closing, which happens by walking away as often as by saying
-goodbye), `error`.
+goodbye), `purse` (what there is to spend, as a list rather than a field per
+currency), `shop` (a trader's shelf with prices, one with no goods being the
+stall closing), `error`.
 
 Notably **not** in the `skills` frame: whether each skill can be afforded right
 now. That changes every round while the frame is sent a few times an hour, so it
@@ -589,18 +618,30 @@ second needs a new shape of bonus on an item.
 wait before the character can be played again, and how long that is has not been
 decided — so the minute of halved attack and armour stands in for it.
 
-**There is no money.** Not one currency and not several. When trade arrives it
-will be a registry of currencies in content and a table of character-by-currency,
-never a `gold` column: NPCs dealing in different currencies are planned, and a
-single column would have to be undone the day the second one appears.
+**Nothing is trained, stored or taught for money yet.** The trainer is next, and
+it is a small step now that money exists — the hard half was never the price, it
+was that there is more than one kind of it.
+
+**Prices are hand-written and barely balanced.** An item's worth is one number
+in its own file, which is the right shape; whether the numbers are any good has
+had exactly one pass.
 
 Also missing: more than one map, and instances with parties. No password reset
 or email confirmation either — both need to send mail, which means a service to
 run.
 
-Roughly in order: potions, then currency and trade, then the wait after dying,
-then the remaining NPC functions one by one — storage next. Instances and
-parties last, which is what heroes and colossi are waiting on.
+**Three things are wrong the day a second map exists**, and are written down
+here so they are not rediscovered as a mystery. Every command goes to
+`world.defaultMap()` regardless of where the character stands; `Detach` goes
+there too, so a character on another map would be saved by a map that has never
+heard of them; and `defaultMapId` is whichever map an unordered map iterated
+first, which is the same mistake `Content.defaultClass()` already names and
+avoids. All three are invisible with one map and are the first work of the
+second-map milestone.
+
+Roughly in order: the trainer, then potions, then the second map with the three
+faults above, then the wait after dying, then storage. Instances and parties
+last, which is what heroes and colossi are waiting on.
 
 ## Layout
 

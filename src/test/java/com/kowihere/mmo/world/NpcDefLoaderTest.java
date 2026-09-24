@@ -76,12 +76,12 @@ class NpcDefLoaderTest {
 
     @Test
     void refusesAFunctionNothingCanHonourYet() {
-        // A shopkeeper in a world with no money would open, offer nothing, and
+        // A ferryman in a world with one map would open, offer nothing, and
         // look to every player like a bug in the client rather than content
         // that was written too early.
         assertThatThrownBy(() -> new NpcDefLoader("classpath:bad-npcs-function/*.json").loadAll())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("waluty");
+                .hasMessageContaining("jedna mapa");
     }
 
     @Test

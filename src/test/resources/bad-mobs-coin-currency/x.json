@@ -1,0 +1,3 @@
+{ "id": "skapiec", "name": "Skapiec", "tier": "MOB", "level": 1, "hp": 10, "attack": 1, "armor": 0,
+  "stepTicks": 8, "aggroRadius": 0, "leashRadius": 2, "respawnSeconds": 1,
+  "coins": [ { "currency": "muszelki", "min": 1, "max": 2 } ] }

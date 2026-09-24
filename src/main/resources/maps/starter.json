@@ -34,7 +34,9 @@
     { "mob": "wilk", "x": 13, "y": 2 }
   ],
   "npcs": [
-    { "npc": "zielarka", "x": 12, "y": 16, "dir": "DOWN" }
+    { "npc": "zielarka", "x": 12, "y": 16, "dir": "DOWN" },
+    { "npc": "kupiec", "x": 17, "y": 17, "dir": "DOWN" },
+    { "npc": "skrzynia", "x": 7, "y": 12, "dir": "DOWN" }
   ],
   "roaming": [
     {

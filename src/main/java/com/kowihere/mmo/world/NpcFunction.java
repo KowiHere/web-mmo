@@ -31,12 +31,11 @@ public enum NpcFunction {
     TRAINER(false, "nauka umiejętności jest na razie darmowa, więc nie ma czym płacić"),
 
     /**
-     * Buys and sells. Blocked on something larger than itself: this world has no
-     * money of any kind, and the answer is not one column called gold - there
-     * will be several currencies, so it is a registry in content and a table of
-     * character-by-currency, and that is a milestone, not a field.
+     * Buys and sells, in one named currency. A trader who deals in something
+     * else simply names something else: money is a registry in content and a
+     * table of character-by-currency, never a column.
      */
-    SHOP(false, "nie ma żadnej waluty - sklep nie ma czym handlować"),
+    SHOP(true, null),
 
     /** Moves a character to another map. */
     TELEPORT(false, "jest tylko jedna mapa, więc nie ma dokąd przenosić"),

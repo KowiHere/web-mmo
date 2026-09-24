@@ -1,0 +1,4 @@
+{ "id": "naciagacz", "name": "Naciagacz", "kind": "PERSON", "functions": ["DIALOGUE"],
+  "dialogue": { "start": "a", "nodes": { "a": { "text": "Kupisz?", "options": [
+    { "text": "Pokaz.", "action": "OPEN_SHOP", "goto": "b" }, { "text": "Nie.", "action": "END" } ] },
+    "b": { "text": "Patrz.", "options": [ { "text": "Dosc.", "action": "END" } ] } } } }

@@ -3,5 +3,6 @@
   "name": "Próbny kaftan",
   "slot": "CHEST",
   "requiresLevel": 1,
+  "value": 50,
   "bonuses": { "armor": 2, "strength": 3 }
 }

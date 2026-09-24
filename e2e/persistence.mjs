@@ -45,6 +45,9 @@ const here = () => page.evaluate(() => {
         classId: state.you.classId,
         hp: state.you.hp,
         maxHp: state.you.maxHp,
+        purse: (state.purse ? state.purse.coins || [] : [])
+            .filter((c) => c.amount > 0)
+            .map((c) => `${c.id}:${c.amount}`),
         // Recorded so the second half can check it is *not* carried across.
         energy: state.you.energy,
     };
@@ -157,6 +160,8 @@ if (mode === 'record') {
     // is now a fact about a character that has to survive the process - and a
     // character recorded at full health would prove nothing, since that is
     // what a freshly created one would come back as anyway.
+    // Getting hurt also means killing things, which is where money comes from -
+    // so the purse below is filled by the same fight that leaves the wound.
     const hurt = await getHurt();
     if (!hurt) {
         console.error('FAIL - nothing ever landed a blow; there is no wound to keep');
@@ -197,6 +202,17 @@ if (mode === 'record') {
         console.log(`ok   - and still knowing ${at.ranks.join(', ')}`);
     } else {
         console.error(`FAIL - forgotten across the restart: ${forgotten.join(', ')}`);
+        exitCode = 1;
+    }
+
+    const spent = (account.purse || []).filter((coin) => !at.purse.includes(coin));
+    if (!(account.purse || []).length) {
+        console.error('FAIL - nothing was ever earned, so there is no money to keep');
+        exitCode = 1;
+    } else if (!spent.length) {
+        console.log(`ok   - and still holding ${at.purse.join(', ')}`);
+    } else {
+        console.error(`FAIL - lost across the restart: ${spent.join(', ')}`);
         exitCode = 1;
     }
 

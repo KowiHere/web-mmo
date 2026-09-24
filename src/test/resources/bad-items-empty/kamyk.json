@@ -2,5 +2,6 @@
   "id": "kamyk",
   "name": "Kamyk",
   "slot": "TRINKET",
+  "value": 10,
   "bonuses": { "sila": 5 }
 }

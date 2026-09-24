@@ -14,6 +14,9 @@ import com.kowihere.mmo.combat.Attributes;
  * @param bonuses       attribute points this grants while worn
  * @param attack        added to the wearer's attack
  * @param armor         added to the wearer's armour, which is otherwise almost nothing
+ * @param value         what it is worth. A trader sells at this and buys back at
+ *                      a fraction of it, so the two prices cannot drift apart:
+ *                      there is only one number to edit
  */
 public record ItemDef(
         String id,
@@ -22,6 +25,7 @@ public record ItemDef(
         int requiresLevel,
         Attributes bonuses,
         int attack,
-        int armor
+        int armor,
+        int value
 ) {
 }

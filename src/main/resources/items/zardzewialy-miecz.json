@@ -3,5 +3,6 @@
   "name": "Zardzewiały miecz",
   "slot": "WEAPON",
   "requiresLevel": 1,
+  "value": 18,
   "bonuses": { "attack": 3 }
 }

@@ -3,5 +3,6 @@
   "name": "Próbny topór",
   "slot": "WEAPON",
   "requiresLevel": 1,
+  "value": 100,
   "bonuses": { "attack": 9 }
 }

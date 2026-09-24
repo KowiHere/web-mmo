@@ -679,16 +679,29 @@ try {
 
         // Clicked, not messaged: what is under test is that walking over and
         // asking on arrival works, which is the whole of the interface here.
-        await ala.evaluate((them) => {
-            const spot = besideThem(them);
-            state.walkingUpTo = them.id;
-            requestMove(spot.x, spot.y);
-        }, herbalist);
-
-        const opened = await ala
-            .waitForSelector('#dialogue:not([hidden])', { timeout: 20_000 })
-            .then(() => true)
-            .catch(() => false);
+        //
+        // Kept asking rather than asked once. Crossing this map means being
+        // attacked on the way, and a fight holds you where you stand - so a
+        // single request proves nothing about whether walking up to somebody
+        // works.
+        let opened = false;
+        const arriveBy = Date.now() + 90_000;
+        while (Date.now() < arriveBy && !opened) {
+            await escapeAnyFight(ala);
+            await ala.evaluate((them) => {
+                const spot = besideThem(them);
+                state.walkingUpTo = them.id;
+                requestMove(spot.x, spot.y);
+            }, herbalist);
+            opened = await ala
+                .waitForFunction(() => {
+                    const panel = document.querySelector('#dialogue');
+                    return !panel.hidden
+                        && document.querySelector('#dialogue-who').textContent.includes('Miłka');
+                }, null, { timeout: 15_000 })
+                .then(() => true)
+                .catch(() => false);
+        }
         opened
             ? ok('walking up to them opened the conversation')
             : fail('the conversation never opened');
@@ -724,6 +737,201 @@ try {
                 ? ok('walking away closed the conversation')
                 : fail('the conversation outlived being walked away from');
         }
+    }
+
+    // ---- money, and the two kinds of it ----------------------------------
+    await escapeAnyFight(ala);
+    await mendIfHurt(ala);
+
+    const purse = await ala.evaluate(() => state.purse && state.purse.coins);
+    if (!purse || purse.length < 2) {
+        fail(`the purse holds ${purse ? purse.length : 0} kind(s) of money; the design is plural`);
+    } else {
+        ok(`the purse knows about ${purse.map((c) => c.name).join(' and ')}`);
+    }
+
+    const gold = await ala.evaluate(() =>
+        (state.purse.coins.find((c) => c.id === 'zloto') || {}).amount);
+    gold > 0
+        ? ok(`killing things paid ${gold} gold`)
+        : fail('nothing ever dropped any money');
+
+    // Earn what this section is going to spend. A character arriving at the
+    // stall with an empty bag and four gold tests the weather, not the shop -
+    // and which of those it is depends on what the phases above happened to
+    // leave behind.
+    const CHEAPEST = 18;
+    const earnUntil = Date.now() + 150_000;
+    while (Date.now() < earnUntil) {
+        const rich = await ala.evaluate(() =>
+            (state.bag.carried || []).length > 0
+            || state.purse.coins.find((c) => c.id === 'zloto').amount >= 60);
+        if (rich) break;
+        const busy = await ala.evaluate(() => {
+            const self = state.actors.get(state.selfId);
+            return !!(self && self.inFight);
+        });
+        if (!busy) {
+            await mendIfHurt(ala, 0.4);
+            const prey = await ala.evaluate(() =>
+                [...state.actors.values()].find((a) => a.kind === 'MOB') || null);
+            if (!prey) break;
+            await ala.evaluate((id) =>
+                state.ws.send(JSON.stringify({ type: 'attack', targetId: id })), prey.id);
+        }
+        await ala.waitForTimeout(1_500);
+    }
+
+    // Walk to the trader who deals in gold and buy the cheapest thing there.
+    const openStall = async (page, npcName) => {
+        const them = await page.evaluate((name) =>
+            [...state.actors.values()].find((a) => a.kind === 'NPC' && a.name.includes(name)) || null,
+            npcName);
+        if (!them) return false;
+
+        // Shut whatever is open first, and wait for it to actually go. Waiting
+        // on "#dialogue:not([hidden])" matched the conversation that was still
+        // on screen from the previous section, so the opener was looked for in
+        // the herbalist's options and never found.
+        await page.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+        await page.waitForFunction(() => document.querySelector('#dialogue').hidden,
+            null, { timeout: 10_000 }).catch(() => {});
+
+        // Walking across this map means being attacked on the way, and a fight
+        // holds you where you stand - so this keeps asking rather than assuming
+        // one request gets there.
+        let opener = null;
+        const arriveBy = Date.now() + 90_000;
+        while (Date.now() < arriveBy && !opener) {
+            await escapeAnyFight(page);
+            await page.evaluate((t) => {
+                const spot = besideThem(t);
+                state.walkingUpTo = t.id;
+                requestMove(spot.x, spot.y);
+            }, them);
+            opener = await page
+                .waitForFunction(() => [...document.querySelectorAll('#dialogue-options button')]
+                    .map((b) => b.textContent)
+                    .find((t) => /Rozkładaj|Unieś wieko/.test(t)) || null,
+                    null, { timeout: 15_000 })
+                .then((handle) => handle.jsonValue())
+                .catch(() => null);
+        }
+        if (!opener) return false;
+
+        await page.click(`#dialogue-options button:text-is("${opener}")`);
+        return page.waitForFunction((name) => {
+            const shop = document.querySelector('#shop');
+            return !shop.hidden && document.querySelector('#shop-who').textContent.includes(name);
+        }, npcName, { timeout: 10_000 }).then(() => true).catch(() => false);
+    };
+
+    if (!(await openStall(ala, 'Bartosz'))) {
+        fail('the gold trader never opened a stall');
+    } else {
+        ok('the trader opened a stall');
+        await ala.screenshot({ path: 'sklep.png' });
+
+        // Sell the loot first. That is the loop this milestone created - kill,
+        // sell what dropped, afford something better - and a character who has
+        // only killed a few boars cannot buy anything without it.
+        let sold = 0;
+        while (sold < 8 && await ala.evaluate(() =>
+                document.querySelector('#shop-sell li:not(.empty)') !== null)) {
+            const was = await ala.evaluate(() =>
+                state.purse.coins.find((c) => c.id === 'zloto').amount);
+            await ala.click('#shop-sell li:not(.empty)');
+            const paid = await ala
+                .waitForFunction((w) => state.purse.coins
+                    .find((c) => c.id === 'zloto').amount > w, was, { timeout: 8_000 })
+                .then(() => true).catch(() => false);
+            if (!paid) break;
+            sold++;
+        }
+        const carriedSellable = await ala.evaluate(() =>
+            document.querySelector('#shop-sell li:not(.empty)') !== null);
+        if (sold > 0) {
+            ok(`sold ${sold} piece(s) of loot for coin`);
+        } else if (carriedSellable) {
+            fail('the trader refused loot they had on their own shelf');
+        } else {
+            ok('nothing in the bag was this trader\'s business, which is the rule working');
+        }
+
+        const purseNow = await ala.evaluate(() =>
+            state.purse.coins.find((c) => c.id === 'zloto').amount);
+        const affordable = await ala.evaluate(() =>
+            [...document.querySelectorAll('#shop-goods li:not(.too-dear)')]
+                .map((li) => li.querySelector('span').textContent));
+        if (!affordable.length) {
+            fail(`nothing on the shelf is affordable on ${purseNow} gold,`
+                + ` and the cheapest thing costs ${CHEAPEST}`);
+        } else {
+            const goldBefore = purseNow;
+            const carriedBefore = await ala.evaluate(() => state.bag.carried.length);
+            await ala.click('#shop-goods li:not(.too-dear)');
+
+            const bought = await ala
+                .waitForFunction((was) => state.bag.carried.length > was, carriedBefore,
+                    { timeout: 10_000 })
+                .then(() => true).catch(() => false);
+            bought ? ok(`bought ${affordable[0]}`) : fail('the purchase never arrived');
+
+            const goldAfter = await ala.evaluate(() =>
+                state.purse.coins.find((c) => c.id === 'zloto').amount);
+            goldAfter < goldBefore
+                ? ok(`and it cost ${goldBefore - goldAfter} gold`)
+                : fail('the purchase was free');
+
+            // Sell it straight back. The round trip has to lose money, or loot
+            // is worth nothing and gold never leaves the world.
+            const sellable = await ala.evaluate(() =>
+                document.querySelector('#shop-sell li:not(.empty)') !== null);
+            if (!sellable) {
+                fail('the trader will not buy back what they just sold');
+            } else {
+                await ala.click('#shop-sell li:not(.empty)');
+                const returned = await ala
+                    .waitForFunction((was) => state.purse.coins
+                        .find((c) => c.id === 'zloto').amount !== was, goldAfter,
+                        { timeout: 10_000 })
+                    .then(() => true).catch(() => false);
+                const goldBack = await ala.evaluate(() =>
+                    state.purse.coins.find((c) => c.id === 'zloto').amount);
+                returned && goldBack < goldBefore
+                    ? ok(`selling it back returned ${goldBack - goldAfter}, so the round trip`
+                        + ` cost ${goldBefore - goldBack} - the only way money leaves this world`)
+                    : fail(`a round trip through the shop cost nothing: ${goldBefore} -> ${goldBack}`);
+            }
+        }
+    }
+
+    // ---- and the whole reason money is plural ---------------------------
+    await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+    if (!(await openStall(ala, 'Skrzynia'))) {
+        fail('the chest never opened');
+    } else {
+        const outOfReach = await ala.evaluate(() => ({
+            currency: state.shop.currencyId,
+            gold: (state.purse.coins.find((c) => c.id === 'zloto') || {}).amount,
+            fangs: (state.purse.coins.find((c) => c.id === 'kly') || {}).amount,
+            greyed: document.querySelectorAll('#shop-goods li.too-dear').length,
+            total: document.querySelectorAll('#shop-goods li').length,
+        }));
+        outOfReach.currency === 'kly'
+            ? ok('the chest deals in fangs, not gold')
+            : fail(`the chest deals in ${outOfReach.currency}`);
+
+        if (outOfReach.fangs < 1) {
+            outOfReach.greyed === outOfReach.total
+                ? ok(`and ${outOfReach.gold} gold buys none of it - which is what a purse`
+                    + ' in the plural is for')
+                : fail('gold bought something from a trader who does not take gold');
+        } else {
+            ok(`and the ${outOfReach.fangs} fang(s) that dropped are spendable only here`);
+        }
+        await ala.screenshot({ path: 'skrzynia.png' });
+        await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
     }
 
     // ---- a dropped socket resumes the same character ---------------------

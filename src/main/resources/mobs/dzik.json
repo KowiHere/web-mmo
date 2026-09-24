@@ -10,6 +10,9 @@
   "aggroRadius": 2,
   "leashRadius": 5,
   "respawnSeconds": 30,
+  "coins": [
+    { "currency": "zloto", "min": 2, "max": 5 }
+  ],
   "loot": [
     {
       "item": "zardzewialy-miecz",

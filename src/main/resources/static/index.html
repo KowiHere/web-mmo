@@ -90,6 +90,23 @@
     <!-- What somebody is saying, and everything that may be said back. The
          options are built from the frame rather than written here: the server
          decides what is on offer, and the numbers it sends are what goes back. -->
+    <!-- A trader's stall. Prices come from the server: the client has no
+         catalogue of items, and two places computing a price is two places
+         that can disagree about one. -->
+    <div id="shop" hidden>
+        <h2 id="shop-who"></h2>
+        <div class="shop-cols">
+            <div>
+                <h3>Kupno</h3>
+                <ul id="shop-goods" class="slots"></ul>
+            </div>
+            <div>
+                <h3 id="shop-sell-title">Sprzedaż</h3>
+                <ul id="shop-sell" class="slots"></ul>
+            </div>
+        </div>
+    </div>
+
     <div id="dialogue" hidden>
         <h2 id="dialogue-who"></h2>
         <p id="dialogue-text"></p>
@@ -111,6 +128,11 @@
         <section class="panel-block">
             <h2>Umiejętności <span id="skill-points" class="hint"></span></h2>
             <ul id="skills" class="slots"></ul>
+        </section>
+
+        <section class="panel-block">
+            <h2>Sakiewka</h2>
+            <ul id="purse" class="slots"></ul>
         </section>
 
         <section class="panel-block">

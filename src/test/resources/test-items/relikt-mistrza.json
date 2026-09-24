@@ -3,5 +3,6 @@
   "name": "Relikt Mistrza",
   "slot": "TRINKET",
   "requiresLevel": 9,
+  "value": 250,
   "bonuses": { "strength": 10 }
 }

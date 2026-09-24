@@ -3,5 +3,6 @@
   "name": "Sztylet Łowcy",
   "slot": "WEAPON",
   "requiresLevel": 3,
+  "value": 120,
   "bonuses": { "attack": 1, "agility": 6 }
 }

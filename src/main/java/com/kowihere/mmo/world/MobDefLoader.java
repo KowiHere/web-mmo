@@ -27,6 +27,7 @@ public class MobDefLoader {
     private final ObjectMapper mapper = new ObjectMapper();
     private final String location;
     private final Map<String, ItemDef> items;
+    private final Map<String, CurrencyDef> currencies;
 
     public MobDefLoader() {
         this(LOCATION);
@@ -43,8 +44,14 @@ public class MobDefLoader {
      *              creature that silently drops nothing.
      */
     public MobDefLoader(String location, Map<String, ItemDef> items) {
+        this(location, items, new CurrencyDefLoader().loadAll());
+    }
+
+    public MobDefLoader(String location, Map<String, ItemDef> items,
+                        Map<String, CurrencyDef> currencies) {
         this.location = location;
         this.items = items;
+        this.currencies = currencies;
     }
 
     public Map<String, MobDef> loadAll() {
@@ -92,7 +99,41 @@ public class MobDefLoader {
                 atLeast(root, "armor", 0, 0, where),
                 stepTicks, aggroRadius, leashRadius,
                 positive(root, "respawnSeconds", 30, where),
-                loot(root, where));
+                loot(root, where),
+                coins(root, where));
+    }
+
+    /**
+     * What this creature is carrying. Validated as hard as the loot table: a
+     * currency that does not exist would be money nobody could ever spend, and
+     * the only sign of it would be a purse that never grows.
+     */
+    private List<CoinDrop> coins(JsonNode root, String where) {
+        List<CoinDrop> drops = new ArrayList<>();
+        for (JsonNode entry : root.path("coins")) {
+            String currencyId = text(entry, "currency", where);
+            if (!currencies.containsKey(currencyId)) {
+                throw new IllegalStateException(where + ": drops '" + currencyId
+                        + "', which is not a currency. Known: " + currencies.keySet());
+            }
+            int min = entry.path("min").asInt(0);
+            int max = entry.path("max").asInt(min);
+            if (min < 1) {
+                throw new IllegalStateException(where + ": '" + currencyId
+                        + "' drops a minimum of " + min + "; a drop of nothing is not a drop");
+            }
+            if (max < min) {
+                throw new IllegalStateException(where + ": '" + currencyId + "' drops between "
+                        + min + " and " + max + ", which is backwards");
+            }
+            double chance = entry.path("chance").asDouble(1.0);
+            if (chance <= 0 || chance > 1) {
+                throw new IllegalStateException(where + ": chance for '" + currencyId
+                        + "' must be above 0 and at most 1, got " + chance);
+            }
+            drops.add(new CoinDrop(currencyId, min, max, chance));
+        }
+        return drops;
     }
 
     private List<LootEntry> loot(JsonNode root, String where) {

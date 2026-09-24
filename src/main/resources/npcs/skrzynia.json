@@ -1,0 +1,29 @@
+{
+  "id": "skrzynia",
+  "name": "Skrzynia traperska",
+  "kind": "OBJECT",
+  "functions": ["DIALOGUE", "SHOP"],
+  "shop": {
+    "currency": "kly",
+    "sells": ["wilczy-naszyjnik"]
+  },
+  "dialogue": {
+    "start": "wieko",
+    "nodes": {
+      "wieko": {
+        "text": "Na wieku wydrapano: ZA KŁY, NIE ZA ZŁOTO. Pod spodem ktoś dopisał: I TAK NIE MASZ TYLE.",
+        "options": [
+          { "text": "Unieś wieko.", "action": "OPEN_SHOP", "goto": "srodek" },
+          { "text": "Zostaw skrzynię.", "action": "END" }
+        ]
+      },
+      "srodek": {
+        "text": "W środku leżą rzeczy traperów, którzy nie wrócili. Cena jest w kłach.",
+        "options": [
+          { "text": "Opuść wieko.", "goto": "wieko" },
+          { "text": "Odejdź.", "action": "END" }
+        ]
+      }
+    }
+  }
+}

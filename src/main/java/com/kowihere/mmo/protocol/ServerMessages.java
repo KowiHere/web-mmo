@@ -180,6 +180,53 @@ public final class ServerMessages {
         }
     }
 
+    /** One kind of money and how much of it there is. */
+    public record CoinDto(String id, String name, String shortName, int amount) {
+    }
+
+    /**
+     * What a character has to spend, sent only to its owner.
+     *
+     * <p>A list rather than a field per currency: money is plural here, and a
+     * frame with a {@code gold} in it would have to be changed the day a second
+     * currency appears - which is the same mistake as the column this avoids.
+     */
+    public record Purse(String type, List<CoinDto> coins) {
+        public Purse(List<CoinDto> coins) {
+            this("purse", coins);
+        }
+    }
+
+    /**
+     * One thing on a trader's shelf.
+     *
+     * @param price   what it costs here
+     * @param buyback what this trader pays for one, which is a fraction of the
+     *                same number - sent so the interface never has to do the
+     *                arithmetic and get a different answer from the server
+     */
+    public record GoodsDto(String defId, String name, String slot, int requiresLevel,
+                           int price, int buyback,
+                           int strength, int agility, int intellect, int attack, int armor) {
+    }
+
+    /**
+     * A trader's stall, sent only to whoever opened it. A frame with no goods
+     * closes it, the same way an empty dialogue closes a conversation.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Shop(String type, int npcId, String name, String currencyId,
+                       String currencyShort, List<GoodsDto> goods) {
+        public Shop(int npcId, String name, String currencyId, String currencyShort,
+                    List<GoodsDto> goods) {
+            this("shop", npcId, name, currencyId, currencyShort, goods);
+        }
+
+        public static Shop closed(int npcId) {
+            return new Shop(npcId, null, null, null, null);
+        }
+    }
+
     public record Error(String type, String message) {
         public Error(String message) {
             this("error", message);

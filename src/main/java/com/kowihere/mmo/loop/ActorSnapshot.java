@@ -17,10 +17,12 @@ import java.util.List;
  *              position every save interval, and rewriting a bag nobody touched
  *              would be twenty pointless rows every time.
  * @param skills the same, for what has been learned. Null means unchanged.
+ * @param coins  and again for money. Null means unchanged, which is every save
+ *               by somebody who has neither killed nor bought anything since.
  */
 public record ActorSnapshot(String nameKey, String name, String mapId, int x, int y, String dir,
                             int level, long xp, int hp, long weakenedUntil,
                             Attributes attributes, int unspentPoints, List<StoredItem> items,
                             String classId, int skillPoints,
-                            List<StoredSkill> skills) {
+                            List<StoredSkill> skills, List<StoredCoin> coins) {
 }

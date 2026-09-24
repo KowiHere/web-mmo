@@ -81,6 +81,20 @@ final class Inventory {
         return stack;
     }
 
+    /**
+     * Takes one thing out of the bag for good.
+     *
+     * <p>Deliberately only the bag. Something being worn is not something a
+     * character can hand over without taking it off first, and quietly
+     * unequipping it on their behalf is how somebody sells the sword they were
+     * holding and does not notice until the next fight.
+     *
+     * @return true when it was there and is now gone
+     */
+    boolean removeFromBag(String itemId) {
+        return bag.removeIf(stack -> stack.id().equals(itemId));
+    }
+
     /** Attributes granted by everything currently worn. */
     Attributes grantedAttributes() {
         Attributes total = new Attributes(0, 0, 0);

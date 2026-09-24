@@ -1,0 +1,23 @@
+{
+  "id": "kupiec",
+  "name": "Kupiec",
+  "kind": "PERSON",
+  "functions": ["DIALOGUE", "SHOP"],
+  "shop": { "currency": "zloto", "sells": ["probny-miecz", "probny-kaftan"] },
+  "dialogue": {
+    "start": "powitanie",
+    "nodes": {
+      "powitanie": {
+        "text": "Kupujesz?",
+        "options": [
+          { "text": "Pokaz towar.", "action": "OPEN_SHOP", "goto": "stragan" },
+          { "text": "Nie.", "action": "END" }
+        ]
+      },
+      "stragan": {
+        "text": "Patrz do woli.",
+        "options": [ { "text": "Dosc.", "goto": "powitanie" } ]
+      }
+    }
+  }
+}

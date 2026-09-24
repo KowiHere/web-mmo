@@ -1,0 +1,5 @@
+{ "id": "obcy", "name": "Obcy", "kind": "PERSON", "functions": ["DIALOGUE", "SHOP"],
+  "shop": { "currency": "muszelki", "sells": ["probny-miecz"] },
+  "dialogue": { "start": "a", "nodes": { "a": { "text": "Kupisz?", "options": [
+    { "text": "Pokaz.", "action": "OPEN_SHOP", "goto": "b" }, { "text": "Nie.", "action": "END" } ] },
+    "b": { "text": "Patrz.", "options": [ { "text": "Dosc.", "action": "END" } ] } } } }

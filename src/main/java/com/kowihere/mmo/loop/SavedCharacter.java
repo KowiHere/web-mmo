@@ -15,19 +15,21 @@ import java.util.List;
  * @param items   everything owned, worn and carried alike; the slot on each one
  *                says which it was
  * @param skills  what has been learned, and how far
+ * @param coins   what there is to spend, in however many currencies
  */
 public record SavedCharacter(String nameKey, String name, String mapId, int x, int y, Direction dir,
                              int level, long xp, int hp, long weakenedUntil,
                              Attributes attributes, int unspentPoints, List<StoredItem> items,
                              String classId, int skillPoints,
-                             List<StoredSkill> skills) {
+                             List<StoredSkill> skills, List<StoredCoin> coins) {
 
     public SavedCharacter {
         items = items == null ? List.of() : List.copyOf(items);
         skills = skills == null ? List.of() : List.copyOf(skills);
+        coins = coins == null ? List.of() : List.copyOf(coins);
     }
 
-    /** A brand new character: level one, unhurt, unpenalised, empty-handed. */
+    /** A brand new character: level one, unhurt, unpenalised, empty-handed and broke. */
     public static SavedCharacter fresh(String nameKey, String name, String mapId, int x, int y,
                                        Direction dir) {
         return fresh(nameKey, name, mapId, x, y, dir, null, Attributes.FRESH);
@@ -43,6 +45,6 @@ public record SavedCharacter(String nameKey, String name, String mapId, int x, i
         // character should have a first choice to make rather than a system it
         // cannot see until it levels.
         return new SavedCharacter(nameKey, name, mapId, x, y, dir, 1, 0L, -1, 0L,
-                attributes, 0, List.of(), classId, 1, List.of());
+                attributes, 0, List.of(), classId, 1, List.of(), List.of());
     }
 }

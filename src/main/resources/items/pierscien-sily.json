@@ -3,5 +3,6 @@
   "name": "Pierścień Siły",
   "slot": "TRINKET",
   "requiresLevel": 1,
+  "value": 70,
   "bonuses": { "strength": 4 }
 }

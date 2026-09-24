@@ -34,12 +34,22 @@ public class NpcDefLoader {
 
     private static final String LOCATION = "classpath:npcs/*.json";
 
-    /** Which deed in a conversation belongs to which declared function. */
-    private static final Map<DialogueAction, NpcFunction> DEEDS =
-            Map.of(DialogueAction.HEAL, NpcFunction.HEALER);
+    /**
+     * Which deed in a conversation belongs to which declared function.
+     *
+     * <p>Every function past talking is reached the same way: an option in a
+     * conversation does it. That is why this is a map and not a chain of ifs -
+     * a new function is an entry here and the pair of checks below covers it
+     * without a line of new logic.
+     */
+    private static final Map<DialogueAction, NpcFunction> DEEDS = Map.of(
+            DialogueAction.HEAL, NpcFunction.HEALER,
+            DialogueAction.OPEN_SHOP, NpcFunction.SHOP);
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final String location;
+    private final Map<String, ItemDef> items;
+    private final Map<String, CurrencyDef> currencies;
 
     public NpcDefLoader() {
         this(LOCATION);
@@ -47,7 +57,20 @@ public class NpcDefLoader {
 
     /** Where the definitions live. Content need not sit at the default path. */
     public NpcDefLoader(String location) {
+        this(location, new ItemDefLoader().loadAll(), new CurrencyDefLoader().loadAll());
+    }
+
+    /**
+     * @param items      what a trader is allowed to stock, checked while loading
+     * @param currencies the money that exists, likewise. A stall priced in a
+     *                   currency nobody can hold is a stall nobody can buy from,
+     *                   and nothing at runtime would ever say so.
+     */
+    public NpcDefLoader(String location, Map<String, ItemDef> items,
+                        Map<String, CurrencyDef> currencies) {
         this.location = location;
+        this.items = items;
+        this.currencies = currencies;
     }
 
     public Map<String, NpcDef> loadAll() {
@@ -99,7 +122,16 @@ public class NpcDefLoader {
                     + " so nobody could ever start it.");
         }
         checkDeedsMatchFunctions(functions, dialogue, where, id);
-        return new NpcDef(id, name, kind, functions, dialogue);
+        Shop shop = root.has("shop") ? shop(root.get("shop"), where, id) : null;
+        if (functions.contains(NpcFunction.SHOP) && shop == null) {
+            throw new IllegalStateException(where + ": '" + id
+                    + "' has the SHOP function but no \"shop\" to sell from.");
+        }
+        if (shop != null && !functions.contains(NpcFunction.SHOP)) {
+            throw new IllegalStateException(where + ": '" + id
+                    + "' has a \"shop\" but does not list SHOP among its functions.");
+        }
+        return new NpcDef(id, name, kind, functions, dialogue, shop);
     }
 
     /**
@@ -133,6 +165,33 @@ public class NpcDefLoader {
                         + " but does not list " + pair.getValue() + " among its functions.");
             }
         }
+    }
+
+    private Shop shop(JsonNode root, String where, String id) {
+        String currencyId = text(root, "currency", where);
+        if (!currencies.containsKey(currencyId)) {
+            throw new IllegalStateException(where + ": '" + id + "' deals in '" + currencyId
+                    + "', which is not a currency. Known: " + currencies.keySet());
+        }
+        List<String> sells = new ArrayList<>();
+        for (JsonNode entry : root.path("sells")) {
+            String itemId = entry.asText();
+            if (!items.containsKey(itemId)) {
+                throw new IllegalStateException(where + ": '" + id + "' stocks '" + itemId
+                        + "', which is not an item.");
+            }
+            if (sells.contains(itemId)) {
+                throw new IllegalStateException(where + ": '" + id + "' stocks '" + itemId
+                        + "' twice, so it would appear on the shelf twice.");
+            }
+            sells.add(itemId);
+        }
+        if (sells.isEmpty()) {
+            // An empty stall opens, shows nothing, and buys nothing back - since
+            // a trader only buys what they sell. It is a shop in name only.
+            throw new IllegalStateException(where + ": '" + id + "' has a shop with nothing in it.");
+        }
+        return new Shop(currencyId, sells);
     }
 
     private static Set<NpcFunction> functions(JsonNode root, String where, String id) {

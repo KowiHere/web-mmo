@@ -3,6 +3,7 @@ package com.kowihere.mmo.persistence;
 import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.loop.ActorSnapshot;
 import com.kowihere.mmo.loop.SavedCharacter;
+import com.kowihere.mmo.loop.StoredCoin;
 import com.kowihere.mmo.loop.StoredItem;
 import com.kowihere.mmo.loop.StoredSkill;
 import com.kowihere.mmo.world.Direction;
@@ -47,7 +48,8 @@ public class CharacterRepository {
     public Optional<SavedCharacter> find(String nameKey) {
         return jdbc.query(SELECT + " WHERE name_key = ?", CharacterRepository::read, nameKey)
                 .stream().findFirst()
-                .map(character -> withBelongings(character, itemsOf(nameKey), skillsOf(nameKey)));
+                .map(character -> withBelongings(character, itemsOf(nameKey), skillsOf(nameKey),
+                        coinsOf(nameKey)));
     }
 
     /**
@@ -67,6 +69,13 @@ public class CharacterRepository {
                 nameKey);
     }
 
+    public List<StoredCoin> coinsOf(String nameKey) {
+        return jdbc.query("SELECT currency_id, amount FROM character_currency"
+                        + " WHERE character_key = ?",
+                (rs, row) -> new StoredCoin(rs.getString("currency_id"), rs.getInt("amount")),
+                nameKey);
+    }
+
     public List<StoredSkill> skillsOf(String nameKey) {
         return jdbc.query("SELECT skill_id, rank FROM character_skill"
                         + " WHERE character_key = ? ORDER BY skill_id",
@@ -75,12 +84,12 @@ public class CharacterRepository {
     }
 
     private static SavedCharacter withBelongings(SavedCharacter character, List<StoredItem> items,
-                                                 List<StoredSkill> skills) {
+                                                 List<StoredSkill> skills, List<StoredCoin> coins) {
         return new SavedCharacter(character.nameKey(), character.name(), character.mapId(),
                 character.x(), character.y(), character.dir(), character.level(), character.xp(),
                 character.hp(), character.weakenedUntil(), character.attributes(),
                 character.unspentPoints(), items, character.classId(),
-                character.skillPoints(), skills);
+                character.skillPoints(), skills, coins);
     }
 
     /**
@@ -125,6 +134,7 @@ public class CharacterRepository {
                 List.of(),
                 rs.getString("class_id"),
                 rs.getInt("skill_points"),
+                List.of(),
                 List.of());
     }
 
@@ -160,6 +170,22 @@ public class CharacterRepository {
         if (snapshot.skills() != null) {
             replaceSkills(snapshot.nameKey(), snapshot.skills());
         }
+        if (snapshot.coins() != null) {
+            replaceCoins(snapshot.nameKey(), snapshot.coins());
+        }
+    }
+
+    /** And again for money, which changes on every kill and every purchase. */
+    private void replaceCoins(String nameKey, List<StoredCoin> coins) {
+        jdbc.update("DELETE FROM character_currency WHERE character_key = ?", nameKey);
+        if (coins.isEmpty()) {
+            return;
+        }
+        jdbc.batchUpdate("INSERT INTO character_currency (character_key, currency_id, amount)"
+                        + " VALUES (?, ?, ?)",
+                coins.stream()
+                        .map(coin -> new Object[]{nameKey, coin.currencyId(), coin.amount()})
+                        .toList());
     }
 
     /** The same replace-the-lot as items, for the same reasons and just as rarely. */

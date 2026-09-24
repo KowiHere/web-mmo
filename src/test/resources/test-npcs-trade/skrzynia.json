@@ -1,0 +1,23 @@
+{
+  "id": "skrzynia",
+  "name": "Skrzynia",
+  "kind": "OBJECT",
+  "functions": ["DIALOGUE", "SHOP"],
+  "shop": { "currency": "kly", "sells": ["probny-topor"] },
+  "dialogue": {
+    "start": "wieko",
+    "nodes": {
+      "wieko": {
+        "text": "ZA KLY, NIE ZA ZLOTO.",
+        "options": [
+          { "text": "Unies wieko.", "action": "OPEN_SHOP", "goto": "srodek" },
+          { "text": "Zostaw.", "action": "END" }
+        ]
+      },
+      "srodek": {
+        "text": "Cena jest w klach.",
+        "options": [ { "text": "Opusc wieko.", "goto": "wieko" } ]
+      }
+    }
+  }
+}

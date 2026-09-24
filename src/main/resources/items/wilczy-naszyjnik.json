@@ -1,0 +1,8 @@
+{
+  "id": "wilczy-naszyjnik",
+  "name": "Wilczy naszyjnik",
+  "slot": "TRINKET",
+  "requiresLevel": 1,
+  "value": 12,
+  "bonuses": { "agility": 5 }
+}

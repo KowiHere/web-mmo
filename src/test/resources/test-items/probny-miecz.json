@@ -3,5 +3,6 @@
   "name": "Próbny miecz",
   "slot": "WEAPON",
   "requiresLevel": 1,
+  "value": 60,
   "bonuses": { "attack": 5 }
 }

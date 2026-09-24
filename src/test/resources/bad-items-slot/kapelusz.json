@@ -2,5 +2,6 @@
   "id": "kapelusz",
   "name": "Kapelusz",
   "slot": "HEAD",
+  "value": 10,
   "bonuses": { "armor": 1 }
 }

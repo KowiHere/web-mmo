@@ -72,6 +72,10 @@ const state = {
     walkingUpTo: null,
     /** The last thing said to us, or null when nobody is talking. */
     dialogue: null,
+    /** What there is to spend, by currency. */
+    purse: null,
+    /** The stall that is open, or null. */
+    shop: null,
     version: 0,
     selfId: null,
     map: null,
@@ -109,6 +113,12 @@ const bagCountEl = document.getElementById('bag-count');
 const skillsEl = document.getElementById('skills');
 const skillPointsEl = document.getElementById('skill-points');
 const skillbarEl = document.getElementById('skillbar');
+const purseEl = document.getElementById('purse');
+const shopEl = document.getElementById('shop');
+const shopWhoEl = document.getElementById('shop-who');
+const shopGoodsEl = document.getElementById('shop-goods');
+const shopSellEl = document.getElementById('shop-sell');
+const shopSellTitleEl = document.getElementById('shop-sell-title');
 const dialogueEl = document.getElementById('dialogue');
 const dialogueWhoEl = document.getElementById('dialogue-who');
 const dialogueTextEl = document.getElementById('dialogue-text');
@@ -149,6 +159,8 @@ function connect(characterKey) {
         else if (msg.type === 'bag') applyBag(msg);
         else if (msg.type === 'skills') applySkills(msg);
         else if (msg.type === 'dialogue') applyDialogue(msg);
+        else if (msg.type === 'purse') applyPurse(msg);
+        else if (msg.type === 'shop') applyShop(msg);
         else if (msg.type === 'error') logSystem(msg.message);
     };
 
@@ -283,8 +295,99 @@ function applyYou(msg) {
     updateFleeButton();
 }
 
+function applyPurse(msg) {
+    state.purse = msg;
+    renderPurse();
+    renderShop();
+}
+
+/** A stall with no goods is one that has closed, the same as an empty dialogue. */
+function applyShop(msg) {
+    state.shop = msg.goods ? msg : null;
+    renderShop();
+}
+
+function amountOf(currencyId) {
+    const coin = (state.purse ? state.purse.coins || [] : [])
+        .find((c) => c.id === currencyId);
+    return coin ? coin.amount : 0;
+}
+
+function renderPurse() {
+    purseEl.innerHTML = '';
+    for (const coin of state.purse ? state.purse.coins || [] : []) {
+        const row = document.createElement('li');
+        const name = document.createElement('span');
+        name.textContent = coin.name;
+        const amount = document.createElement('span');
+        amount.className = 'coin-amount';
+        amount.textContent = `${coin.amount} ${coin.shortName}`;
+        row.append(name, amount);
+        purseEl.append(row);
+    }
+}
+
+function renderShop() {
+    if (!state.shop) {
+        shopEl.hidden = true;
+        return;
+    }
+    const shop = state.shop;
+    const held = amountOf(shop.currencyId);
+    shopWhoEl.textContent = `${shop.name} — masz ${held} ${shop.currencyShort}`;
+    // Short on purpose: the rule is explained by the empty state below, which
+    // is where somebody looks when the column is not offering them anything.
+    shopSellTitleEl.textContent = 'Sprzedaż';
+
+    shopGoodsEl.innerHTML = '';
+    for (const goods of shop.goods || []) {
+        const row = tradeRow(goods.name, `${goods.price} ${shop.currencyShort}`);
+        if (goods.price > held) {
+            row.classList.add('too-dear');
+            row.title = `Za mało: ${goods.price} ${shop.currencyShort}`;
+        } else {
+            row.title = `Kup za ${goods.price} ${shop.currencyShort}`;
+            row.addEventListener('click', () => send({ type: 'buy', itemId: goods.defId }));
+        }
+        shopGoodsEl.append(row);
+    }
+
+    // What is in the bag and on this trader's shelf. Worn things are absent on
+    // purpose: the server refuses them, and offering the click anyway would be
+    // the interface promising something the rules do not allow.
+    const sellable = (state.bag ? state.bag.carried || [] : [])
+        .map((item) => [item, (shop.goods || []).find((g) => g.defId === item.defId)])
+        .filter(([, goods]) => goods);
+    shopSellEl.innerHTML = '';
+    if (!sellable.length) {
+        const empty = document.createElement('li');
+        empty.className = 'empty';
+        empty.textContent = `${shop.name} skupuje tylko to, czym sam handluje`;
+        shopSellEl.append(empty);
+    }
+    for (const [item, goods] of sellable) {
+        const row = tradeRow(item.name, `+${goods.buyback} ${shop.currencyShort}`);
+        row.title = `Sprzedaj za ${goods.buyback} ${shop.currencyShort}`;
+        row.addEventListener('click', () => send({ type: 'sell', itemId: item.id }));
+        shopSellEl.append(row);
+    }
+    shopEl.hidden = false;
+}
+
+function tradeRow(name, price) {
+    const row = document.createElement('li');
+    const label = document.createElement('span');
+    label.textContent = name;
+    const tag = document.createElement('span');
+    tag.className = 'price';
+    tag.textContent = price;
+    row.append(label, tag);
+    return row;
+}
+
 function applyBag(msg) {
     state.bag = msg;
+    renderShop();
     renderPanel();
 }
 

@@ -75,4 +75,18 @@ public sealed interface Command {
     /** Close the conversation. */
     record StopTalking(Client client) implements Command {
     }
+
+    /** Buy one of these from the trader you are talking to. */
+    record Buy(Client client, String itemDefId) implements Command {
+    }
+
+    /**
+     * Sell this one.
+     *
+     * @param itemId the particular copy, not its definition - somebody with two
+     *               swords is selling one of them, and which one is theirs to
+     *               decide rather than the server's
+     */
+    record Sell(Client client, String itemId) implements Command {
+    }
 }

@@ -1,2 +1,2 @@
-{ "id": "kupiec", "name": "Kupiec", "kind": "PERSON", "functions": ["DIALOGUE", "SHOP"],
-  "dialogue": { "start": "a", "nodes": { "a": { "text": "Kupujesz?", "options": [ { "text": "Nie.", "action": "END" } ] } } } }
+{ "id": "przewoznik", "name": "Przewoznik", "kind": "PERSON", "functions": ["DIALOGUE", "TELEPORT"],
+  "dialogue": { "start": "a", "nodes": { "a": { "text": "Przeplyniesz?", "options": [ { "text": "Nie.", "action": "END" } ] } } } }

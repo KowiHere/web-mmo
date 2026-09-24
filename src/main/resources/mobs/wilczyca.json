@@ -10,6 +10,10 @@
   "aggroRadius": 6,
   "leashRadius": 12,
   "respawnSeconds": 600,
+  "coins": [
+    { "currency": "zloto", "min": 20, "max": 40 },
+    { "currency": "kly", "min": 2, "max": 4 }
+  ],
   "loot": [
     {
       "item": "sztylet-lowcy",

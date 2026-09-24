@@ -13,13 +13,14 @@ import java.util.Map;
  */
 public record Content(Map<String, MobDef> mobs, Map<String, ItemDef> items,
                       Map<String, ClassDef> classes, Map<String, SkillDef> skills,
-                      Map<String, NpcDef> npcs) {
+                      Map<String, NpcDef> npcs, Map<String, CurrencyDef> currencies) {
 
     public Content(Map<String, MobDef> mobs, Map<String, ItemDef> items,
                    Map<String, ClassDef> classes, Map<String, SkillDef> skills) {
         // NPCs reach a running map through its definition, where they are
-        // placed, so most callers have no reason to name them here.
-        this(mobs, items, classes, skills, Map.of());
+        // placed, so most callers have no reason to name them here. Currencies
+        // are loaded from their own registry, which every map shares.
+        this(mobs, items, classes, skills, Map.of(), new CurrencyDefLoader().loadAll());
     }
 
     public Content(Map<String, MobDef> mobs, Map<String, ItemDef> items) {

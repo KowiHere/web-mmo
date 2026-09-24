@@ -3,5 +3,6 @@
   "name": "Skórznia",
   "slot": "CHEST",
   "requiresLevel": 1,
+  "value": 45,
   "bonuses": { "armor": 3 }
 }

@@ -16,7 +16,10 @@ public enum DialogueAction {
     END,
 
     /** Restores the character to full health. Free, and free of any waiting. */
-    HEAL;
+    HEAL,
+
+    /** Opens this trader's stall. The conversation stays open behind it. */
+    OPEN_SHOP;
 
     /**
      * Whether this is somewhere to go rather than something to do. Only

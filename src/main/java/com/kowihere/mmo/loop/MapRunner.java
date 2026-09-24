@@ -24,11 +24,14 @@ import com.kowihere.mmo.world.ItemDef;
 import com.kowihere.mmo.world.ItemSlot;
 import com.kowihere.mmo.world.LootEntry;
 import com.kowihere.mmo.world.DialogueAction;
+import com.kowihere.mmo.world.CoinDrop;
+import com.kowihere.mmo.world.CurrencyDef;
 import com.kowihere.mmo.world.Dialogue;
 import com.kowihere.mmo.world.DialogueNode;
 import com.kowihere.mmo.world.DialogueOption;
 import com.kowihere.mmo.world.MobDef;
 import com.kowihere.mmo.world.NpcFunction;
+import com.kowihere.mmo.world.Shop;
 import com.kowihere.mmo.world.NpcPlacement;
 import com.kowihere.mmo.world.SkillDef;
 import com.kowihere.mmo.world.SkillDefLoader;
@@ -115,6 +118,8 @@ public final class MapRunner implements Runnable {
     private final Set<Integer> pendingBag = new LinkedHashSet<>();
     /** And for what they have learned. */
     private final Set<Integer> pendingSkills = new LinkedHashSet<>();
+    /** And for what they have to spend, which a kill changes. */
+    private final Set<Integer> pendingPurse = new LinkedHashSet<>();
     private final Map<String, Long> nextRoamTick = new HashMap<>();
     private final List<Fight> fights = new ArrayList<>();
     private final List<PendingRespawn> respawning = new ArrayList<>();
@@ -281,6 +286,8 @@ public final class MapRunner implements Runnable {
                 case Command.Talk talk -> handleTalk(talk);
                 case Command.Choose choose -> handleChoose(choose);
                 case Command.StopTalking stop -> handleStopTalking(stop);
+                case Command.Buy buy -> handleBuy(buy);
+                case Command.Sell sell -> handleSell(sell);
             }
         }
     }
@@ -313,6 +320,7 @@ public final class MapRunner implements Runnable {
         sendYou(actor);
         sendBag(actor);
         sendSkills(actor);
+        sendPurse(actor);
     }
 
     private void attach(Actor actor, Command.Join join) {
@@ -331,6 +339,7 @@ public final class MapRunner implements Runnable {
         sendYou(actor);
         sendBag(actor);
         sendSkills(actor);
+        sendPurse(actor);
     }
 
     /**
@@ -362,6 +371,7 @@ public final class MapRunner implements Runnable {
         actor.unspentPoints = Math.max(0, saved.unspentPoints());
         actor.inventory.restore(saved.items(), content.items());
         actor.skills.restore(saved.skills(), content.skills());
+        actor.purse.restore(saved.coins(), content.currencies());
         actor.skillPoints = Math.max(0, saved.skillPoints());
         // -1 means "as healthy as this level allows", which is how a new
         // character and every row predating combat is stored.
@@ -695,6 +705,7 @@ public final class MapRunner implements Runnable {
         }
         switch (deed) {
             case HEAL -> heal(actor, npc);
+            case OPEN_SHOP -> sendShop(actor, npc);
             // END is somewhere to go rather than something to do, and never
             // arrives here - the loader refuses it as a deed.
             case END -> { }
@@ -756,6 +767,12 @@ public final class MapRunner implements Runnable {
             if (frame != null) {
                 actor.client.send(frame);
             }
+            // The stall closes with the conversation it opened from. Leaving it
+            // on screen would be a shop the server has already stopped serving.
+            String stall = serialise(ServerMessages.Shop.closed(npcId));
+            if (stall != null) {
+                actor.client.send(stall);
+            }
         }
     }
 
@@ -778,6 +795,111 @@ public final class MapRunner implements Runnable {
         if (frame != null) {
             actor.client.send(frame);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // trade
+    // ------------------------------------------------------------------
+
+    /**
+     * The trader a character may deal with right now, or null with the reason
+     * already sent.
+     *
+     * <p>It is whoever they are talking to, and nobody else, and that is the
+     * whole of the check. A shop opens from a conversation, so it inherits every
+     * door the conversation has - the range, the refusal in a fight, and the
+     * ending the moment you walk away.
+     *
+     * <p>There was a second range check here. It never once fired: walking out
+     * of earshot ends the conversation within the same tick as the step, so by
+     * the time any command is drained there is nobody being talked to. Deleting
+     * a guard that cannot run beats keeping a second copy of a rule that would
+     * one day disagree with the first.
+     */
+    private Actor traderFor(Actor actor) {
+        if (actor == null) {
+            return null;
+        }
+        Actor npc = actor.talkingTo == 0 ? null : actors.get(actor.talkingTo);
+        if (npc == null || !npc.isNpc() || npc.npc.shop() == null) {
+            sendError(actor, "Nie ma tu z kim handlować.");
+            return null;
+        }
+        return npc;
+    }
+
+    private void handleBuy(Command.Buy buy) {
+        Actor actor = byClient.get(buy.client());
+        Actor npc = traderFor(actor);
+        if (npc == null) {
+            return;
+        }
+        Shop shop = npc.npc.shop();
+        if (!shop.dealsIn(buy.itemDefId())) {
+            sendError(actor, "Tego tu nie ma na sprzedaż.");
+            return;
+        }
+        ItemDef def = content.items().get(buy.itemDefId());
+        CurrencyDef currency = content.currencies().get(shop.currencyId());
+        if (def == null || currency == null) {
+            return; // refused at startup; nothing sensible to say at runtime
+        }
+        if (actor.inventory.isFull()) {
+            // Checked before the money moves. Taking payment and then having
+            // nowhere to put the goods is the one outcome nobody forgives.
+            sendError(actor, "Plecak jest pełny.");
+            return;
+        }
+        if (!actor.purse.take(currency.id(), def.value())) {
+            sendError(actor, "Za mało: " + def.value() + " " + currency.shortName()
+                    + ", a masz " + actor.purse.amountOf(currency.id()) + ".");
+            return;
+        }
+        actor.inventory.add(ItemStack.of(def));
+        actor.dirty = true;
+        actor.itemsDirty = true;
+        actor.purseDirty = true;
+        chat.add(new ChatDto(actor.id, actor.name, "* kupuje: " + def.name() + " *"));
+        sendBag(actor);
+        sendPurse(actor);
+        sendShop(actor, npc);
+    }
+
+    private void handleSell(Command.Sell sell) {
+        Actor actor = byClient.get(sell.client());
+        Actor npc = traderFor(actor);
+        if (npc == null) {
+            return;
+        }
+        Shop shop = npc.npc.shop();
+        ItemStack stack = actor.inventory.inBag(sell.itemId());
+        if (stack == null) {
+            // Worn, or already sold, or never owned. All three mean the same
+            // thing to the server: it is not in the bag, so it is not for sale.
+            sendError(actor, "Tego nie masz w plecaku. Zdejmij, zanim sprzedasz.");
+            return;
+        }
+        if (!shop.dealsIn(stack.def().id())) {
+            // A trader buys back what they sell and nothing else - otherwise the
+            // chest that deals in fangs would be buying swords with them.
+            sendError(actor, npc.name + " tego nie skupuje.");
+            return;
+        }
+        CurrencyDef currency = content.currencies().get(shop.currencyId());
+        if (currency == null) {
+            return;
+        }
+        int paid = Shop.buybackPrice(stack.def().value());
+        actor.inventory.removeFromBag(stack.id());
+        actor.purse.add(currency.id(), paid);
+        actor.dirty = true;
+        actor.itemsDirty = true;
+        actor.purseDirty = true;
+        chat.add(new ChatDto(actor.id, actor.name, "* sprzedaje: " + stack.def().name()
+                + " za " + paid + " " + currency.shortName() + " *"));
+        sendBag(actor);
+        sendPurse(actor);
+        sendShop(actor, npc);
     }
 
     private void handleChat(Command.Chat message) {
@@ -1140,6 +1262,35 @@ public final class MapRunner implements Runnable {
         if (killer.itemsDirty) {
             sendBag(killer);
         }
+        awardCoins(killer, creature);
+    }
+
+    /**
+     * What a creature was carrying. Separate from the loot above because money
+     * drops in an amount rather than dropping or not, and because a purse has
+     * no capacity - nothing here can be lost to a full bag.
+     */
+    private void awardCoins(Actor killer, Actor creature) {
+        boolean paid = false;
+        for (CoinDrop drop : creature.mob.coins()) {
+            if (!combat.rolls(drop.chance())) {
+                continue;
+            }
+            int amount = drop.roll(random);
+            CurrencyDef currency = content.currencies().get(drop.currencyId());
+            if (currency == null) {
+                continue; // the loader refuses this at startup; belt and braces
+            }
+            killer.purse.add(currency.id(), amount);
+            chat.add(new ChatDto(killer.id, killer.name,
+                    "* znajduje: " + amount + " " + currency.shortName() + " *"));
+            paid = true;
+        }
+        if (paid) {
+            killer.dirty = true;
+            killer.purseDirty = true;
+            sendPurse(killer);
+        }
     }
 
     private void killPlayer(Actor player, Fight fight) {
@@ -1493,6 +1644,13 @@ public final class MapRunner implements Runnable {
             }
         }
         pendingSkills.clear();
+        for (int id : pendingPurse) {
+            Actor actor = actors.get(id);
+            if (actor != null) {
+                sendPurseNow(actor);
+            }
+        }
+        pendingPurse.clear();
     }
 
     private void sendInit(Actor self, Client client) {
@@ -1578,6 +1736,8 @@ public final class MapRunner implements Runnable {
         actor.itemsDirty = false;
         List<StoredSkill> skills = actor.skillsDirty ? actor.skills.stored() : null;
         actor.skillsDirty = false;
+        List<StoredCoin> coins = actor.purseDirty ? actor.purse.stored() : null;
+        actor.purseDirty = false;
         // A copy, never the live actor: anything handed across threads must not
         // be something the tick is still writing to.
         persistence.save(new ActorSnapshot(actor.nameKey, actor.name, map.id(),
@@ -1585,7 +1745,7 @@ public final class MapRunner implements Runnable {
                 actor.level, actor.xp, actor.hp, actor.weakenedUntil,
                 actor.attributes, actor.unspentPoints, items,
                 actor.characterClass == null ? null : actor.characterClass.id(),
-                actor.skillPoints, skills));
+                actor.skillPoints, skills, coins));
     }
 
     private ActorDto toDto(Actor actor) {
@@ -1692,6 +1852,63 @@ public final class MapRunner implements Runnable {
             worn.add(toDto(entry.getValue(), actor));
         }
         String frame = serialise(new ServerMessages.Bag(Inventory.CAPACITY, carried, worn));
+        if (frame != null) {
+            actor.client.send(frame);
+        }
+    }
+
+    private void sendPurse(Actor actor) {
+        if (!actor.isPlayer() || actor.client == null) {
+            return;
+        }
+        pendingPurse.add(actor.id);
+    }
+
+    private void sendPurseNow(Actor actor) {
+        if (!actor.isPlayer() || actor.client == null) {
+            return;
+        }
+        // Every currency, including the ones at zero. A purse that lists only
+        // what you have makes the second currency appear from nowhere the first
+        // time a wolf drops a fang, and look like a bug rather than a find.
+        List<ServerMessages.CoinDto> coins = new ArrayList<>();
+        for (CurrencyDef currency : content.currencies().values()) {
+            coins.add(new ServerMessages.CoinDto(currency.id(), currency.name(),
+                    currency.shortName(), actor.purse.amountOf(currency.id())));
+        }
+        String frame = serialise(new ServerMessages.Purse(coins));
+        if (frame != null) {
+            actor.client.send(frame);
+        }
+    }
+
+    /**
+     * A trader's shelf, sent straight out like the dialogue it opens from - and
+     * for the same reason: everything it refers to was already in a frame this
+     * client has.
+     */
+    private void sendShop(Actor actor, Actor npc) {
+        if (actor.client == null || !npc.isNpc() || npc.npc.shop() == null) {
+            return;
+        }
+        Shop shop = npc.npc.shop();
+        CurrencyDef currency = content.currencies().get(shop.currencyId());
+        if (currency == null) {
+            return;
+        }
+        List<ServerMessages.GoodsDto> goods = new ArrayList<>();
+        for (String itemId : shop.sells()) {
+            ItemDef def = content.items().get(itemId);
+            if (def == null) {
+                continue; // refused at startup; belt and braces
+            }
+            goods.add(new ServerMessages.GoodsDto(def.id(), def.name(), def.slot().name(),
+                    def.requiresLevel(), def.value(), Shop.buybackPrice(def.value()),
+                    def.bonuses().strength(), def.bonuses().agility(), def.bonuses().intellect(),
+                    def.attack(), def.armor()));
+        }
+        String frame = serialise(new ServerMessages.Shop(npc.id, npc.name, currency.id(),
+                currency.shortName(), goods));
         if (frame != null) {
             actor.client.send(frame);
         }

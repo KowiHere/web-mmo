@@ -52,6 +52,16 @@ class ItemDefLoaderTest {
     }
 
     @Test
+    void refusesAnItemWorthNothing() {
+        // Every price in the game is a fraction or a multiple of this number.
+        // An item left without one would be free to buy and free to sell, and
+        // the only sign of it would be somebody's purse behaving oddly.
+        assertThatThrownBy(() -> new ItemDefLoader("classpath:bad-items-free/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("value");
+    }
+
+    @Test
     void refusesAnItemThatGrantsNothing() {
         // The fixture says "sila" where it means "strength". Loading it would
         // produce a ring that is worn, looks right and does nothing at all.

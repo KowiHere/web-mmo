@@ -72,7 +72,11 @@ public class ItemDefLoader {
                 atLeast(root, "requiresLevel", 1, 1, where),
                 granted,
                 atLeast(bonuses, "attack", 0, 0, where),
-                atLeast(bonuses, "armor", 0, 0, where));
+                atLeast(bonuses, "armor", 0, 0, where),
+                // Worth something, always. A free item makes every price in
+                // the game meaningless, and "value" left out of the JSON by
+                // accident would be exactly that.
+                atLeast(root, "value", 1, 0, where));
 
         if (granted.equals(new Attributes(0, 0, 0)) && def.attack() == 0 && def.armor() == 0) {
             // Not pedantry: an item that grants nothing cannot be told apart from

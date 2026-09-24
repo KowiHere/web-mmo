@@ -67,6 +67,7 @@ final class Actor {
 
     final Inventory inventory = new Inventory();
     final Skills skills = new Skills();
+    final Purse purse = new Purse();
 
     /**
      * Energy for skills. Belongs to the fight rather than to the character: it
@@ -88,6 +89,9 @@ final class Actor {
 
     /** The same, for what it has learned. */
     boolean skillsDirty;
+
+    /** And for what it has to spend, which changes on every kill and purchase. */
+    boolean purseDirty;
 
     /** The fight this actor is locked into, or null. Movement is refused while it is set. */
     Fight fight;

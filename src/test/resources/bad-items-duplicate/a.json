@@ -1,1 +1,1 @@
-{ "id": "bliznjak", "name": "Bliźniak A", "slot": "WEAPON", "bonuses": { "attack": 1 } }
+{ "id": "bliznjak", "name": "Bliźniak A", "slot": "WEAPON", "value": 10, "bonuses": { "attack": 1 } }

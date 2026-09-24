@@ -298,7 +298,7 @@ class TalkingToNpcsTest {
 
     private static SavedCharacter hurtAndWeakened(String name, int x, int y, int hp, long until) {
         return new SavedCharacter(PlayerNames.key(name), name, PEN.id(), x, y, Direction.DOWN,
-                1, 0L, hp, until, Attributes.FRESH, 0, List.of(), null, 1, List.of());
+                1, 0L, hp, until, Attributes.FRESH, 0, List.of(), null, 1, List.of(), List.of());
     }
 
     private FakeClient join(SavedCharacter character) {

@@ -20,6 +20,7 @@ public record MobDef(
         int aggroRadius,
         int leashRadius,
         int respawnSeconds,
-        java.util.List<LootEntry> loot
+        java.util.List<LootEntry> loot,
+        java.util.List<CoinDrop> coins
 ) {
 }
