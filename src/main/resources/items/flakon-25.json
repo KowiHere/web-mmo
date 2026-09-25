@@ -1,0 +1,8 @@
+{
+  "id": "flakon-25",
+  "name": "Flakon podróżny",
+  "slot": "NONE",
+  "requiresLevel": 1,
+  "value": 140,
+  "heal": { "percent": 25, "pool": 300 }
+}

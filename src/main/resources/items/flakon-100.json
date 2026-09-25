@@ -1,0 +1,8 @@
+{
+  "id": "flakon-100",
+  "name": "Flakon pełni",
+  "slot": "NONE",
+  "requiresLevel": 8,
+  "value": 1100,
+  "heal": { "percent": 100, "pool": 1200 }
+}

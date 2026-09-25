@@ -10,7 +10,16 @@ import com.kowihere.mmo.world.ItemSlot;
  * come from the definition, so storing them would be storing a second version of
  * the truth — and the two would disagree the first time an item is rebalanced.
  *
+ * <p>Four things now, and the fourth is the exception that proves the rule:
+ * how much is left in a bottle cannot come from the definition, because that is
+ * the one thing two copies of it disagree about.
+ *
  * @param slot the slot it is worn in, or null when it is in the bag
+ * @param remaining what is left in the bottle, or null for everything else
  */
-public record StoredItem(String id, String defId, ItemSlot slot) {
+public record StoredItem(String id, String defId, ItemSlot slot, Integer remaining) {
+
+    public StoredItem(String id, String defId, ItemSlot slot) {
+        this(id, defId, slot, null);
+    }
 }

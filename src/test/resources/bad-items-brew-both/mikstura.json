@@ -1,0 +1,2 @@
+{ "id": "dwoista", "name": "Dwoista", "slot": "NONE", "value": 10,
+  "heal": { "flat": 20, "percent": 30 } }

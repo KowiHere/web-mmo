@@ -1,0 +1,8 @@
+{
+  "id": "probny-flakon",
+  "name": "Próbny flakon",
+  "slot": "NONE",
+  "requiresLevel": 1,
+  "value": 90,
+  "heal": { "percent": 50, "pool": 100 }
+}

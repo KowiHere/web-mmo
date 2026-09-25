@@ -1,0 +1,8 @@
+{
+  "id": "probna-mikstura",
+  "name": "Próbna mikstura",
+  "slot": "NONE",
+  "requiresLevel": 1,
+  "value": 20,
+  "heal": { "flat": 30 }
+}

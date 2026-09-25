@@ -170,6 +170,11 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 }
             }
             case "buyTab" -> map.submit(new Command.BuyTab(client, message.accountChest()));
+            case "drink" -> {
+                if (message.itemId() != null) {
+                    map.submit(new Command.Drink(client, message.itemId()));
+                }
+            }
             case "pass" -> {
                 if (message.x() != null && message.y() != null) {
                     map.submit(new Command.Pass(client, message.x(), message.y()));

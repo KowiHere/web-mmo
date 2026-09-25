@@ -2,7 +2,11 @@
   "id": "zielarka",
   "name": "Zielarka Miłka",
   "kind": "PERSON",
-  "functions": ["DIALOGUE", "HEALER"],
+  "functions": ["DIALOGUE", "HEALER", "SHOP"],
+  "shop": {
+    "currency": "zloto",
+    "sells": ["mikstura-mala", "flakon-25", "flakon-50", "flakon-75", "flakon-100"]
+  },
   "dialogue": {
     "start": "powitanie",
     "nodes": {
@@ -11,6 +15,7 @@
         "options": [
           { "text": "Opatrz mnie, proszę.", "action": "HEAL", "goto": "po-leczeniu" },
           { "text": "Co tu rośnie?", "goto": "ziola" },
+          { "text": "Sprzedasz coś na drogę?", "action": "OPEN_SHOP", "goto": "kramik" },
           { "text": "Widziałaś wilczycę?", "goto": "wilczyca" },
           { "text": "Bywaj.", "action": "END" }
         ]
@@ -22,6 +27,20 @@
           { "text": "Bywaj.", "action": "END" }
         ]
       },
+      "kramik": {
+        "text": "Mikstura na raz, flakon na dłużej. Flakon bierze tyle, ile trzeba — draśnięcie kosztuje draśnięcie, nie cały flakon. Wypić możesz tylko wtedy, gdy nikt cię akurat nie bije.",
+        "options": [
+          { "text": "A gdybym wypiła w walce?", "goto": "w-walce" },
+          { "text": "Rozumiem.", "goto": "powitanie" },
+          { "text": "Bywaj.", "action": "END" }
+        ]
+      },
+      "w-walce": {
+        "text": "Nie wypijesz. Ręce ci drżą, a wilk nie czeka, aż odkorkujesz. Pij wcześniej albo po.",
+        "options": [
+          { "text": "Zapamiętam.", "goto": "kramik" }
+        ]
+      },
       "ziola": {
         "text": "Krwawnik pod brzozą, dziurawiec przy kamieniach. Zbierać będziesz, jak nauczysz się odróżniać jeden od drugiego.",
         "options": [
@@ -30,7 +49,7 @@
         ]
       },
       "ziola-po-co": {
-        "text": "Na razie na nic. Ale przyjdzie taki dzień, że będziesz wolała mieć je w plecaku niż drugi miecz.",
+        "text": "Te w ziemi na razie na nic. Ale te, które już zaparzyłam, stoją na kramiku — i przyjdzie taki dzień, że będziesz wolała mieć flakon w plecaku niż drugi miecz.",
         "options": [
           { "text": "Zapamiętam.", "goto": "powitanie" }
         ]

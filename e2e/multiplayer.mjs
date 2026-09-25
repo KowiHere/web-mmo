@@ -195,6 +195,41 @@ async function escapeAnyFight(page) {
  * and pressing - and a character in a fight refuses to walk, which is the
  * feature working rather than the key failing.
  */
+/**
+ * Kills whatever is nearest until the purse reaches a number.
+ *
+ * <p>What a run earns varies wildly - a boar pays two coins and a wolf
+ * fourteen - and two sections now spend money. Without this, a poor run fails
+ * checks about shops and bottles that have nothing to do with how the fighting
+ * went.
+ */
+async function earnAtLeast(page, gold, seconds = 180) {
+    const until = Date.now() + seconds * 1_000;
+    while (Date.now() < until) {
+        const purse = await page.evaluate(() =>
+            (state.purse.coins.find((c) => c.primary) || {}).amount || 0);
+        if (purse >= gold) return true;
+        await waitIfOut(page);
+        await mendIfHurt(page, 0.4);
+        const busy = await page.evaluate(() =>
+            !!(state.actors.get(state.selfId) || {}).inFight);
+        if (!busy) {
+            const prey = await page.evaluate(() => {
+                const self = state.actors.get(state.selfId);
+                const mobs = [...state.actors.values()].filter((a) => a.kind === 'MOB');
+                mobs.sort((a, b) => Math.abs(a.x - self.x) + Math.abs(a.y - self.y)
+                    - Math.abs(b.x - self.x) - Math.abs(b.y - self.y));
+                return mobs[0] ? mobs[0].id : null;
+            });
+            if (prey === null) return false;
+            await page.evaluate((id) =>
+                state.ws.send(JSON.stringify({ type: 'attack', targetId: id })), prey);
+        }
+        await page.waitForTimeout(1_500);
+    }
+    return false;
+}
+
 async function tryStep(page, stepMs) {
     await waitIfOut(page);
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -351,6 +386,11 @@ try {
         .catch(() => fail('chat did not reach the other client'));
 
     // ---- a tapped key walks the character --------------------------------
+    // Out of any fight first: a fight holds you where you stand, so a wolf
+    // wandering past turns "the key did nothing" into a failure about the
+    // keyboard that is really about the wolf.
+    await escapeAnyFight(ala);
+    await waitIfOut(ala);
     const step = await tryStep(ala, STEP_MS);
     if (step === null) {
         fail('no free tile next to the character; cannot test keyboard movement');
@@ -865,6 +905,10 @@ try {
         await ala.waitForTimeout(1_500);
     }
 
+    // Enough for the cheapest thing on either shelf before any of this: what a
+    // run earns is luck, and a check about trading should not be one about it.
+    await earnAtLeast(ala, 60);
+
     // Walk to the trader who deals in gold and buy the cheapest thing there.
     const openStall = async (page, npcName) => {
         const them = await page.evaluate((name) =>
@@ -895,7 +939,7 @@ try {
             opener = await page
                 .waitForFunction(() => [...document.querySelectorAll('#dialogue-options button')]
                     .map((b) => b.textContent)
-                    .find((t) => /Rozkładaj|Unieś wieko/.test(t)) || null,
+                    .find((t) => /Rozkładaj|Unieś wieko|na drogę/.test(t)) || null,
                     null, { timeout: 15_000 })
                 .then((handle) => handle.jsonValue())
                 .catch(() => null);
@@ -1015,6 +1059,143 @@ try {
         }
         await ala.screenshot({ path: 'skrzynia.png' });
         await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+    }
+
+    // ---- something to drink out there ------------------------------------
+    await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+    await escapeAnyFight(ala);
+
+    if (!(await openStall(ala, 'Miłka'))) {
+        fail('the herbalist never opened a stall');
+    } else {
+        ok('the herbalist heals and sells - one NPC, two functions');
+
+        const shelf = await ala.evaluate(() => (state.shop.goods || [])
+            .map((g) => ({ defId: g.defId, price: g.price, restores: g.restores, holds: g.holds })));
+        const potions = shelf.filter((g) => g.restores);
+        potions.length === shelf.length && potions.length > 0
+            ? ok(`her shelf is all bottles: ${potions.map((p) => p.restores).join(', ')}`)
+            : fail(`the herbalist is selling something that is not a bottle: ${JSON.stringify(shelf)}`);
+
+        const cheapest = potions.sort((a, b) => a.price - b.price)[0];
+        let gold = await ala.evaluate(() =>
+            state.purse.coins.find((c) => c.primary).amount);
+        if (gold < cheapest.price) {
+            // Go and earn it, the way a player would. Leaving her closes the
+            // stall, so it is opened again afterwards.
+            await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+            await earnAtLeast(ala, cheapest.price);
+            gold = await ala.evaluate(() =>
+                state.purse.coins.find((c) => c.primary).amount);
+            if (!(await openStall(ala, 'Miłka'))) {
+                fail('the herbalist would not open her stall a second time');
+            }
+        }
+        const buying = gold >= cheapest.price ? cheapest : null;
+
+        if (!buying) {
+            fail(`nothing on the herbalist's shelf is affordable with ${gold} gold`);
+        } else {
+            await ala.click(`#shop-goods li:has-text("${potions.find((p) => p.defId === buying.defId).restores}")`)
+                .catch(async () => {
+                    await ala.evaluate((defId) => state.ws.send(JSON.stringify({
+                        type: 'buy', itemId: defId,
+                    })), buying.defId);
+                });
+            const bought = await ala
+                .waitForFunction((defId) => (state.bag.carried || [])
+                    .some((i) => i.defId === defId), buying.defId, { timeout: 10_000 })
+                .then(() => true).catch(() => false);
+            bought
+                ? ok(`bought a bottle for ${buying.price} gold`)
+                : fail('the bottle never reached the bag');
+
+            await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+
+            // Hurt, away from her, and then mended by what was bought. That is
+            // the whole point: health that travels.
+            const wounded = await (async () => {
+                const until = Date.now() + 120_000;
+                while (Date.now() < until) {
+                    const state0 = await ala.evaluate(() => ({
+                        hp: state.you.hp,
+                        maxHp: state.you.maxHp,
+                        inFight: !!(state.actors.get(state.selfId) || {}).inFight,
+                    }));
+                    if (state0.hp < state0.maxHp) {
+                        // Out of it the moment there is a wound to mend. A
+                        // fight picked and then left running is a fight this
+                        // character loses, and a dead one proves nothing about
+                        // bottles.
+                        await escapeAnyFight(ala);
+                        await waitIfOut(ala);
+                        return await ala.evaluate(() => state.you.hp < state.you.maxHp);
+                    }
+                    if (!state0.inFight) {
+                        const prey = await ala.evaluate(() =>
+                            [...state.actors.values()].find((a) => a.kind === 'MOB') || null);
+                        if (!prey) return false;
+                        await ala.evaluate((id) => state.ws.send(JSON.stringify({
+                            type: 'attack', targetId: id,
+                        })), prey.id);
+                    }
+                    await ala.waitForTimeout(1_500);
+                }
+                return false;
+            })();
+            if (!wounded) {
+                fail('nothing ever landed a blow, so there is no wound to mend');
+            } else {
+                // A bottle is refused in a fight, which is half the rule.
+                const inFight = await ala.evaluate(() =>
+                    !!(state.actors.get(state.selfId) || {}).inFight);
+                if (inFight) {
+                    const potion = await ala.evaluate((defId) => (state.bag.carried || [])
+                        .find((i) => i.defId === defId) || null, buying.defId);
+                    await ala.evaluate((id) => state.ws.send(JSON.stringify({
+                        type: 'drink', itemId: id,
+                    })), potion.id);
+                    const told = await ala
+                        .waitForFunction(() => [...document.querySelectorAll('#chat-log li')]
+                            .map((li) => li.textContent)
+                            .some((t) => /W walce nie ma na to czasu/.test(t)),
+                            null, { timeout: 10_000 })
+                        .then(() => true).catch(() => false);
+                    told
+                        ? ok('and a bottle is refused in the middle of a fight')
+                        : fail('drinking in a fight was not refused');
+                }
+                await escapeAnyFight(ala);
+
+                const before = await ala.evaluate(() => state.you.hp);
+                const potion = await ala.evaluate((defId) => (state.bag.carried || [])
+                    .find((i) => i.defId === defId) || null, buying.defId);
+                await ala.screenshot({ path: 'mikstura.png' });
+                await ala.evaluate((id) => state.ws.send(JSON.stringify({
+                    type: 'drink', itemId: id,
+                })), potion.id);
+                const mended = await ala
+                    .waitForFunction((was) => state.you.hp > was, before, { timeout: 10_000 })
+                    .then(() => true).catch(() => false);
+                const after = await ala.evaluate(() => state.you.hp);
+                mended
+                    ? ok(`drinking it out here gave back ${after - before} health,`
+                        + ' with no herbalist in sight')
+                    : fail(`the bottle did nothing: ${before} -> ${after}`);
+
+                const left = await ala.evaluate((id) => {
+                    const still = (state.bag.carried || []).find((i) => i.id === id);
+                    return still ? still.remaining || 'full' : null;
+                }, potion.id);
+                buying.holds
+                    ? (typeof left === 'number' && left < buying.holds
+                        ? ok(`and the flask is down to ${left} of ${buying.holds}`)
+                        : fail(`a flask holding ${buying.holds} came back as ${left}`))
+                    : (left === null
+                        ? ok('and a one-mouthful bottle is gone')
+                        : fail(`a bottle with no pool survived being drunk: ${left}`));
+            }
+        }
     }
 
     // ---- what a skill point costs, and where it costs less ---------------

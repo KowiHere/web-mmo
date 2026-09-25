@@ -68,11 +68,21 @@ public class ItemDefLoader {
                 atLeast(bonuses, "agility", 0, 0, where),
                 atLeast(bonuses, "intellect", 0, 0, where));
 
+        Healing healing = root.has("heal") ? healing(root.get("heal"), where, id) : null;
+        if (healing != null && slot.isWorn()) {
+            // Something you wear and something you drink are two different
+            // verbs, and an item claiming both would be worn for its bonuses
+            // and never drunk - or drunk off somebody's body mid-fight.
+            throw new IllegalStateException(where + ": '" + id + "' is worn in " + slot
+                    + " and also drinkable; it has to be one or the other.");
+        }
+
         ItemDef def = new ItemDef(id, name, slot,
                 atLeast(root, "requiresLevel", 1, 1, where),
                 granted,
                 atLeast(bonuses, "attack", 0, 0, where),
                 atLeast(bonuses, "armor", 0, 0, where),
+                healing,
                 // Worth something, always. A free item makes every price in
                 // the game meaningless, and "value" left out of the JSON by
                 // accident would be exactly that.
@@ -96,6 +106,38 @@ public class ItemDefLoader {
                     + " so its bonuses could never reach anybody.");
         }
         return def;
+    }
+
+    /**
+     * The "heal" block. Every way of writing it wrongly ends in a bottle that
+     * looks like a bottle and heals nothing, which a player finds out at the
+     * one moment they cannot afford to.
+     */
+    private static Healing healing(JsonNode node, String where, String id) {
+        int flat = atLeast(node, "flat", 0, 0, where);
+        int percent = atLeast(node, "percent", 0, 0, where);
+        int pool = atLeast(node, "pool", 0, 0, where);
+        if (flat == 0 && percent == 0) {
+            throw new IllegalStateException(where + ": '" + id
+                    + "' has a \"heal\" that heals nothing. Say \"flat\" or \"percent\".");
+        }
+        if (flat > 0 && percent > 0) {
+            // Which of the two applies would be decided by whichever line the
+            // code reads first, and the file would look like it said both.
+            throw new IllegalStateException(where + ": '" + id
+                    + "' heals both " + flat + " and " + percent + "%; it can only be one.");
+        }
+        if (percent > 100) {
+            throw new IllegalStateException(where + ": '" + id + "' heals " + percent
+                    + "% of maximum health, and there is no such thing as more than all of it.");
+        }
+        if (pool > 0 && pool < (percent > 0 ? 1 : flat)) {
+            // A bottle holding less than one mouthful is a bottle that empties
+            // on its first use, priced as though it would not.
+            throw new IllegalStateException(where + ": '" + id + "' holds " + pool
+                    + ", which is less than the " + flat + " one mouthful gives back.");
+        }
+        return new Healing(flat, percent, pool);
     }
 
     private static ItemSlot slot(JsonNode root, String where) {

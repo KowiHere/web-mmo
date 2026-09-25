@@ -331,6 +331,7 @@ public final class MapRunner implements Runnable {
                 case Command.WithdrawCoins take -> handleWithdrawCoins(take);
                 case Command.BuyTab buy -> handleBuyTab(buy);
                 case Command.Pass pass -> handlePass(pass);
+                case Command.Drink drink -> handleDrink(drink);
             }
         }
     }
@@ -607,6 +608,63 @@ public final class MapRunner implements Runnable {
         actor.inventory.wear(stack);
         keepHealthInRange(actor, healthBefore);
         itemsChanged(actor);
+    }
+
+    /**
+     * The only health in this game that does not come from standing in front of
+     * the herbalist - and the reason a hunt two maps away can go on.
+     *
+     * <p>Out of a fight only. In one it would be a second fight happening
+     * inside the first: rounds land every 1.5 seconds and a bagful of bottles
+     * would simply outlast anything that could hurt you.
+     *
+     * <p>No cooldown, deliberately. What stops a bagful being drunk in one tick
+     * is the bag: twenty things, and the frames that say so are queued per
+     * character, so ten mouthfuls in a tick still cost one {@code bag} frame
+     * and one {@code you}.
+     */
+    private void handleDrink(Command.Drink drink) {
+        Actor actor = byClient.get(drink.client());
+        if (actor == null) {
+            return;
+        }
+        if (actor.inFight()) {
+            sendError(actor, "W walce nie ma na to czasu.");
+            return;
+        }
+        ItemStack stack = actor.inventory.inBag(drink.itemId());
+        if (stack == null) {
+            return; // not in the bag; nothing worth answering
+        }
+        ItemDef def = stack.def();
+        if (!def.isDrinkable()) {
+            sendError(actor, def.name() + " się nie pije.");
+            return;
+        }
+        if (actor.level < def.requiresLevel()) {
+            sendError(actor, def.name() + " wymaga poziomu " + def.requiresLevel() + ".");
+            return;
+        }
+        int missing = actor.maxHp() - actor.hp;
+        if (missing <= 0) {
+            // Refused rather than poured away. Nobody decided to waste it, and
+            // a bottle that empties for nothing is the worst kind of surprise.
+            sendError(actor, "Nic ci nie jest.");
+            return;
+        }
+        int healed = def.healing().sip(actor.maxHp(), missing, stack.remaining());
+        if (healed <= 0) {
+            return; // an empty bottle would have gone already; belt and braces
+        }
+        actor.hp += healed;
+        actor.dirty = true;
+        if (stack.drain(healed)) {
+            actor.inventory.removeFromBag(stack.id());
+        }
+        actor.itemsDirty = true;
+        chat.add(new ChatDto(actor.id, actor.name, "* wypija: " + def.name() + " *"));
+        sendYou(actor);
+        sendBag(actor);
     }
 
     private void handleUnequip(Command.Unequip unequip) {
@@ -2547,7 +2605,9 @@ public final class MapRunner implements Runnable {
             goods.add(new ServerMessages.GoodsDto(def.id(), def.name(), def.slot().name(),
                     def.requiresLevel(), def.value(), Shop.buybackPrice(def.value()),
                     def.bonuses().strength(), def.bonuses().agility(), def.bonuses().intellect(),
-                    def.attack(), def.armor()));
+                    def.attack(), def.armor(),
+                    def.isDrinkable() ? def.healing().describe() : null,
+                    def.isDrinkable() && def.healing().hasPool() ? def.healing().pool() : null));
         }
         String frame = serialise(new ServerMessages.Shop(npc.id, npc.name, currency.id(),
                 currency.shortName(), goods));
@@ -2603,6 +2663,8 @@ public final class MapRunner implements Runnable {
         return new ServerMessages.ItemDto(stack.id(), def.id(), def.name(), def.slot().name(),
                 def.requiresLevel(), owner.level >= def.requiresLevel(),
                 def.bonuses().strength(), def.bonuses().agility(), def.bonuses().intellect(),
-                def.attack(), def.armor());
+                def.attack(), def.armor(),
+                def.isDrinkable() ? def.healing().describe() : null,
+                stack.remaining() < 0 ? null : stack.remaining());
     }
 }

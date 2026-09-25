@@ -137,7 +137,9 @@ final class Inventory {
                 // the item is bad; refusing to let someone play is worse.
                 continue;
             }
-            ItemStack stack = new ItemStack(item.id(), def);
+            ItemStack stack = item.remaining() == null
+                    ? new ItemStack(item.id(), def)
+                    : new ItemStack(item.id(), def, item.remaining());
             if (item.slot() != null && def.slot() == item.slot() && !worn.containsKey(item.slot())) {
                 worn.put(item.slot(), stack);
             } else {
@@ -146,14 +148,19 @@ final class Inventory {
         }
     }
 
+    private static StoredItem written(ItemStack stack, ItemSlot slot) {
+        return new StoredItem(stack.id(), stack.def().id(), slot,
+                stack.remaining() < 0 ? null : stack.remaining());
+    }
+
     /** Everything, flattened into the shape that gets written down. */
     List<StoredItem> stored() {
         List<StoredItem> all = new ArrayList<>(bag.size() + worn.size());
         for (Map.Entry<ItemSlot, ItemStack> entry : worn.entrySet()) {
-            all.add(new StoredItem(entry.getValue().id(), entry.getValue().def().id(), entry.getKey()));
+            all.add(written(entry.getValue(), entry.getKey()));
         }
         for (ItemStack stack : bag) {
-            all.add(new StoredItem(stack.id(), stack.def().id(), null));
+            all.add(written(stack, null));
         }
         return List.copyOf(all);
     }

@@ -9,6 +9,11 @@ package com.kowihere.mmo.loop;
  * field would be a shape that is half wrong wherever it is used.
  *
  * @param tab which tab it is in, counted from zero
+ * @param remaining what is left in the bottle, or null for everything else
  */
-public record StoredDeposit(String id, String defId, int tab) {
+public record StoredDeposit(String id, String defId, int tab, Integer remaining) {
+
+    public StoredDeposit(String id, String defId, int tab) {
+        this(id, defId, tab, null);
+    }
 }

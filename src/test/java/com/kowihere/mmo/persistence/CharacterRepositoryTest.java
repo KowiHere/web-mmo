@@ -190,6 +190,40 @@ class CharacterRepositoryTest {
         assertThat(found.unspentPoints()).isEqualTo(Attributes.pointsEarnedBy(5));
     }
 
+    @Test
+    void whatIsLeftInABottleSurvivesTheRoundTrip() {
+        // The first thing about an item that is not in its definition. Without
+        // the column, every flask would come back full and nobody would ever
+        // buy a second one.
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+
+        characters.save(snapshot("ala",
+                List.of(new StoredItem("flakon-1", "flakon-50", null, 240),
+                        new StoredItem("miecz-1", "zardzewialy-miecz", null))));
+
+        List<StoredItem> found = characters.find("ala").orElseThrow().items();
+        assertThat(found).contains(new StoredItem("flakon-1", "flakon-50", null, 240));
+        assertThat(found)
+                .as("and everything that is not a bottle keeps saying nothing about it")
+                .contains(new StoredItem("miecz-1", "zardzewialy-miecz", null, null));
+    }
+
+    @Test
+    void andSoDoesABottlePutAwayInAChest() {
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+
+        characters.save(withDeposit("ala", new Deposit(1,
+                List.of(new StoredDeposit("flakon-1", "flakon-50", 0, 90)), List.of())));
+        characters.save(withAccountDeposit("ala", ala, new Deposit(1,
+                List.of(new StoredDeposit("flakon-2", "flakon-25", 0, 15)), List.of())));
+
+        SavedCharacter found = characters.find("ala").orElseThrow();
+        assertThat(found.deposit().items())
+                .containsExactly(new StoredDeposit("flakon-1", "flakon-50", 0, 90));
+        assertThat(found.accountDeposit().items())
+                .containsExactly(new StoredDeposit("flakon-2", "flakon-25", 0, 15));
+    }
+
     // ---- the chests --------------------------------------------------
 
     @Test

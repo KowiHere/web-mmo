@@ -539,6 +539,49 @@ does not swallow a reward silently — nothing is dropped and you are told why.
 which is why the browser checks can be decisive rather than patient. It is not a
 balance proposal.
 
+### Bottles
+
+Nothing in this world mends on its own. Health came from the herbalist on the
+glade and nowhere else, which was fine while the glade was the world and absurd
+once there were two maps and a cave beyond them. A bottle is health that
+travels.
+
+One shape covers all of them:
+
+```json
+"heal": { "flat": 40 }                  // one mouthful, then gone
+"heal": { "percent": 50, "pool": 600 }  // half your health a mouthful, 600 in the bottle
+```
+
+A mouthful is `flat` or `percent` of **your** maximum — never both, which is
+why a share is what keeps a flask worth carrying at every level. It gives back
+what is missing and no more, and a bottle with a `pool` loses exactly what
+reached you: treating a scratch with a full flask costs the scratch. Drunk dry,
+the flask goes — an empty bottle in a twenty-slot bag is a real cost with
+nothing on the other side of it.
+
+**Only out of a fight.** Rounds land every 1.5 seconds, and a bagful of bottles
+inside a fight would simply outlast anything that could hurt you. It is also
+refused at full health, rather than poured away by a misclick, and refused
+below the level on the bottle — the level on an item used to mean "cannot be
+worn" and now means "cannot be used" as well.
+
+**No cooldown**, deliberately. What keeps ten mouthfuls in one tick cheap is
+that the frames saying so are queued per character and flushed once a tick, so
+ten drinks cost one `bag` frame and one `you`; what stops an endless supply is
+that the bag holds twenty things and the herbalist charges for them. There is a
+test that counts the frames, because that claim is the whole answer.
+
+A flask is the **first thing in this game that differs between two copies of one
+definition** — two rusty swords are the same sword, but a full flask and an
+almost-empty one are not the same flask. That is one nullable column on the two
+tables that hold items, and nothing else: what is in a bottle cannot come from
+the definition, and everything else still does.
+
+The herbalist sells them, and only she does. She was already the one cure in the
+game; now she is the first NPC doing two things at once, which is what a
+**list** of functions was for.
+
 ### The chest, and one character at a time
 
 A bag holds twenty things and that is the hard ceiling: a full one ends a hunt,
@@ -782,11 +825,21 @@ for the conversation at a door — and so does `NpcFunction.TELEPORT`, still
 refused at startup, because an NPC who moves you somewhere is that conversation
 by another name.
 
+**Nothing a bottle does lasts longer than the swallow.** Healing over time, a
+drink that helps inside a fight, a draught that raises strength for ten minutes
+— all three are the same missing thing: an effect with a duration, which is
+state that has to tick, be sent, and survive a logout. That is a milestone, not
+a field, and until it exists a bottle is instant or it is nothing.
+
+**Empty bottles cannot be refilled**, because they do not exist: a flask drunk
+dry disappears. Refilling at the herbalist for less than a new one is the
+obvious next thing, and it needs the empty bottle to stay.
+
 Also missing: instances with parties. No password reset or email confirmation
 either — both need to send mail, which means a service to run.
 
-Roughly in order: potions, then the remaining ways through a door. Instances and
-parties last, which is what heroes and colossi are waiting on.
+Roughly in order: the talking at a passage (`NpcFunction.TELEPORT` with it), and
+then instances and parties, which is what heroes and colossi are waiting on.
 
 ## Layout
 

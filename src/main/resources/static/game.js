@@ -378,7 +378,9 @@ function renderShop() {
 
     shopGoodsEl.innerHTML = '';
     for (const goods of shop.goods || []) {
-        const row = tradeRow(goods.name, `${goods.price} ${shop.currencyShort}`);
+        const row = tradeRow(goods.restores
+            ? `${goods.name} (${goods.restores}${goods.holds ? ` · ${goods.holds}` : ''})`
+            : goods.name, `${goods.price} ${shop.currencyShort}`);
         if (goods.price > held) {
             row.classList.add('too-dear');
             row.title = `Za mało: ${goods.price} ${shop.currencyShort}`;
@@ -690,6 +692,8 @@ const SLOT_NAMES = {
     WEAPON: 'Broń',
     CHEST: 'Tors',
     TRINKET: 'Ozdoba',
+    // Carried rather than worn: a torch to burn at a passage, a bottle to drink.
+    NONE: 'Niesione',
 };
 
 const SLOT_ORDER = ['WEAPON', 'CHEST', 'TRINKET'];
@@ -908,9 +912,23 @@ function renderBag() {
         return;
     }
     for (const item of carried) {
+        // Two verbs, and the item says which: a bottle is drunk, everything
+        // with a slot is worn, and a torch is neither until a passage asks.
+        if (item.restores) {
+            bagEl.append(itemRow(item,
+                item.wearable ? () => send({ type: 'drink', itemId: item.id }) : null,
+                item.wearable
+                    ? `Wypij: ${item.name} (${item.restores}${item.remaining
+                        ? `, zostało ${item.remaining}` : ''})`
+                    : `Wymaga poziomu ${item.requiresLevel}`));
+            continue;
+        }
         bagEl.append(itemRow(item,
-            item.wearable ? () => send({ type: 'equip', itemId: item.id }) : null,
-            item.wearable ? `Załóż: ${item.name}` : `Wymaga poziomu ${item.requiresLevel}`));
+            item.slot === 'NONE' ? null
+                : item.wearable ? () => send({ type: 'equip', itemId: item.id }) : null,
+            item.slot === 'NONE' ? `${item.name} — niesie się, nie nosi`
+                : item.wearable ? `Załóż: ${item.name}`
+                : `Wymaga poziomu ${item.requiresLevel}`));
     }
 }
 
@@ -937,6 +955,11 @@ function itemRow(item, onClick, title) {
 
 /** Everything an item grants, short enough to sit on one line. */
 function describeBonuses(item) {
+    // A bottle has no bonuses; what it has is what it gives back, and how much
+    // of that is left in it.
+    if (item.restores) {
+        return item.remaining ? `${item.restores} · ${item.remaining}` : item.restores;
+    }
     const parts = [];
     if (item.attack) parts.push(`+${item.attack} atk`);
     if (item.armor) parts.push(`+${item.armor} panc`);

@@ -1,0 +1,2 @@
+{ "id": "amulet-do-picia", "name": "Amulet do picia", "slot": "TRINKET", "value": 10,
+  "bonuses": { "armor": 2 }, "heal": { "flat": 20 } }

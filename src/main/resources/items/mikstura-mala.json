@@ -1,0 +1,8 @@
+{
+  "id": "mikstura-mala",
+  "name": "Mała mikstura",
+  "slot": "NONE",
+  "requiresLevel": 1,
+  "value": 25,
+  "heal": { "flat": 40 }
+}

@@ -1,0 +1,8 @@
+{
+  "id": "probna-kropla",
+  "name": "Kropla",
+  "slot": "NONE",
+  "requiresLevel": 1,
+  "value": 1,
+  "heal": { "flat": 1 }
+}

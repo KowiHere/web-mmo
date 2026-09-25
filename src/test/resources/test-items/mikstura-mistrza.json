@@ -1,0 +1,8 @@
+{
+  "id": "mikstura-mistrza",
+  "name": "Mikstura mistrza",
+  "slot": "NONE",
+  "requiresLevel": 9,
+  "value": 200,
+  "heal": { "flat": 500 }
+}

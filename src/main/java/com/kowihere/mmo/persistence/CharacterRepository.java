@@ -65,10 +65,10 @@ public class CharacterRepository {
     }
 
     public List<StoredItem> itemsOf(String nameKey) {
-        return jdbc.query("SELECT id, def_id, slot FROM item_instance"
+        return jdbc.query("SELECT id, def_id, slot, remaining FROM item_instance"
                         + " WHERE character_key = ? AND tab IS NULL ORDER BY created_at, id",
                 (rs, row) -> new StoredItem(rs.getString("id"), rs.getString("def_id"),
-                        ItemSlot.parse(rs.getString("slot"))),
+                        ItemSlot.parse(rs.getString("slot")), boxed(rs, "remaining")),
                 nameKey);
     }
 
@@ -80,10 +80,10 @@ public class CharacterRepository {
      */
     public Deposit depositOf(String nameKey) {
         List<StoredDeposit> items = jdbc.query(
-                "SELECT id, def_id, tab FROM item_instance"
+                "SELECT id, def_id, tab, remaining FROM item_instance"
                         + " WHERE character_key = ? AND tab IS NOT NULL ORDER BY created_at, id",
                 (rs, row) -> new StoredDeposit(rs.getString("id"), rs.getString("def_id"),
-                        rs.getInt("tab")),
+                        rs.getInt("tab"), boxed(rs, "remaining")),
                 nameKey);
         List<StoredCoin> coins = jdbc.query(
                 "SELECT currency_id, amount FROM storage_currency WHERE character_key = ?",
@@ -103,10 +103,10 @@ public class CharacterRepository {
      */
     public Deposit accountDepositOf(long accountId) {
         List<StoredDeposit> items = jdbc.query(
-                "SELECT id, def_id, tab FROM account_item"
+                "SELECT id, def_id, tab, remaining FROM account_item"
                         + " WHERE account_id = ? ORDER BY created_at, id",
                 (rs, row) -> new StoredDeposit(rs.getString("id"), rs.getString("def_id"),
-                        rs.getInt("tab")),
+                        rs.getInt("tab"), boxed(rs, "remaining")),
                 accountId);
         List<StoredCoin> coins = jdbc.query(
                 "SELECT currency_id, amount FROM account_currency WHERE account_id = ?",
@@ -248,11 +248,11 @@ public class CharacterRepository {
         Timestamp now = Timestamp.from(Instant.now());
         if (!deposit.items().isEmpty()) {
             jdbc.batchUpdate("INSERT INTO item_instance"
-                            + " (id, character_key, def_id, slot, tab, created_at)"
-                            + " VALUES (?, ?, ?, NULL, ?, ?)",
+                            + " (id, character_key, def_id, slot, tab, remaining, created_at)"
+                            + " VALUES (?, ?, ?, NULL, ?, ?, ?)",
                     deposit.items().stream()
                             .map(item -> new Object[]{item.id(), nameKey, item.defId(),
-                                    item.tab(), now})
+                                    item.tab(), item.remaining(), now})
                             .toList());
         }
         jdbc.update("DELETE FROM storage_currency WHERE character_key = ?", nameKey);
@@ -276,11 +276,12 @@ public class CharacterRepository {
         jdbc.update("DELETE FROM account_item WHERE account_id = ?", accountId);
         Timestamp now = Timestamp.from(Instant.now());
         if (!deposit.items().isEmpty()) {
-            jdbc.batchUpdate("INSERT INTO account_item (id, account_id, def_id, tab, created_at)"
-                            + " VALUES (?, ?, ?, ?, ?)",
+            jdbc.batchUpdate("INSERT INTO account_item"
+                            + " (id, account_id, def_id, tab, remaining, created_at)"
+                            + " VALUES (?, ?, ?, ?, ?, ?)",
                     deposit.items().stream()
                             .map(item -> new Object[]{item.id(), accountId, item.defId(),
-                                    item.tab(), now})
+                                    item.tab(), item.remaining(), now})
                             .toList());
         }
         jdbc.update("DELETE FROM account_currency WHERE account_id = ?", accountId);
@@ -339,12 +340,20 @@ public class CharacterRepository {
         }
         Timestamp now = Timestamp.from(Instant.now());
         jdbc.batchUpdate("INSERT INTO item_instance"
-                        + " (id, character_key, def_id, slot, tab, created_at)"
-                        + " VALUES (?, ?, ?, ?, NULL, ?)",
+                        + " (id, character_key, def_id, slot, tab, remaining, created_at)"
+                        + " VALUES (?, ?, ?, ?, NULL, ?, ?)",
                 items.stream()
                         .map(item -> new Object[]{item.id(), nameKey, item.defId(),
-                                item.slot() == null ? null : item.slot().name(), now})
+                                item.slot() == null ? null : item.slot().name(),
+                                item.remaining(), now})
                         .toList());
+    }
+
+    /** A nullable integer column, kept null rather than turned into a zero. */
+    private static Integer boxed(java.sql.ResultSet rs, String column)
+            throws java.sql.SQLException {
+        int value = rs.getInt(column);
+        return rs.wasNull() ? null : value;
     }
 
     private static Direction direction(String stored) {

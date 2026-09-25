@@ -109,6 +109,17 @@ public sealed interface Command {
     }
 
     /**
+     * Drinks one thing from the bag.
+     *
+     * <p>Named separately from {@link Equip} on purpose: wearing and drinking
+     * are two verbs, and one command meaning either would decide which by
+     * looking at the item - so a mistyped definition would quietly change what
+     * a click does.
+     */
+    record Drink(Client client, String itemId) implements Command {
+    }
+
+    /**
      * Yes to a passage that takes something to open.
      *
      * <p>Carries the tile it is answering about, so that an answer which

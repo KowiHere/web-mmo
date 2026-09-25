@@ -39,6 +39,69 @@ class ItemDefLoaderTest {
     }
 
     @Test
+    void aBottleSaysHowMuchItGivesBackAndHowMuchIsInIt() {
+        ItemDef flask = items.get("flakon-50");
+
+        assertThat(flask.isDrinkable()).isTrue();
+        assertThat(flask.healing().percent()).isEqualTo(50);
+        assertThat(flask.healing().hasPool()).isTrue();
+        assertThat(items.get("mikstura-mala").healing().hasPool())
+                .as("and a one-mouthful potion says it has no pool at all")
+                .isFalse();
+    }
+
+    @Test
+    void refusesABrewThatHealsNothing() {
+        assertThatThrownBy(() ->
+                new ItemDefLoader("classpath:bad-items-brew-empty/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("heals nothing");
+    }
+
+    @Test
+    void refusesABrewThatHealsBothWays() {
+        // Which of the two applies would be decided by whichever line the code
+        // reads first, and the file would look as though it said both.
+        assertThatThrownBy(() ->
+                new ItemDefLoader("classpath:bad-items-brew-both/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("can only be one");
+    }
+
+    @Test
+    void refusesMoreThanAllOfSomebodysHealth() {
+        assertThatThrownBy(() ->
+                new ItemDefLoader("classpath:bad-items-brew-percent/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("more than all of it");
+    }
+
+    @Test
+    void refusesSomethingWornThatIsAlsoDrunk() {
+        // Two verbs. An item claiming both would be worn for its bonuses and
+        // never drunk - or drunk off somebody's body in the middle of a fight.
+        assertThatThrownBy(() ->
+                new ItemDefLoader("classpath:bad-items-brew-worn/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("one or the other");
+    }
+
+    @Test
+    void oneMouthfulIsNeverMoreThanIsMissing() {
+        Healing flask = items.get("flakon-100").healing();
+
+        assertThat(flask.sip(200, 30, 1_000))
+                .as("treating a scratch costs the scratch, not the bottle")
+                .isEqualTo(30);
+        assertThat(flask.sip(200, 500, 1_000))
+                .as("and a mouthful is capped by what it is worth")
+                .isEqualTo(200);
+        assertThat(flask.sip(200, 500, 45))
+                .as("and by what is left in the bottle")
+                .isEqualTo(45);
+    }
+
+    @Test
     void refusesBonusesOnSomethingNobodyCanPutOn() {
         // They would sit in the file looking as though somebody will one day
         // have them, and nobody ever could.

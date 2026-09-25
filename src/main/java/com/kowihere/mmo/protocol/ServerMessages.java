@@ -166,11 +166,15 @@ public final class ServerMessages {
      * @param slot where it is worn; for a bag item this is where it *would* go
      * @param wearable false when the character's level is too low, so the panel
      *                 can say why rather than letting the click be refused
+     * @param restores what one mouthful gives back ("+40", "50%"), or null when
+     *                 this is not something you drink
+     * @param remaining what is left in the bottle, or null when it has no pool -
+     *                  the one thing about an item that is not in its definition
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ItemDto(String id, String defId, String name, String slot, int requiresLevel,
                           boolean wearable, int strength, int agility, int intellect,
-                          int attack, int armor) {
+                          int attack, int armor, String restores, Integer remaining) {
     }
 
     /**
@@ -247,9 +251,11 @@ public final class ServerMessages {
      *                same number - sent so the interface never has to do the
      *                arithmetic and get a different answer from the server
      */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record GoodsDto(String defId, String name, String slot, int requiresLevel,
                            int price, int buyback,
-                           int strength, int agility, int intellect, int attack, int armor) {
+                           int strength, int agility, int intellect, int attack, int armor,
+                           String restores, Integer holds) {
     }
 
     /**

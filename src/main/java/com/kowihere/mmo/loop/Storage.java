@@ -109,14 +109,18 @@ final class Storage {
             // tab nobody can see is something lost, so it comes back into the
             // first one rather than nowhere.
             int tab = hasTab(item.tab()) ? item.tab() : 0;
-            kept.add(new Kept(new ItemStack(item.id(), def), tab));
+            ItemStack stack = item.remaining() == null
+                    ? new ItemStack(item.id(), def)
+                    : new ItemStack(item.id(), def, item.remaining());
+            kept.add(new Kept(stack, tab));
         }
     }
 
     List<StoredDeposit> stored() {
         List<StoredDeposit> all = new ArrayList<>(kept.size());
         for (Kept one : kept) {
-            all.add(new StoredDeposit(one.stack().id(), one.stack().def().id(), one.tab()));
+            all.add(new StoredDeposit(one.stack().id(), one.stack().def().id(), one.tab(),
+                    one.stack().remaining() < 0 ? null : one.stack().remaining()));
         }
         return List.copyOf(all);
     }

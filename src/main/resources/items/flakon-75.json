@@ -1,0 +1,8 @@
+{
+  "id": "flakon-75",
+  "name": "Flakon zielarki",
+  "slot": "NONE",
+  "requiresLevel": 6,
+  "value": 620,
+  "heal": { "percent": 75, "pool": 900 }
+}
