@@ -353,7 +353,10 @@ try {
 
     // ---- movement is server-driven and reaches the other client ----------
     const start = bobView.actors.find((a) => a.id === alaView.selfId);
-    await ala.mouse.click(200, 200);
+    // On the canvas itself, and well clear of the panels along the left edge:
+    // a click that lands on the party panel is a click the map never hears,
+    // which says nothing about whether movement propagates.
+    await ala.click('#view', { position: { x: 520, y: 300 } });
     await bob.waitForTimeout(STEP_MS * 8);
 
     const moved = (await snapshot(bob)).actors.find((a) => a.id === alaView.selfId);
@@ -1416,6 +1419,55 @@ try {
         await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
     }
 
+    // ---- a party, across two maps -----------------------------------------
+    // Bob has been standing on the glade this whole run. The claim worth
+    // proving is the one the design exists for: Ala walks into the wood and
+    // Bob still sees how she is doing, on a panel no map's tick ever built.
+    await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+
+    await ala.fill('#party-name', BOB);
+    await ala.click('#party-ask');
+    const offered = await bob
+        .waitForFunction(() => !document.querySelector('#invite').hidden,
+            null, { timeout: 15_000 })
+        .then(() => true).catch(() => false);
+    offered
+        ? ok('the invitation reached the other tab')
+        : fail('the invitation never arrived');
+
+    if (offered) {
+        await bob.screenshot({ path: 'zaproszenie.png' });
+        await bob.click('#invite-yes');
+        const joined = await ala
+            .waitForFunction(() => state.party && state.party.members.length === 2,
+                null, { timeout: 15_000 })
+            .then(() => true).catch(() => false);
+        joined
+            ? ok('accepting put both of them in one party')
+            : fail('the party never grew to two');
+
+        const leader = await ala.evaluate(() =>
+            (state.party.members.find((m) => m.leader) || {}).name);
+        leader === ALA
+            ? ok(`${ALA} leads it, being the one who asked`)
+            : fail(`the party is led by ${leader}`);
+
+        // A line said to the party, heard on the other tab and nowhere else.
+        await ala.evaluate(() => state.ws.send(JSON.stringify({
+            type: 'partyChat', text: 'idziemy do lasu',
+        })));
+        const heard = await bob
+            .waitForFunction(() => [...document.querySelectorAll('#chat-log li')]
+                .some((li) => li.textContent.includes('idziemy do lasu')),
+                null, { timeout: 15_000 })
+            .then(() => true).catch(() => false);
+        heard
+            ? ok('and a line said to the party reached the other tab')
+            : fail('party chat did not arrive');
+
+        await ala.screenshot({ path: 'druzyna.png' });
+    }
+
     // ---- through the door, and back --------------------------------------
     await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
     await escapeAnyFight(ala);
@@ -1512,6 +1564,20 @@ try {
             walked
                 ? ok('and commands sent afterwards reach the map it is actually on')
                 : fail('the character could not move on the new map');
+
+            // The party panel does not care which map anybody is on - and this
+            // is the only place in the game where that claim can be seen.
+            const fromBob = await bob
+                .waitForFunction((who) => {
+                    if (!state.party) return false;
+                    const her = state.party.members.find((m) => m.name === who);
+                    return her && her.mapName === 'Las Wilczy' ? her.mapName : false;
+                }, ALA, { timeout: 20_000 })
+                .then((handle) => handle.jsonValue()).catch(() => null);
+            fromBob
+                ? ok(`and Bob's panel says she is in ${fromBob}, from the glade`)
+                : fail("the party panel did not follow her to the other map");
+            await bob.screenshot({ path: 'druzyna-mapy.png' });
 
             // ---- the passage that costs something --------------------------
             const gate = await ala.evaluate(() =>

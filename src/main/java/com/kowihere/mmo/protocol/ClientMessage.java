@@ -31,7 +31,8 @@ public record ClientMessage(
         Integer tab,
         Integer amount,
         String currencyId,
-        Boolean account
+        Boolean account,
+        String name
 ) {
 
     /** Whose chest a storage message means. Absent is the character's own. */

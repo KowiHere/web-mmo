@@ -582,6 +582,42 @@ The herbalist sells them, and only she does. She was already the one cure in the
 game; now she is the first NPC doing two things at once, which is what a
 **list** of functions was for.
 
+### A party is not world state
+
+Everything else in this game belongs to a map and is written by that map's one
+thread. A party is the first thing that cannot be: five people may be standing
+on five maps, and the panel has to show five health bars at once. So a party
+lives **beside** the world rather than in it.
+
+* `PartyService` is the only thing that changes a party. Inviting, accepting,
+  leaving, removing, handing over — all of it arrives on a network thread,
+  never in a tick, so plain `synchronized` is the whole of the locking.
+* **Map threads only publish.** Once a tick, each map writes an immutable
+  record for every player on it — health, level, where they are, whether their
+  socket is still there. That is a put into a concurrent map: one writer per
+  character, many readers, no lock anywhere. The same shape as the routing
+  table in `WorldService`, and for the same reason: it is a signpost, not a
+  world.
+* **Nobody pushes a party frame from a tick.** A heartbeat thread does, twice a
+  second, so a party scattered over three maps updates exactly as fast as one
+  standing together.
+
+That last rule pays for itself in an odd place: **a map thread never removes
+anybody from a party**. When somebody leaves the world their map simply stops
+publishing, and half a minute later the heartbeat — which may take the lock,
+because it is not a tick — notices the silence and gives up the seat. A dropped
+connection therefore holds a seat for exactly as long as the world holds the
+character standing there, which is the half minute that already existed.
+
+Five to a party. The leader invites and removes, and can hand the lead over;
+when a leader leaves, the next member takes it, because a party with nobody in
+charge could only ever shrink. An invitation goes stale after a minute. The
+party has its own chat, reached with `/d`, and it is the first thing in this
+game that anyone can say to somebody on another map.
+
+**None of it is written down.** A party is a conversation, not a possession: it
+survives a logout exactly as far as a conversation with an NPC does.
+
 ### The chest, and one character at a time
 
 A bag holds twenty things and that is the hard ceiling: a full one ends a hunt,
@@ -838,13 +874,21 @@ obvious next thing, and it needs the empty bottle to stay.
 Also missing: instances with parties. No password reset or email confirmation
 either — both need to send mail, which means a service to run.
 
-Roughly in order: the talking at a passage (`NpcFunction.TELEPORT` with it), and
-then instances and parties, which is what heroes and colossi are waiting on.
+**A party changes nothing about fighting yet.** Experience still goes to
+whoever struck last, and so does loot — which is the next stage, and the one
+that makes hunting together worth doing. Public party listings and effects with
+a duration (the buffs and debuffs that would make a party more than five people
+in one place) come after that.
+
+Roughly in order: sharing experience and loot inside a party, then the talking
+at a passage (`NpcFunction.TELEPORT` with it), then effects with a duration,
+then instances — which is what heroes and colossi are waiting on.
 
 ## Layout
 
 ```
 world/       maps, creatures, items and classes — immutable, shared
+party/       parties and their heartbeat   — beside the world, never inside it
 path/        A* over the collision grid    — server-side only
 combat/      attributes, energy, damage, experience — pure functions, injected randomness
 loop/        the game loop, commands, creature behaviour — no Spring below this line

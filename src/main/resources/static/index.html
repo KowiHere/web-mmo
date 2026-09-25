@@ -83,6 +83,27 @@
     </div>
 
     <div id="sheet"></div>
+
+    <!-- The party. Drawn from frames that no map sent: five people can be on
+         five maps, and no map thread may read another one's characters. -->
+    <div id="party" hidden>
+        <h2>Drużyna</h2>
+        <ul id="party-members"></ul>
+        <div class="party-invite">
+            <input id="party-name" maxlength="16" placeholder="Zaproś po nazwie" autocomplete="off">
+            <button type="button" id="party-ask">Zaproś</button>
+        </div>
+        <button type="button" id="party-leave" class="quiet">Opuść drużynę</button>
+    </div>
+
+    <!-- An offer of a seat, answered the same way a passage is: yes or no. -->
+    <div id="invite" hidden>
+        <p id="invite-text"></p>
+        <div class="passage-buttons">
+            <button id="invite-yes" type="button">Przyjmij</button>
+            <button id="invite-no" type="button">Odrzuć</button>
+        </div>
+    </div>
     <button type="button" id="flee" hidden>Uciekaj</button>
     <div id="skillbar" hidden></div>
     <button type="button" id="panel-toggle" class="quiet">Postać (i)</button>
@@ -171,7 +192,7 @@
 
     <div id="chat">
         <ul id="chat-log"></ul>
-        <input id="chat-input" maxlength="200" placeholder="Enter, żeby pisać" autocomplete="off">
+        <input id="chat-input" maxlength="200" placeholder="Enter, żeby pisać · /d do drużyny" autocomplete="off">
     </div>
 </div>
 

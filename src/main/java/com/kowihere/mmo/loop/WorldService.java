@@ -40,6 +40,7 @@ public class WorldService {
     private final ClassDefLoader classLoader;
     private final ObjectMapper json;
     private final WorldPersistence persistence;
+    private final PartyBoard board;
     private final Map<String, MapRunner> runners = new LinkedHashMap<>();
     private final List<Thread> threads = new ArrayList<>();
 
@@ -78,13 +79,14 @@ public class WorldService {
 
     public WorldService(MapDefLoader loader, MobDefLoader mobLoader, ItemDefLoader itemLoader,
                         ClassDefLoader classLoader, ObjectMapper json,
-                        WorldPersistence persistence) {
+                        WorldPersistence persistence, PartyBoard board) {
         this.loader = loader;
         this.mobLoader = mobLoader;
         this.itemLoader = itemLoader;
         this.classLoader = classLoader;
         this.json = json;
         this.persistence = persistence;
+        this.board = board;
     }
 
     @PostConstruct
@@ -103,6 +105,7 @@ public class WorldService {
         for (MapDef def : defs.values()) {
             MapRunner runner = new MapRunner(def, json, persistence, content);
             runner.transfersThrough(this::handOver);
+            runner.publishesTo(board);
             runners.put(def.id(), runner);
         }
         // Every map built before any of them runs: a map that started early

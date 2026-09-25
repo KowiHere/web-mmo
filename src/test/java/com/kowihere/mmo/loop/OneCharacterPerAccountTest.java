@@ -27,7 +27,7 @@ class OneCharacterPerAccountTest {
 
     private final WorldService world = new WorldService(
             new MapDefLoader(new MobDefLoader()), new MobDefLoader(), new ItemDefLoader(),
-            new ClassDefLoader(), new ObjectMapper(), WorldPersistence.NONE);
+            new ClassDefLoader(), new ObjectMapper(), WorldPersistence.NONE, PartyBoard.NONE);
 
     @Test
     void theFirstSocketGetsTheAccount() {

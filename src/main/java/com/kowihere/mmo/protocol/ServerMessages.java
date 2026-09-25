@@ -327,6 +327,51 @@ public final class ServerMessages {
         }
     }
 
+    /**
+     * One seat in a party, as the panel draws it.
+     *
+     * @param mapName where they are, which is the whole reason this frame does
+     *                not come from a map: two members can be on two of them
+     * @param online  false while their socket is gone and the seat is being held
+     */
+    public record PartyMemberDto(String name, int level, int hp, int maxHp, String mapName,
+                                 boolean online, boolean leader, boolean you) {
+    }
+
+    /**
+     * The party, sent to each of its members by the heartbeat rather than by any
+     * map's tick. A frame with no members means there is no party any more.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record PartyDto(String type, long version, List<PartyMemberDto> members) {
+        public PartyDto(long version, List<PartyMemberDto> members) {
+            this("party", version, members);
+        }
+
+        public static PartyDto none() {
+            return new PartyDto(0, List.of());
+        }
+    }
+
+    /** An offer of a seat. A frame with no {@code from} withdraws it. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record PartyInviteDto(String type, String from, Integer size, Long expiresInMs) {
+        public PartyInviteDto(String from, int size, long expiresInMs) {
+            this("partyInvite", from, size, expiresInMs);
+        }
+
+        public static PartyInviteDto withdrawn() {
+            return new PartyInviteDto("partyInvite", null, null, null);
+        }
+    }
+
+    /** One line said to a party, which reaches it wherever its members are. */
+    public record PartyChatDto(String type, String from, String text) {
+        public PartyChatDto(String from, String text) {
+            this("partyChat", from, text);
+        }
+    }
+
     public record Error(String type, String message) {
         public Error(String message) {
             this("error", message);

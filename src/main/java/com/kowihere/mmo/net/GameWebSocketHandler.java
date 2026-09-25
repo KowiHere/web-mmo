@@ -5,6 +5,7 @@ import com.kowihere.mmo.loop.Command;
 import com.kowihere.mmo.loop.MapRunner;
 import com.kowihere.mmo.loop.SavedCharacter;
 import com.kowihere.mmo.loop.WorldService;
+import com.kowihere.mmo.party.PartyService;
 import com.kowihere.mmo.persistence.CharacterRepository;
 import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.protocol.ClientMessage;
@@ -33,11 +34,14 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     private final WorldService world;
     private final ObjectMapper json;
     private final CharacterRepository characters;
+    private final PartyService parties;
 
-    public GameWebSocketHandler(WorldService world, ObjectMapper json, CharacterRepository characters) {
+    public GameWebSocketHandler(WorldService world, ObjectMapper json,
+                                CharacterRepository characters, PartyService parties) {
         this.world = world;
         this.json = json;
         this.characters = characters;
+        this.parties = parties;
     }
 
     @Override
@@ -80,6 +84,14 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
 
         if ("hello".equals(message.type())) {
             enterWorld(session, client, message);
+            return;
+        }
+
+        // Parties are not world state and do not belong to any one map, so they
+        // are answered here rather than queued into a tick. The character's name
+        // comes from the handshake, never from the message.
+        String me = (String) session.getAttributes().get(AuthHandshakeInterceptor.CHARACTER_KEY);
+        if (me != null && handlePartyMessage(me, client, message)) {
             return;
         }
 
@@ -196,6 +208,14 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 map.submit(new Command.Detach(client));
             }
             world.forget(client);
+            String characterKey =
+                    (String) session.getAttributes().get(AuthHandshakeInterceptor.CHARACTER_KEY);
+            if (characterKey != null) {
+                // Not "left the party": the character is still standing in the
+                // world for the next half minute, and the seat is held for
+                // exactly that long.
+                parties.disconnected(characterKey);
+            }
             client.disconnect("Socket closed");
         }
         log.debug("Socket closed: {} ({})", session.getId(), status);
@@ -245,8 +265,58 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         // answers with the starting one rather than refusing to let them play.
         MapRunner map = world.mapOrStarting(character.mapId());
         world.nowOn(client, map);
+        // The party register learns which socket this character is playing on.
+        // It is the only thing that ever sends frames from outside a tick, and
+        // this is where it finds out where to send them.
+        parties.joined(characterKey, client);
         map.submit(new Command.Join(client, accountId, character,
                 message.since() == null ? 0L : message.since()));
+    }
+
+    /**
+     * Everything a party can be asked to do.
+     *
+     * @return true when this was a party message and has been dealt with
+     */
+    private boolean handlePartyMessage(String me, PlayerSession client, ClientMessage message) {
+        if (!PARTY_MESSAGES.contains(message.type())) {
+            return false;
+        }
+        String refused = switch (message.type()) {
+            case "partyInvite" -> message.name() == null ? null : parties.invite(me, message.name());
+            case "partyAccept" -> parties.accept(me);
+            case "partyDecline" -> {
+                parties.decline(me);
+                yield null;
+            }
+            case "partyLeave" -> {
+                parties.leave(me);
+                yield null;
+            }
+            case "partyKick" -> message.name() == null ? null : parties.remove(me, message.name());
+            case "partyLead" -> message.name() == null ? null : parties.handOver(me, message.name());
+            case "partyChat" -> parties.say(me, message.text());
+            default -> null;
+        };
+        if (refused != null) {
+            // The same channel every other refusal uses, so a party saying no
+            // looks like the world saying no.
+            tell(client, refused);
+        }
+        return true;
+    }
+
+    private static final java.util.Set<String> PARTY_MESSAGES = java.util.Set.of(
+            "partyInvite", "partyAccept", "partyDecline", "partyLeave",
+            "partyKick", "partyLead", "partyChat");
+
+    private void tell(PlayerSession client, String message) {
+        try {
+            client.send(json.writeValueAsString(
+                    new com.kowihere.mmo.protocol.ServerMessages.Error("error", message)));
+        } catch (Exception e) {
+            log.debug("Could not serialise a refusal", e);
+        }
     }
 
     private static PlayerSession client(WebSocketSession session) {

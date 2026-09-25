@@ -153,6 +153,13 @@ public final class MapRunner implements Runnable {
      */
     private MapTransfers transfers = MapTransfers.NOWHERE;
 
+    /**
+     * Where this map says how its players are doing, for panels that are not
+     * about this map - the party being the first of them. Set before the thread
+     * starts, and never read: publishing is all a tick is allowed to do.
+     */
+    private PartyBoard board = PartyBoard.NONE;
+
     private record Leaving(Actor actor, String toMapId, int toX, int toY) {
     }
 
@@ -222,6 +229,11 @@ public final class MapRunner implements Runnable {
     }
 
     /** Told once, at startup, before this map is running. */
+    public void publishesTo(PartyBoard board) {
+        this.board = board;
+    }
+
+    /** Told once, at startup, before this map is running. */
     public void transfersThrough(MapTransfers transfers) {
         this.transfers = transfers;
     }
@@ -272,6 +284,7 @@ public final class MapRunner implements Runnable {
                 reapExpiredActors();
                 carryOutTransfers();
                 saveDirtyActors();
+                publishVitals();
                 flush();
             } catch (RuntimeException e) {
                 // A single bad command must never take the whole map down with it.
@@ -2391,6 +2404,26 @@ public final class MapRunner implements Runnable {
         lastOverrunWarningTick = tick;
         log.warn("Map '{}' missed its {} ms tick by {} ms - the world is running slow",
                 map.id(), TICK_MS, overrunNanos / 1_000_000L);
+    }
+
+    /**
+     * Tells whatever is drawing party panels how everybody here is doing.
+     *
+     * <p>Once a tick, for every player on this map, and nothing is read back:
+     * a party may span three maps, and a tick that asked another map a question
+     * would be a tick waiting on somebody else's writer.
+     */
+    private void publishVitals() {
+        if (board == PartyBoard.NONE) {
+            return;
+        }
+        for (Actor actor : actors.values()) {
+            if (!actor.isPlayer()) {
+                continue;
+            }
+            board.publish(actor.nameKey, actor.name, actor.level, actor.hp, actor.maxHp(),
+                    map.id(), map.name(), actor.x, actor.y, actor.online());
+        }
     }
 
     private void saveDirtyActors() {

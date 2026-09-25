@@ -78,6 +78,8 @@ const state = {
     shop: null,
     storage: null,
     passage: null,
+    party: null,
+    invite: null,
     // Which tab of each chest is being looked at. The client's own business:
     // the server sends every tab at once and has no idea one is on top.
     openTab: { character: 0, account: 0 },
@@ -121,6 +123,15 @@ const skillbarEl = document.getElementById('skillbar');
 const purseEl = document.getElementById('purse');
 const knockoutEl = document.getElementById('knockout');
 const knockoutCountEl = document.getElementById('knockout-count');
+const partyEl = document.getElementById('party');
+const partyMembersEl = document.getElementById('party-members');
+const partyNameEl = document.getElementById('party-name');
+const partyAskEl = document.getElementById('party-ask');
+const partyLeaveEl = document.getElementById('party-leave');
+const inviteEl = document.getElementById('invite');
+const inviteTextEl = document.getElementById('invite-text');
+const inviteYesEl = document.getElementById('invite-yes');
+const inviteNoEl = document.getElementById('invite-no');
 const passageEl = document.getElementById('passage');
 const passageTextEl = document.getElementById('passage-text');
 const passageGoEl = document.getElementById('passage-go');
@@ -177,6 +188,9 @@ function connect(characterKey) {
         else if (msg.type === 'shop') applyShop(msg);
         else if (msg.type === 'storage') applyStorage(msg);
         else if (msg.type === 'passage') applyPassage(msg);
+        else if (msg.type === 'party') applyParty(msg);
+        else if (msg.type === 'partyInvite') applyInvite(msg);
+        else if (msg.type === 'partyChat') logParty(msg.from, msg.text);
         else if (msg.type === 'error') logSystem(msg.message);
     };
 
@@ -223,6 +237,10 @@ function applyInit(msg) {
     applyShop({});
     applyStorage({});
     applyPassage({});
+    // The party is not the map's: a reload or a walk through a door does not
+    // break one up, so it is redrawn rather than cleared - and the panel is
+    // shown even when empty, because inviting somebody is how a party starts.
+    renderParty();
 
     for (const dto of msg.actors || []) upsertActor(dto);
 
@@ -411,6 +429,97 @@ function renderShop() {
         shopSellEl.append(row);
     }
     shopEl.hidden = false;
+}
+
+/**
+ * The party, as the heartbeat sees it. No members means there is no party -
+ * which happens by leaving, by being removed, and by everybody else going home.
+ */
+function applyParty(msg) {
+    state.party = (msg.members || []).length ? msg : null;
+    renderParty();
+}
+
+function renderParty() {
+    partyMembersEl.innerHTML = '';
+    if (!state.party) {
+        // The invite box stays: starting a party is inviting somebody, so there
+        // is nothing else to press first.
+        partyLeaveEl.hidden = true;
+        partyEl.hidden = false;
+        return;
+    }
+    const iLead = (state.party.members || []).some((m) => m.you && m.leader);
+    for (const member of state.party.members || []) {
+        partyMembersEl.append(partyRow(member, iLead));
+    }
+    partyLeaveEl.hidden = false;
+    partyEl.hidden = false;
+}
+
+function partyRow(member, iLead) {
+    const row = document.createElement('li');
+    if (!member.online) row.classList.add('offline');
+
+    const who = document.createElement('div');
+    who.className = 'party-who';
+    const name = document.createElement('span');
+    if (member.leader) name.classList.add('party-leader');
+    name.textContent = member.you ? `${member.name} (ty)` : member.name;
+    const where = document.createElement('span');
+    where.className = 'party-where';
+    where.textContent = member.online ? `${member.mapName} · ${member.level}`
+        : 'rozłączony';
+    who.append(name, where);
+
+    const bar = document.createElement('div');
+    bar.className = 'party-bar';
+    const fill = document.createElement('span');
+    const share = member.maxHp > 0 ? Math.max(0, Math.min(1, member.hp / member.maxHp)) : 0;
+    fill.style.width = `${Math.round(share * 100)}%`;
+    bar.append(fill);
+
+    row.append(who, bar);
+
+    if (iLead && !member.you) {
+        const buttons = document.createElement('div');
+        buttons.className = 'party-buttons';
+        const kick = document.createElement('button');
+        kick.type = 'button';
+        kick.textContent = 'wyrzuć';
+        kick.addEventListener('click', () => send({ type: 'partyKick', name: member.name }));
+        const lead = document.createElement('button');
+        lead.type = 'button';
+        lead.textContent = 'przekaż';
+        lead.title = 'Przekaż przywództwo';
+        lead.addEventListener('click', () => send({ type: 'partyLead', name: member.name }));
+        buttons.append(kick, lead);
+        row.append(buttons);
+    }
+    return row;
+}
+
+/** An offer of a seat. No sender means it has been withdrawn or has gone stale. */
+function applyInvite(msg) {
+    state.invite = msg.from ? msg : null;
+    renderInvite();
+}
+
+function renderInvite() {
+    if (!state.invite) {
+        inviteEl.hidden = true;
+        return;
+    }
+    inviteTextEl.textContent =
+        `${state.invite.from} zaprasza cię do drużyny (${state.invite.size}).`;
+    inviteEl.hidden = false;
+}
+
+function logParty(from, text) {
+    appendLine('<span class="party-line">[D] <b></b>: <span></span></span>', (li) => {
+        li.querySelector('b').textContent = from;
+        li.querySelector('span span').textContent = text;
+    });
 }
 
 /**
@@ -1549,6 +1658,10 @@ document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
             event.preventDefault();
             applyPassage({});
+    // The party is not the map's: a reload or a walk through a door does not
+    // break one up, so it is redrawn rather than cleared - and the panel is
+    // shown even when empty, because inviting somebody is how a party starts.
+    renderParty();
             return;
         }
     }
@@ -1577,6 +1690,29 @@ document.addEventListener('keydown', (event) => {
         state.held.add(event.key);
         stepInDirection(direction, performance.now());
     }
+});
+
+partyAskEl.addEventListener('click', () => {
+    const name = partyNameEl.value.trim();
+    if (!name) return;
+    send({ type: 'partyInvite', name });
+    partyNameEl.value = '';
+});
+partyNameEl.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        partyAskEl.click();
+    }
+    event.stopPropagation(); // typing a name must not walk the character
+});
+partyLeaveEl.addEventListener('click', () => send({ type: 'partyLeave' }));
+inviteYesEl.addEventListener('click', () => {
+    send({ type: 'partyAccept' });
+    applyInvite({});
+});
+inviteNoEl.addEventListener('click', () => {
+    send({ type: 'partyDecline' });
+    applyInvite({});
 });
 
 passageGoEl.addEventListener('click', confirmPassage);
@@ -1608,7 +1744,7 @@ chatInput.addEventListener('keydown', (event) => {
     event.stopPropagation();
     const text = chatInput.value.trim();
     chatInput.value = '';
-    if (text) send({ type: 'chat', text });
+    if (text) sendChatLine(text);
     // Focus always goes back to the game: in a game you need to be able to run
     // away mid-sentence, and a chat box that quietly keeps the keyboard makes
     // the next keypress do nothing at all.
@@ -1943,6 +2079,16 @@ function logChat(who, text) {
         li.querySelector('.who').textContent = `${who}: `;
         li.querySelector('.text').textContent = text;
     });
+}
+
+/** What "/d coś tam" means: say it to the party rather than to the map. */
+function sendChatLine(text) {
+    const party = text.match(/^\/d\s+(.*)$/i);
+    if (party) {
+        send({ type: 'partyChat', text: party[1] });
+        return;
+    }
+    send({ type: 'chat', text });
 }
 
 function logSystem(text) {

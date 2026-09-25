@@ -27,7 +27,7 @@ class WhereTheWorldBeginsTest {
     private static WorldService worldOf(String mapsLocation) {
         return new WorldService(new MapDefLoader(new MobDefLoader(), mapsLocation),
                 new MobDefLoader(), new ItemDefLoader(), new ClassDefLoader(),
-                new ObjectMapper(), WorldPersistence.NONE);
+                new ObjectMapper(), WorldPersistence.NONE, PartyBoard.NONE);
     }
 
     @Test
