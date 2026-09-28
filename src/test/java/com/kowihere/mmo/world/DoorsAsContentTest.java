@@ -42,7 +42,14 @@ class DoorsAsContentTest {
     void theWoodSendsItsDeadHome() {
         // Nothing regenerates, so a map that wakes its dead on its own spawn is
         // a map you wake up on with one point of health and no healer.
-        RespawnPoint wood = new MapDefLoader().loadAll().get("las").respawn();
+        //
+        // The wood no longer says so itself: the Polana declares that it is a
+        // waking place, and the world works out that it is the nearest one to
+        // the wood. Asked of the map alone the answer would be the wood's own
+        // spawn, which is why this asks the world.
+        Map<String, MapDef> shipped = new MapDefLoader().loadAll();
+
+        RespawnPoint wood = Respawns.of(shipped).from("las").get(0).point();
 
         assertThat(wood.mapId()).isEqualTo("starter");
     }
@@ -103,6 +110,25 @@ class DoorsAsContentTest {
         assertThatThrownBy(() -> maps("classpath:bad-maps-respawn/*.json").loadAll())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("atlantyda");
+    }
+
+    @Test
+    void refusesAWakingPlaceInsideAWall() {
+        // Marked by hand, on a map whose author was counting tiles. Nobody
+        // finds out until somebody dies nearby - and then they wake up inside
+        // the wall of the town they were making for.
+        assertThatThrownBy(() -> maps("classpath:bad-maps-waking-wall/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("wakes the dead at 0,0");
+    }
+
+    @Test
+    void refusesAWakingPlaceStandingOnADoor() {
+        // The twin of the spawn rule above: they would wake in the town and be
+        // thrown straight back out of it, having died trying to reach it.
+        assertThatThrownBy(() -> maps("classpath:bad-maps-waking-door/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("wakes the dead on a door");
     }
 
     @Test

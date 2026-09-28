@@ -2,6 +2,7 @@
   "id": "starter",
   "name": "Polana Początkujących",
   "starting": true,
+  "respawnPoint": [14, 17],
   "tileSize": 32,
   "spawn": [14, 17],
   "collision": [

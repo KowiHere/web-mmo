@@ -182,14 +182,16 @@ public class MapDefLoader {
         // Built once without its creatures purely so the spawn validation below
         // can ask walkable() instead of re-deriving collision from the bitset.
         MapDef map = new MapDef(id, name, width, height, tileSize, spawnX, spawnY, blocked, rows,
-                List.of(), List.of(), List.of(), false, List.of(), null);
+                List.of(), List.of(), List.of(), false, List.of(), null, null);
+        List<Door> doors = doors(root, map, where);
         return new MapDef(id, name, width, height, tileSize, spawnX, spawnY, blocked, rows,
                 spawnPoints(root, map, creatures, where),
                 roamingSpawns(root, creatures, where),
                 npcPlacements(root, map, people, where),
                 root.path("starting").asBoolean(false),
-                doors(root, map, where),
-                respawn(root, where));
+                doors,
+                respawn(root, where),
+                offeredRespawn(root, map, doors, where));
     }
 
     /**
@@ -340,6 +342,33 @@ public class MapDefLoader {
             throw new IllegalStateException(where + ": \"respawn\" does not say which map");
         }
         return new RespawnPoint(mapId, node.path("x").asInt(-1), node.path("y").asInt(-1));
+    }
+
+    /**
+     * This map's own waking place: {@code "respawnPoint": [x, y]}.
+     *
+     * <p>Checked here rather than in the cross-map pass, because everything it
+     * needs is on this map. A tile nothing can stand on would wake people
+     * inside a wall, and a tile with a door on it would wake them and send them
+     * straight back out of the town they died trying to reach.
+     */
+    private static RespawnPoint offeredRespawn(JsonNode root, MapDef map, List<Door> doors,
+                                               String where) {
+        JsonNode node = root.get("respawnPoint");
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        int x = node.path(0).asInt(-1);
+        int y = node.path(1).asInt(-1);
+        if (!map.walkable(x, y)) {
+            throw new IllegalStateException(where + ": wakes the dead at " + x + "," + y
+                    + ", which is not a tile anything can stand on");
+        }
+        if (doors.stream().anyMatch(door -> door.isAt(x, y))) {
+            throw new IllegalStateException(where + ": wakes the dead on a door at " + x + ","
+                    + y + ", so they would be thrown out of the very place they woke up in");
+        }
+        return new RespawnPoint(map.id(), x, y);
     }
 
     private static int atLeastZero(JsonNode node, String field, String where) {

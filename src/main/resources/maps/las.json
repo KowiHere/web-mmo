@@ -3,7 +3,6 @@
   "name": "Las Wilczy",
   "tileSize": 32,
   "spawn": [1, 9],
-  "respawn": { "map": "starter", "x": 14, "y": 17 },
   "collision": [
     "########################",
     "#......................#",

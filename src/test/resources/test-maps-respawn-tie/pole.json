@@ -1,0 +1,13 @@
+{
+  "id": "pole", "name": "Pole", "tileSize": 32, "spawn": [5, 4],
+  "collision": ["############","#..........#","#..........#","#..........#","#..........#","#..........#","#..........#","#..........#","############"],
+  "doors": [
+    { "x": 1, "y": 4, "to": "kapliczka-zachod", "toX": 1, "toY": 3, "name": "Na zachód" },
+    { "x": 10, "y": 4, "to": "kapliczka-wschod", "toX": 1, "toY": 3, "name": "Na wschód" }
+  ],
+  "spawns": [
+    { "mob": "zabojca", "x": 2, "y": 4 },
+    { "mob": "zabojca", "x": 9, "y": 4 }
+  ],
+  "roaming": []
+}

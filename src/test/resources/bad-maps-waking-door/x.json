@@ -1,0 +1,7 @@
+{
+  "id": "kaplica", "name": "Kaplica", "starting": true, "tileSize": 32, "spawn": [1, 1],
+  "respawnPoint": [5, 5],
+  "collision": ["############","#..........#","#..........#","#..........#","#..........#","#..........#","#..........#","#..........#","############"],
+  "doors": [ { "x": 5, "y": 5, "to": "kaplica", "toX": 2, "toY": 2, "name": "W kółko" } ],
+  "spawns": [], "roaming": []
+}

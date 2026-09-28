@@ -20,6 +20,7 @@ import com.kowihere.mmo.world.BlessingDef;
 import com.kowihere.mmo.world.BlessingLoader;
 import com.kowihere.mmo.world.Direction;
 import com.kowihere.mmo.world.MapDef;
+import com.kowihere.mmo.world.Respawns;
 import com.kowihere.mmo.world.ClassDef;
 import com.kowihere.mmo.world.Content;
 import com.kowihere.mmo.world.ItemDef;
@@ -164,6 +165,13 @@ public final class MapRunner implements Runnable {
      */
     private PartyBoard board = PartyBoard.NONE;
 
+    /**
+     * Where the dead of this whole world wake up. A map on its own knows only
+     * what its own file says, which is why this is handed in rather than read:
+     * "the nearest town" is a fact about every map at once.
+     */
+    private Respawns respawns = Respawns.NONE;
+
     private record Leaving(Actor actor, String toMapId, int toX, int toY) {
     }
 
@@ -235,6 +243,11 @@ public final class MapRunner implements Runnable {
     /** Told once, at startup, before this map is running. */
     public void publishesTo(PartyBoard board) {
         this.board = board;
+    }
+
+    /** Told once, at startup, before this map is running. */
+    public void wakesDeadBy(Respawns respawns) {
+        this.respawns = respawns;
     }
 
     /** Told once, at startup, before this map is running. */
@@ -2066,7 +2079,7 @@ public final class MapRunner implements Runnable {
         died.add(player.id);
         leaveFight(player, fight);
 
-        RespawnPoint wakeUpAt = map.respawn();
+        RespawnPoint wakeUpAt = whereTheyWakeUp(player);
         player.path.clear();
         player.x = wakeUpAt.x();
         player.y = wakeUpAt.y();
@@ -2094,6 +2107,54 @@ public final class MapRunner implements Runnable {
         // the spawn; a plain move would have them walk the whole way back.
         joined.add(toDto(player));
         sendYou(player);
+    }
+
+    /**
+     * Where this body wakes up.
+     *
+     * <p>Three answers, in this order. What the map's own file says, because
+     * an author who wrote it down meant it. Failing that, the nearest waking
+     * place in the world: fewest passages first, and between two equally far
+     * off, whichever door is the shorter walk from where the body is lying -
+     * which is the one question only this map can answer, because only this map
+     * has the body.
+     *
+     * <p>And failing that too - a map in a world with no waking places at all,
+     * which is most test worlds - its own spawn, exactly as before.
+     *
+     * <p>A town nothing can walk to from here is still a town: dying is a
+     * teleport, not a journey, so an unreachable door loses the tie-break
+     * rather than the choice.
+     */
+    private RespawnPoint whereTheyWakeUp(Actor player) {
+        RespawnPoint written = map.declaredRespawn();
+        if (written != null) {
+            return written;
+        }
+        List<Respawns.Way> ways = respawns.from(map.id());
+        if (ways.isEmpty()) {
+            return map.respawn();
+        }
+        Respawns.Way nearest = ways.get(0);
+        int fewestSteps = Integer.MAX_VALUE;
+        for (Respawns.Way way : ways) {
+            int steps = stepsFrom(player, way.leaveByX(), way.leaveByY());
+            if (steps < fewestSteps) {
+                fewestSteps = steps;
+                nearest = way;
+            }
+        }
+        return nearest.point();
+    }
+
+    /** How far this actor would have to walk to stand there, or as good as never. */
+    private int stepsFrom(Actor player, int x, int y) {
+        if (player.x == x && player.y == y) {
+            return 0;
+        }
+        int steps = pathfinder.findPath(player.x, player.y, x, y).size();
+        // An empty path from two different tiles means there is no way through.
+        return steps == 0 ? Integer.MAX_VALUE : steps;
     }
 
     /**

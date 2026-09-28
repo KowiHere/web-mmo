@@ -1,0 +1,10 @@
+{
+  "id": "brama", "name": "Brama", "tileSize": 32, "spawn": [5, 4],
+  "collision": ["############","#..........#","#..........#","#..........#","#..........#","#..........#","#..........#","#..........#","############"],
+  "doors": [
+    { "x": 1, "y": 4, "to": "osada", "toX": 1, "toY": 3, "name": "Do osady furtką" },
+    { "x": 10, "y": 4, "to": "osada", "toX": 1, "toY": 5, "name": "Do osady gościńcem" },
+    { "x": 5, "y": 7, "to": "glusza", "toX": 5, "toY": 2, "name": "Głusza" }
+  ],
+  "spawns": [], "roaming": []
+}

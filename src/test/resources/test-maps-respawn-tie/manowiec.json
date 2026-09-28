@@ -1,0 +1,20 @@
+{
+  "id": "manowiec", "name": "Manowiec", "tileSize": 32, "spawn": [5, 4],
+  "respawn": { "map": "kapliczka-zachod", "x": 2, "y": 2 },
+  "collision": [
+    "############",
+    "#..........#",
+    "#..........#",
+    "#..........#",
+    "#..........#",
+    "#..........#",
+    "#..........#",
+    "#..........#",
+    "############"
+  ],
+  "doors": [
+    { "x": 10, "y": 4, "to": "kapliczka-wschod", "toX": 4, "toY": 3, "name": "Do kapliczki" }
+  ],
+  "spawns": [ { "mob": "zabojca", "x": 6, "y": 4 } ],
+  "roaming": []
+}

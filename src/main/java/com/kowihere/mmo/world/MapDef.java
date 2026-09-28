@@ -25,14 +25,16 @@ public final class MapDef {
     private final boolean starting;
     private final List<Door> doors;
     private final RespawnPoint respawn;
+    private final RespawnPoint offers;
 
     MapDef(String id, String name, int width, int height, int tileSize,
            int spawnX, int spawnY, BitSet blocked, List<String> collisionRows,
            List<SpawnPoint> spawns, List<RoamingSpawn> roaming, List<NpcPlacement> npcs,
-           boolean starting, List<Door> doors, RespawnPoint respawn) {
+           boolean starting, List<Door> doors, RespawnPoint respawn, RespawnPoint offers) {
         this.starting = starting;
         this.doors = List.copyOf(doors);
         this.respawn = respawn;
+        this.offers = offers;
         this.id = id;
         this.name = name;
         this.width = width;
@@ -98,6 +100,30 @@ public final class MapDef {
      */
     public RespawnPoint respawn() {
         return respawn != null ? respawn : new RespawnPoint(id, spawnX, spawnY);
+    }
+
+    /**
+     * Where this map sends its dead, written down, or null when it leaves that
+     * to the world.
+     *
+     * <p>Kept apart from {@link #respawn()} because they answer different
+     * questions. This one is "the author said so", and the author always wins;
+     * the other is "and if nobody said, here is somewhere safe".
+     */
+    public RespawnPoint declaredRespawn() {
+        return respawn;
+    }
+
+    /**
+     * The place on this map where the dead of the surrounding country wake up,
+     * or null when this map is not one of those.
+     *
+     * <p>A town, a shrine, a landmark: the author marks it once here rather
+     * than naming it again on every map around it, and the world works out
+     * which one is nearest. See {@link Respawns}.
+     */
+    public RespawnPoint offersRespawn() {
+        return offers;
     }
 
     public boolean inBounds(int x, int y) {

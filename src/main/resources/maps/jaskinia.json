@@ -3,7 +3,6 @@
   "name": "Wilcza Jama",
   "tileSize": 32,
   "spawn": [2, 8],
-  "respawn": { "map": "starter", "x": 14, "y": 17 },
   "collision": [
     "##################",
     "#................#",

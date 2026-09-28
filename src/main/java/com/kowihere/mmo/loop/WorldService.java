@@ -5,6 +5,7 @@ import com.kowihere.mmo.world.ClassDefLoader;
 import com.kowihere.mmo.world.Content;
 import com.kowihere.mmo.world.ItemDefLoader;
 import com.kowihere.mmo.world.MapDef;
+import com.kowihere.mmo.world.Respawns;
 import com.kowihere.mmo.world.MapDefLoader;
 import com.kowihere.mmo.world.MobDef;
 import com.kowihere.mmo.world.MobDefLoader;
@@ -102,10 +103,15 @@ public class WorldService {
         // them again in an exception path nobody ever tests.
         startingMapId = theOneThatStarts(defs.values());
 
+        // Worked out once, from every map at once: which towns are waking
+        // places, and which of them is nearest to each map.
+        Respawns respawns = Respawns.of(defs);
+
         for (MapDef def : defs.values()) {
             MapRunner runner = new MapRunner(def, json, persistence, content);
             runner.transfersThrough(this::handOver);
             runner.publishesTo(board);
+            runner.wakesDeadBy(respawns);
             runners.put(def.id(), runner);
         }
         // Every map built before any of them runs: a map that started early

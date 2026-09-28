@@ -1,0 +1,10 @@
+{
+  "id": "gaj", "name": "Gaj", "starting": true, "tileSize": 32, "spawn": [1, 1],
+  "respawnPoint": [4, 4],
+  "collision": ["############","#..........#","#..........#","#..........#","#..........#","#..........#","#..........#","#..........#","############"],
+  "doors": [
+    { "x": 9, "y": 1, "to": "laka", "toX": 5, "toY": 2, "name": "Łąka od północy" },
+    { "x": 9, "y": 7, "to": "laka", "toX": 5, "toY": 6, "name": "Łąka od południa" }
+  ],
+  "spawns": [], "roaming": []
+}
