@@ -1,0 +1,2 @@
+{ "id": "probny-amulet", "name": "Próbny amulet", "slot": "TRINKET", "value": 10,
+  "resists": { "swiatlo": 20 } }

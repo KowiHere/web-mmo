@@ -1,6 +1,8 @@
 package com.kowihere.mmo.world;
 
 import com.kowihere.mmo.combat.Attributes;
+import com.kowihere.mmo.combat.Resistances;
+import com.kowihere.mmo.combat.Strikes;
 
 /**
  * An immutable item definition, shared by every copy of it in the world.
@@ -33,8 +35,23 @@ public record ItemDef(
         int armor,
         Healing healing,
         String grants,
-        int value
+        int value,
+        /** What this weapon puts into a blow beyond force, or null for plain steel. */
+        Strikes strikes,
+        /** What wearing this shrugs off; never null, often nothing. */
+        Resistances resists
 ) {
+
+    public ItemDef {
+        resists = resists == null ? Resistances.NONE : resists;
+    }
+
+    /** The five-argument shape every test that has no opinion about elements uses. */
+    public ItemDef(String id, String name, ItemSlot slot, int requiresLevel, Attributes bonuses,
+                   int attack, int armor, Healing healing, String grants, int value) {
+        this(id, name, slot, requiresLevel, bonuses, attack, armor, healing, grants, value,
+                null, Resistances.NONE);
+    }
 
     public boolean isDrinkable() {
         return healing != null || grants != null;

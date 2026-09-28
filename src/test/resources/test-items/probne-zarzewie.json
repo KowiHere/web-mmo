@@ -1,0 +1,9 @@
+{
+  "id": "probne-zarzewie",
+  "name": "Próbne zarzewie",
+  "slot": "WEAPON",
+  "requiresLevel": 1,
+  "value": 60,
+  "bonuses": { "attack": 5 },
+  "strikes": { "element": "fire", "chance": 100 }
+}

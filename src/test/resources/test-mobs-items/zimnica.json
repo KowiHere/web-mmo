@@ -1,0 +1,14 @@
+{
+  "id": "zimnica",
+  "name": "Zimnica",
+  "tier": "MOB",
+  "level": 1,
+  "hp": 400,
+  "attack": 1,
+  "armor": 0,
+  "stepTicks": 10,
+  "aggroRadius": 0,
+  "leashRadius": 3,
+  "respawnSeconds": 1,
+  "strikes": { "element": "frost", "chance": 100 }
+}

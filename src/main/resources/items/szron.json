@@ -1,0 +1,9 @@
+{
+  "id": "szron",
+  "name": "Szron",
+  "slot": "WEAPON",
+  "requiresLevel": 5,
+  "value": 165,
+  "bonuses": { "attack": 5 },
+  "strikes": { "element": "frost", "chance": 35 }
+}

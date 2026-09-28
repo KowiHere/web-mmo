@@ -1,0 +1,14 @@
+{
+  "id": "iskra",
+  "name": "Iskra",
+  "tier": "MOB",
+  "level": 1,
+  "hp": 12,
+  "attack": 5,
+  "armor": 0,
+  "stepTicks": 10,
+  "aggroRadius": 0,
+  "leashRadius": 3,
+  "respawnSeconds": 1,
+  "strikes": { "element": "fire", "chance": 100 }
+}

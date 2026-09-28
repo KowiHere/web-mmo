@@ -835,6 +835,22 @@ function renderSheet() {
             you.maxEnergy > 0 ? (you.energy / you.maxEnergy) * 100 : 0),
         bar('xp', `poziom ${you.level}`, xpPercent),
     );
+    const suffering = you.ailments || [];
+    if (suffering.length) {
+        // Beside the health bar rather than on the blessing panel: these last
+        // rounds, not minutes, and they are the reason the bar is moving.
+        const row = document.createElement('div');
+        row.className = 'ailments';
+        for (const one of suffering) {
+            const badge = document.createElement('span');
+            badge.className = `ailment ${one.element}`;
+            badge.textContent = one.perRound > 0
+                ? `${one.label} −${one.perRound}/rundę (${one.rounds})`
+                : `${one.label} (${one.rounds})`;
+            row.append(badge);
+        }
+        sheetEl.append(row);
+    }
     if (out) {
         const note = document.createElement('div');
         note.className = 'knocked-out';

@@ -1,0 +1,14 @@
+{
+  "id": "ognik",
+  "name": "Ognik",
+  "tier": "MOB",
+  "level": 1,
+  "hp": 400,
+  "attack": 6,
+  "armor": 0,
+  "stepTicks": 10,
+  "aggroRadius": 0,
+  "leashRadius": 3,
+  "respawnSeconds": 1,
+  "strikes": { "element": "fire", "chance": 100 }
+}

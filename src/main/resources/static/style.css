@@ -705,6 +705,30 @@ label {
     gap: 4px;
 }
 
+/* What is burning, freezing or poisoning the character: rounds, not minutes,
+   so they sit by the health bar rather than on the blessing panel. */
+.ailments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.ailment {
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 9px;
+    border: 1px solid #3a4150;
+    background: #1b1f27;
+    color: #c8cedb;
+}
+
+.ailment.fire { border-color: #e08a4a; color: #f0a868; }
+.ailment.frost { border-color: #6fa8d8; color: #9ccdf0; }
+.ailment.shock { border-color: #d8c86f; color: #f0e28a; }
+.ailment.poison { border-color: #7fbf6a; color: #a6dd92; }
+.ailment.bleed { border-color: #c05a5a; color: #e08080; }
+
 .blessing {
     padding: 4px 8px;
     border: 1px solid #2b3550;

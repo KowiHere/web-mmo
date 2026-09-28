@@ -39,6 +39,16 @@ public final class ServerMessages {
     public record FightDto(int id, boolean inFight) {
     }
 
+    /**
+     * One thing burning, freezing or poisoning a character, and how many rounds
+     * of it are left. Sent only to its owner, beside the rest of the sheet.
+     *
+     * @param perRound health it takes each round; nought for the two that cost
+     *                 quickness and turns instead
+     */
+    public record AilmentDto(String element, String label, int rounds, int perRound) {
+    }
+
     /** One step in progress: the actor left ({@code fx},{@code fy}) and arrives at ({@code x},{@code y}) in {@code ms}. */
     public record MoveDto(int id, int fx, int fy, int x, int y, String dir, int ms) {
     }
@@ -120,19 +130,21 @@ public final class ServerMessages {
                       long xpThisLevel, long xpForNextLevel, long wakesAt, boolean dead,
                       int strength, int agility, int intellect, int unspentPoints, int skillPoints,
                       int skillPointPrice, int skillResetPrice,
-                      int attack, int armor, int dodgePercent, int secondBlowPercent) {
+                      int attack, int armor, int dodgePercent, int secondBlowPercent,
+                      List<AilmentDto> ailments) {
         public You(String classId, String className,
                    int hp, int maxHp, int energy, int maxEnergy, int energyPerRound,
                    int level, long xp, long xpThisLevel,
                    long xpForNextLevel, long wakesAt, boolean dead,
                    int strength, int agility, int intellect, int unspentPoints, int skillPoints,
                    int skillPointPrice, int skillResetPrice,
-                   int attack, int armor, int dodgePercent, int secondBlowPercent) {
+                   int attack, int armor, int dodgePercent, int secondBlowPercent,
+                   List<AilmentDto> ailments) {
             this("you", classId, className, hp, maxHp, energy, maxEnergy, energyPerRound,
                     level, xp, xpThisLevel,
                     xpForNextLevel, wakesAt, dead, strength, agility, intellect,
                     unspentPoints, skillPoints, skillPointPrice, skillResetPrice,
-                    attack, armor, dodgePercent, secondBlowPercent);
+                    attack, armor, dodgePercent, secondBlowPercent, ailments);
         }
     }
 

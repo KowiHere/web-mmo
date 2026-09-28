@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.combat.CombatRules;
+import com.kowihere.mmo.combat.Element;
+import com.kowihere.mmo.combat.Strikes;
 import com.kowihere.mmo.combat.Energy;
 import com.kowihere.mmo.combat.Fight;
 import com.kowihere.mmo.path.AStar;
@@ -1833,6 +1835,13 @@ public final class MapRunner implements Runnable {
             if (fight.players().contains(actorId) && fight.isFleeing(actorId)) {
                 continue; // spent the round trying to get away
             }
+            if (attacker.ailments.has(Element.SHOCK)
+                    && combat.rolls(CombatRules.SHOCK_LOSES_THE_ROUND)) {
+                // The one affliction that costs turns rather than health, which
+                // is worse than health in a fight that is otherwise even.
+                chat.add(new ChatDto(attacker.id, attacker.name, "* drętwieje *"));
+                continue;
+            }
             Actor target = pickTarget(fight, attacker);
             if (target == null) {
                 continue;
@@ -1841,6 +1850,7 @@ public final class MapRunner implements Runnable {
         }
 
         mendTheBlessed(fight);
+        sufferAilments(fight);
         fight.clearFleeRequests();
         endIfOver(fight);
     }
@@ -1861,6 +1871,91 @@ public final class MapRunner implements Runnable {
      * still kills them. Healing first would make the same blessing worth more
      * in the round that matters most.
      */
+    /**
+     * Whether this blow leaves its element behind, and what that costs a round.
+     *
+     * <p>Rolled against the same resistance that softened the blow, so a ring
+     * against fire is also a ring against being set alight - which is what
+     * anybody wearing one would expect of it. Immunity means both.
+     */
+    private void takeHold(Actor attacker, Actor target, Strikes strikes, int dealt) {
+        Element element = strikes.element();
+        if (!combat.takesHold(strikes.chance(), target.resistanceTo(element))) {
+            return;
+        }
+        boolean fresh = !target.ailments.has(element);
+        target.ailments.afflict(element, CombatRules.roundsOf(element),
+                CombatRules.burnPerRound(element, dealt, target.maxHp()));
+        if (fresh) {
+            chat.add(new ChatDto(target.id, target.name, "* " + element.whileItLasts() + " *"));
+        }
+        if (target.isPlayer()) {
+            sendYou(target);
+        }
+        if (attacker.isPlayer()) {
+            sendYou(attacker);
+        }
+    }
+
+    /**
+     * What every affliction costs its bearer this round, and which of them let
+     * go afterwards.
+     *
+     * <p>After the blows, like mending, and before the fight is judged over:
+     * a burn that kills is a kill like any other, and somebody who fled a round
+     * before it would have burned them is somebody the fire could not reach.
+     */
+    private void sufferAilments(Fight fight) {
+        for (int actorId : new ArrayList<>(fight.everyone())) {
+            Actor actor = actors.get(actorId);
+            if (actor == null || !actor.isAlive() || !actor.ailments.any()) {
+                continue;
+            }
+            for (Ailments.Fit fit : actor.ailments.all()) {
+                if (fit.perRound <= 0) {
+                    continue;
+                }
+                int taken = Math.min(actor.hp, fit.perRound);
+                actor.hp -= taken;
+                actor.dirty = true;
+                // Struck by nobody but itself, like the mending above, so the
+                // client has one shape to draw damage in and not two.
+                damage.add(new DamageDto(actor.id, actor.id, taken, actor.hp));
+                if (!actor.isAlive()) {
+                    break;
+                }
+            }
+            for (Element gone : actor.ailments.wearOff()) {
+                chat.add(new ChatDto(actor.id, actor.name, "* " + gone.whenItPasses() + " *"));
+            }
+            if (actor.isPlayer()) {
+                sendYou(actor);
+            }
+            if (actor.isAlive()) {
+                continue;
+            }
+            if (actor.isMob()) {
+                // Nobody struck the killing blow, but somebody lit the fire.
+                // Paying nothing would make poisoning a creature to death the
+                // one way of killing it that earns nothing at all.
+                killCreature(actor, whoIsStillFighting(fight), fight);
+            } else {
+                killPlayer(actor, fight);
+            }
+        }
+    }
+
+    /** Somebody on the other side who is still standing, or nobody. */
+    private Actor whoIsStillFighting(Fight fight) {
+        for (int playerId : fight.players()) {
+            Actor player = actors.get(playerId);
+            if (player != null && player.isAlive()) {
+                return player;
+            }
+        }
+        return null;
+    }
+
     private void mendTheBlessed(Fight fight) {
         for (int playerId : fight.players()) {
             Actor actor = actors.get(playerId);
@@ -1982,10 +2077,22 @@ public final class MapRunner implements Runnable {
                 armorIgnored = skill.armorIgnored();
             }
         }
-        int dealt = combat.damage(attack, target.armor(), armorIgnored);
+        Strikes strikes = attacker.strikesWith();
+        int dealt;
+        if (strikes == null) {
+            dealt = combat.damage(attack, target.armor(), armorIgnored);
+        } else {
+            // Armour has nothing to say against an element; the resistance to
+            // that one element is the whole of the defence, which is what makes
+            // a brand worth carrying against something in plate.
+            dealt = combat.elementalDamage(attack, target.resistanceTo(strikes.element()));
+        }
         target.hp = Math.max(0, target.hp - dealt);
         damage.add(new DamageDto(attacker.id, target.id, dealt, target.hp));
 
+        if (strikes != null && dealt > 0) {
+            takeHold(attacker, target, strikes, dealt);
+        }
         if (target.isPlayer()) {
             sendYou(target);
         }
@@ -2210,6 +2317,8 @@ public final class MapRunner implements Runnable {
         actor.approaching = 0;
         actor.energy = 0; // it belongs to the fight, and the fight is over for them
         actor.pendingSkill = null;
+        actor.ailments.clear(); // and so does everything burning them
+
         fightChanges.add(new FightDto(actor.id, false));
         if (actor.isPlayer()) {
             sendYou(actor);
@@ -2228,6 +2337,7 @@ public final class MapRunner implements Runnable {
                 actor.approaching = 0;
                 actor.energy = 0;
                 actor.pendingSkill = null;
+                actor.ailments.clear();
                 fightChanges.add(new FightDto(id, false));
                 if (actor.isPlayer()) {
                     sendYou(actor);
@@ -2752,7 +2862,8 @@ public final class MapRunner implements Runnable {
                 priceToReset(actor),
                 actor.attack(), actor.armor(),
                 (int) Math.round(actor.dodgeChance() * 100),
-                (int) Math.round(actor.secondBlowChance() * 100)));
+                (int) Math.round(actor.secondBlowChance() * 100),
+                suffering(actor)));
         if (frame != null) {
             actor.client.send(frame);
         }
@@ -2806,6 +2917,16 @@ public final class MapRunner implements Runnable {
         if (frame != null) {
             actor.client.send(frame);
         }
+    }
+
+    /** What is burning, freezing or poisoning this one, for its own panel. */
+    private List<ServerMessages.AilmentDto> suffering(Actor actor) {
+        List<ServerMessages.AilmentDto> all = new ArrayList<>();
+        for (Ailments.Fit fit : actor.ailments.all()) {
+            all.add(new ServerMessages.AilmentDto(fit.element.key(), fit.element.label(),
+                    fit.roundsLeft, fit.perRound));
+        }
+        return all;
     }
 
     private void sendBlessings(Actor actor) {

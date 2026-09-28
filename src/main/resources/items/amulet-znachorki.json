@@ -1,0 +1,9 @@
+{
+  "id": "amulet-znachorki",
+  "name": "Amulet znachorki",
+  "slot": "TRINKET",
+  "requiresLevel": 3,
+  "value": 150,
+  "bonuses": { "intellect": 1 },
+  "resists": { "poison": 40, "bleed": 25 }
+}

@@ -100,7 +100,9 @@ public class MobDefLoader {
                 stepTicks, aggroRadius, leashRadius,
                 positive(root, "respawnSeconds", 30, where),
                 loot(root, where),
-                coins(root, where));
+                coins(root, where),
+                ElementsInContent.strikes(root, where, id),
+                ElementsInContent.resists(root, where, id));
     }
 
     /**

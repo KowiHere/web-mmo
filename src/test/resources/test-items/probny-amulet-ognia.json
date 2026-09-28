@@ -1,0 +1,8 @@
+{
+  "id": "probny-amulet-ognia",
+  "name": "Próbny amulet ognia",
+  "slot": "TRINKET",
+  "requiresLevel": 1,
+  "value": 60,
+  "resists": { "fire": 100 }
+}

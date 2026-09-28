@@ -29,7 +29,30 @@ public enum BlessingStat {
     MAX_HP("maxHp", "życia", true),
 
     /** Health given back once a round, and only in a fight - as in the original. */
-    HEAL_PER_ROUND("healPerRound", "leczenia co rundę", false);
+    HEAL_PER_ROUND("healPerRound", "leczenia co rundę", false),
+
+    /**
+     * Percentage points against one element each, added before anything is
+     * clamped. Flat only, for the same reason as dodge: they are already a
+     * share of something, and a share of a share means nothing anybody can
+     * predict from a tooltip.
+     */
+    RESIST_FIRE("resistFire", "odporności na ogień", false),
+    RESIST_FROST("resistFrost", "odporności na lód", false),
+    RESIST_SHOCK("resistShock", "odporności na prąd", false),
+    RESIST_POISON("resistPoison", "odporności na truciznę", false),
+    RESIST_BLEED("resistBleed", "odporności na krwawienie", false);
+
+    /** The line that guards against this element, so nothing has to map it by hand. */
+    public static BlessingStat against(com.kowihere.mmo.combat.Element element) {
+        return switch (element) {
+            case FIRE -> RESIST_FIRE;
+            case FROST -> RESIST_FROST;
+            case SHOCK -> RESIST_SHOCK;
+            case POISON -> RESIST_POISON;
+            case BLEED -> RESIST_BLEED;
+        };
+    }
 
     private final String key;
     private final String label;

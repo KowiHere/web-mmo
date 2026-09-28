@@ -1,0 +1,9 @@
+{
+  "id": "zarzewie",
+  "name": "Zarzewie",
+  "slot": "WEAPON",
+  "requiresLevel": 4,
+  "value": 140,
+  "bonuses": { "attack": 6 },
+  "strikes": { "element": "fire", "chance": 30 }
+}

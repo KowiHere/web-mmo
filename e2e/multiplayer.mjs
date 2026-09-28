@@ -1270,6 +1270,82 @@ try {
         }
     }
 
+    // ---- a brand, and what it leaves burning -----------------------------
+    // The elements: a blow made of something other than force, and the mark it
+    // leaves for a few rounds afterwards.
+    await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+    await escapeAnyFight(ala);
+
+    const brandPrice = await (async () => {
+        if (!(await openStall(ala, 'Bartosz'))) return 0;
+        const brand = await ala.evaluate(() =>
+            (state.shop.goods || []).find((g) => g.defId === 'zarzewie') || null);
+        return brand ? brand.price : 0;
+    })();
+
+    if (!brandPrice) {
+        fail('the trader has no brand on his shelf');
+    } else {
+        await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+        await earnAtLeast(ala, brandPrice, 240);
+        const bought = await openStall(ala, 'Bartosz') && await (async () => {
+            await ala.evaluate(() => state.ws.send(JSON.stringify({
+                type: 'buy', itemId: 'zarzewie',
+            })));
+            return ala.waitForFunction(() => (state.bag.carried || [])
+                .some((i) => i.defId === 'zarzewie'), null, { timeout: 10_000 })
+                .then(() => true).catch(() => false);
+        })();
+        await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+
+        if (!bought) {
+            fail(`the brand never arrived, at ${brandPrice} gold`);
+        } else {
+            ok(`bought a brand for ${brandPrice} gold`);
+            const brandId = await ala.evaluate(() =>
+                (state.bag.carried || []).find((i) => i.defId === 'zarzewie').id);
+            await ala.evaluate((id) => state.ws.send(JSON.stringify({
+                type: 'equip', itemId: id,
+            })), brandId);
+            const held = await ala
+                .waitForFunction(() => (state.bag.worn || [])
+                    .some((i) => i.defId === 'zarzewie'), null, { timeout: 10_000 })
+                .then(() => true).catch(() => false);
+            held ? ok('and it is in her hand') : fail('the brand could not be held');
+
+            // Thirty per cent a blow, so this is a few fights rather than one.
+            const burned = await (async () => {
+                const until = Date.now() + 240_000;
+                while (Date.now() < until) {
+                    await waitIfOut(ala);
+                    await mendIfHurt(ala, 0.4);
+                    // Read off the chat log itself: the client keeps no copy
+                    // of what it has said, and the log is what a player sees.
+                    const alight = await ala.evaluate(() =>
+                        document.querySelector('#chat-log').textContent.includes('płonie'));
+                    if (alight) return true;
+                    const prey = await ala.evaluate(() => {
+                        const self = state.actors.get(state.selfId);
+                        const mobs = [...state.actors.values()].filter((a) => a.kind === 'MOB');
+                        if (!self || !mobs.length) return null;
+                        mobs.sort((a, b) => (Math.abs(a.x - self.x) + Math.abs(a.y - self.y))
+                            - (Math.abs(b.x - self.x) + Math.abs(b.y - self.y)));
+                        return mobs[0].id;
+                    });
+                    if (prey === null) return false;
+                    await ala.evaluate((id) =>
+                        state.ws.send(JSON.stringify({ type: 'attack', id })), prey);
+                    await ala.waitForTimeout(3_000);
+                }
+                return false;
+            })();
+            burned
+                ? ok('a blow from it set something alight')
+                : skip('nothing caught fire in four minutes of swinging');
+            await ala.screenshot({ path: 'zywioly.png' });
+        }
+    }
+
     // ---- and what dying leaves behind ------------------------------------
     // The other side of the same panel: a blessing with nothing in it but
     // minuses, laid on by the world rather than bought.

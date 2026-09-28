@@ -1,0 +1,3 @@
+{ "id": "probny-gad", "name": "Próbny gad", "tier": "MOB", "level": 3, "hp": 20,
+  "attack": 4, "armor": 1, "stepTicks": 3, "aggroRadius": 2, "leashRadius": 4,
+  "respawnSeconds": 30, "strikes": { "element": "ciemnosc", "chance": 20 } }

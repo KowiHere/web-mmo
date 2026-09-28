@@ -1,0 +1,9 @@
+{
+  "id": "kolczuga-hartowana",
+  "name": "Kolczuga hartowana",
+  "slot": "CHEST",
+  "requiresLevel": 5,
+  "value": 190,
+  "bonuses": { "armor": 4 },
+  "resists": { "fire": 30, "frost": 15, "shock": -20 }
+}

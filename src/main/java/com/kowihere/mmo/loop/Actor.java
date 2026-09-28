@@ -2,6 +2,8 @@ package com.kowihere.mmo.loop;
 
 import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.combat.CombatRules;
+import com.kowihere.mmo.combat.Element;
+import com.kowihere.mmo.combat.Strikes;
 import com.kowihere.mmo.combat.Fight;
 import com.kowihere.mmo.world.BlessingStat;
 import com.kowihere.mmo.world.ClassDef;
@@ -75,6 +77,13 @@ final class Actor {
      * without either place knowing it exists.
      */
     final Blessings blessings = new Blessings();
+
+    /**
+     * What is burning, freezing or poisoning this actor. Lives only as long as
+     * the fight does, like {@link #energy}, and for the same reason: it is a
+     * fact about a fight and not about a character.
+     */
+    final Ailments ailments = new Ailments();
     final Skills skills = new Skills();
     final Purse purse = new Purse();
 
@@ -356,7 +365,7 @@ final class Actor {
      * exists for: a character nothing can hit is a fight that never ends.
      */
     double dodgeChance() {
-        if (isMob()) {
+        if (isMob() || chilled()) {
             return 0;
         }
         double chance = totalAttributes().dodgeChance()
@@ -365,7 +374,7 @@ final class Actor {
     }
 
     double secondBlowChance() {
-        if (isMob()) {
+        if (isMob() || chilled()) {
             return 0;
         }
         double chance = totalAttributes().secondBlowChance()
@@ -373,9 +382,48 @@ final class Actor {
         return Math.max(0, Math.min(Attributes.MAX_SECOND_BLOW, chance));
     }
 
-    /** Health given back once a round, and only in a fight - as in the original. */
+    /**
+     * Health given back once a round, and only in a fight - as in the original.
+     *
+     * <p>A wound undoes half of it while it is open. That is what makes
+     * bleeding worse than the same damage taken all at once, and the reason it
+     * is worth being a separate element rather than a second kind of fire.
+     */
     int healPerRound() {
-        return isMob() ? 0 : Math.max(0, blessings.total(BlessingStat.HEAL_PER_ROUND));
+        if (isMob()) {
+            return 0;
+        }
+        int mends = Math.max(0, blessings.total(BlessingStat.HEAL_PER_ROUND));
+        return ailments.has(Element.BLEED)
+                ? mends * (100 - CombatRules.BLEEDING_UNDOES_MENDING) / 100
+                : mends;
+    }
+
+    /**
+     * How much of one element this actor shrugs off, in percentage points,
+     * before anything is clamped.
+     *
+     * <p>Three sources, added: what a creature is made of, what a character is
+     * wearing, and what is blessing or cursing it. Exactly the same shape as
+     * every other statistic here, and for the same reason - nothing is stored,
+     * so nothing can drift.
+     */
+    int resistanceTo(Element element) {
+        if (isMob()) {
+            return mob.resists().of(element);
+        }
+        return inventory.grantedResistance(element)
+                + blessings.total(BlessingStat.against(element));
+    }
+
+    /** What this actor's blows carry beyond force, or null for plain force. */
+    Strikes strikesWith() {
+        return isMob() ? mob.strikes() : inventory.strikes();
+    }
+
+    /** Whether the cold has taken the quickness out of this one. */
+    private boolean chilled() {
+        return ailments.has(Element.FROST);
     }
 
     /**

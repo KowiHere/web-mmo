@@ -34,6 +34,101 @@ public final class CombatRules {
     /** A blow always lands for something, so no fight can last for ever. */
     private static final int MINIMUM_DAMAGE = 1;
 
+    // ---- elements ---------------------------------------------------------
+
+    /**
+     * How long each affliction lasts, in rounds, and how hard it bites.
+     *
+     * <p>Written here rather than in content on purpose. A file that could set
+     * its own burn to forty rounds at half the blow is a file that decides the
+     * whole balance of the game; what content chooses is <em>which</em> element
+     * a weapon carries and how often, which is a decision about that weapon.
+     *
+     * <p>They differ in shape, not only in size, or there would be no reason
+     * for five of them: fire is short and hard, bleeding outruns mending,
+     * poison feeds on the body rather than on the blow and so troubles the
+     * toughest most, cold costs quickness and shock costs turns.
+     */
+    public static int roundsOf(Element element) {
+        return switch (element) {
+            case FIRE -> 3;
+            case FROST -> 3;
+            case SHOCK -> 2;
+            case POISON -> 5;
+            case BLEED -> 4;
+        };
+    }
+
+    /** Hundredths of whatever the element feeds on, taken each round. */
+    private static int biteOf(Element element) {
+        return switch (element) {
+            case FIRE -> 30;
+            case BLEED -> 25;
+            case POISON -> 2;
+            case FROST, SHOCK -> 0;
+        };
+    }
+
+    /**
+     * What one round of an affliction costs.
+     *
+     * @param blow   what the blow that caused it was worth
+     * @param maxHp  the whole body of whoever is suffering it
+     * @return at least one when it bites at all: an affliction that takes
+     *         nothing is an affliction whose icon is a lie
+     */
+    public static int burnPerRound(Element element, int blow, int maxHp) {
+        if (!element.burns()) {
+            return 0;
+        }
+        int of = element.fed() == Element.Fed.BODY ? maxHp : blow;
+        return Math.max(1, of * biteOf(element) / 100);
+    }
+
+    /** How often somebody stunned loses the round entirely. */
+    public static final double SHOCK_LOSES_THE_ROUND = 0.35;
+
+    /**
+     * How much of a character's mending bleeding undoes, in hundredths.
+     *
+     * <p>The one affliction that does not simply subtract: it is the reason a
+     * wound is worse than the same damage taken all at once.
+     */
+    public static final int BLEEDING_UNDOES_MENDING = 50;
+
+    /**
+     * What an elemental blow is worth against somebody who resists it.
+     *
+     * <p>Armour has nothing to say here - that is the whole point of striking
+     * with something other than force - so resistance is the only thing between
+     * the blow and the body. Immunity really is immunity: no damage, and
+     * nothing left behind either.
+     */
+    public int elementalDamage(int attack, int resistance) {
+        int against = Resistances.clamp(resistance);
+        if (against >= Resistances.MOST) {
+            return 0;
+        }
+        double swing = MIN_SWING + random.nextDouble() * (MAX_SWING - MIN_SWING);
+        int dealt = (int) Math.round(attack * swing * (100 - against) / 100.0);
+        return Math.max(MINIMUM_DAMAGE, dealt);
+    }
+
+    /**
+     * Whether an element takes hold, given how often the weapon manages it and
+     * how much the victim resists.
+     *
+     * <p>Resistance is worth the same here as it is against the damage, so a
+     * ring against fire is a ring against being set alight - which is what
+     * anybody wearing one would expect of it. Immunity needs no case of its
+     * own: a hundred of resistance leaves a hundredth of nothing, and no roll
+     * is below nought.
+     */
+    public boolean takesHold(int chance, int resistance) {
+        int against = Resistances.clamp(resistance);
+        return random.nextDouble() < chance * (100 - against) / 10_000.0;
+    }
+
     // ---- getting out of a fight -------------------------------------------
 
     public static final double FLEE_CHANCE = 0.6;

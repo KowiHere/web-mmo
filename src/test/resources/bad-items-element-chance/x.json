@@ -1,0 +1,2 @@
+{ "id": "probny-brand", "name": "Próbny brand", "slot": "WEAPON", "value": 10,
+  "bonuses": { "attack": 3 }, "strikes": { "element": "fire" } }

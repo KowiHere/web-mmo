@@ -1,0 +1,9 @@
+{
+  "id": "probny-kolec",
+  "name": "Próbny kolec",
+  "slot": "WEAPON",
+  "requiresLevel": 1,
+  "value": 60,
+  "bonuses": { "attack": 5 },
+  "strikes": { "element": "poison", "chance": 100 }
+}

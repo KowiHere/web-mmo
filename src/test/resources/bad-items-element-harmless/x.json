@@ -1,0 +1,2 @@
+{ "id": "probna-kolczuga", "name": "Próbna kolczuga", "slot": "CHEST", "value": 10,
+  "bonuses": { "armor": 2 }, "strikes": { "element": "fire", "chance": 20 } }

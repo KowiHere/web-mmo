@@ -3,6 +3,8 @@ package com.kowihere.mmo.world;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kowihere.mmo.combat.Attributes;
+import com.kowihere.mmo.combat.Resistances;
+import com.kowihere.mmo.combat.Strikes;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.stereotype.Component;
@@ -89,6 +91,9 @@ public class ItemDefLoader {
                     + " and also drinkable; it has to be one or the other.");
         }
 
+        Strikes strikes = ElementsInContent.strikes(root, where, id);
+        Resistances resists = ElementsInContent.resists(root, where, id);
+
         ItemDef def = new ItemDef(id, name, slot,
                 atLeast(root, "requiresLevel", 1, 1, where),
                 granted,
@@ -99,10 +104,24 @@ public class ItemDefLoader {
                 // Worth something, always. A free item makes every price in
                 // the game meaningless, and "value" left out of the JSON by
                 // accident would be exactly that.
-                atLeast(root, "value", 1, 0, where));
+                atLeast(root, "value", 1, 0, where),
+                strikes,
+                resists);
 
+        if (strikes != null && def.attack() == 0) {
+            // An element rides on a blow. On something that strikes no blows it
+            // is a line in a file that can never happen, reading in the shop
+            // exactly like one that can.
+            throw new IllegalStateException(where + ": '" + id + "' strikes with "
+                    + strikes.element().key() + " but adds no attack, so it never strikes at all.");
+        }
+
+        // Resistance counts as something granted, so a charm whose only line is
+        // "40 against poison" is a charm that grants something - and, worn on
+        // nothing, is refused by the same rule that refuses bonuses nobody can
+        // ever wear.
         boolean grantsNothing = granted.equals(new Attributes(0, 0, 0))
-                && def.attack() == 0 && def.armor() == 0;
+                && def.attack() == 0 && def.armor() == 0 && resists.isNothing();
         if (slot.isWorn() && grantsNothing) {
             // Not pedantry: an item that grants nothing cannot be told apart from
             // one whose bonuses were misspelled, and the second is a bug that

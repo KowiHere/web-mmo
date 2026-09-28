@@ -10,6 +10,8 @@
   "aggroRadius": 7,
   "leashRadius": 12,
   "respawnSeconds": 40,
+  "strikes": { "element": "poison", "chance": 25 },
+  "resists": { "poison": 100, "frost": -25 },
   "coins": [
     { "currency": "zloto", "min": 10, "max": 18 }
   ],

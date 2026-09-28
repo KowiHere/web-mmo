@@ -10,6 +10,7 @@
   "aggroRadius": 5,
   "leashRadius": 10,
   "respawnSeconds": 50,
+  "strikes": { "element": "bleed", "chance": 30 },
   "coins": [
     { "currency": "zloto", "min": 8, "max": 14 },
     { "currency": "kly", "min": 1, "max": 2, "chance": 0.4 }

@@ -1,6 +1,8 @@
 package com.kowihere.mmo.loop;
 
 import com.kowihere.mmo.combat.Attributes;
+import com.kowihere.mmo.combat.Element;
+import com.kowihere.mmo.combat.Strikes;
 import com.kowihere.mmo.world.ItemDef;
 import com.kowihere.mmo.world.ItemSlot;
 
@@ -110,6 +112,31 @@ final class Inventory {
             total += stack.def().attack();
         }
         return total;
+    }
+
+    /** What everything worn shrugs off, one element at a time. */
+    int grantedResistance(Element element) {
+        int total = 0;
+        for (ItemStack stack : worn.values()) {
+            total += stack.def().resists().of(element);
+        }
+        return total;
+    }
+
+    /**
+     * What this character's blows carry beyond force.
+     *
+     * <p>The first thing worn that carries anything, and there is only ever
+     * one: a hand holds one weapon. Two elements on one character would have to
+     * be ordered somehow, and any order would be an accident of iteration.
+     */
+    Strikes strikes() {
+        for (ItemStack stack : worn.values()) {
+            if (stack.def().strikes() != null) {
+                return stack.def().strikes();
+            }
+        }
+        return null;
     }
 
     int grantedArmor() {
