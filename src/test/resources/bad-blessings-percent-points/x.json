@@ -1,0 +1,7 @@
+{
+  "id": "probny-udzial-punktow",
+  "name": "Próbny udział punktów",
+  "rarity": "COMMON",
+  "minutes": 5,
+  "lines": { "dodgePoints": "-10%" }
+}

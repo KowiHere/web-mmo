@@ -1,0 +1,7 @@
+{
+  "id": "probna-przesada",
+  "name": "Próbna przesada",
+  "rarity": "COMMON",
+  "minutes": 5,
+  "lines": { "attack": "5000%" }
+}

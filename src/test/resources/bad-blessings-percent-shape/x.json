@@ -1,0 +1,7 @@
+{
+  "id": "probny-ksztalt",
+  "name": "Próbny kształt",
+  "rarity": "COMMON",
+  "minutes": 5,
+  "lines": { "strength": true }
+}

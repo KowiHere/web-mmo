@@ -106,4 +106,73 @@ class BlessingLoaderTest {
         assertThat(elixir.grants()).isEqualTo("probne-mestwo");
         assertThat(blessings).containsKey(elixir.grants());
     }
+
+    // ---- percentages ------------------------------------------------------
+
+    @Test
+    void aLineMayBeAShareRatherThanAFlatNumber() {
+        // The form the penalty for dying needs: a tenth off is a tenth off at
+        // level two and at level twenty, which flat points can never be.
+        BlessingDef weakness = blessings.get(BlessingLoader.DEATH_WEAKNESS);
+
+        assertThat(weakness.percentOf(BlessingStat.STRENGTH)).isEqualTo(-10);
+        assertThat(weakness.of(BlessingStat.STRENGTH))
+                .as("and it is not also read as ten flat points")
+                .isZero();
+        assertThat(weakness.ordered().get(BlessingStat.ARMOR).written()).isEqualTo("-10%");
+    }
+
+    @Test
+    void refusesANumberWrittenAsAStringThatIsNotAShare() {
+        // "6" and 6 look alike in a file and mean different things here. Read
+        // leniently, one of them silently becomes the other.
+        assertThatThrownBy(() ->
+                new BlessingLoader("classpath:bad-blessings-percent-string/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("a share ends in '%'");
+    }
+
+    @Test
+    void refusesAShareOfNothing() {
+        assertThatThrownBy(() ->
+                new BlessingLoader("classpath:bad-blessings-percent-zero/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("0%");
+    }
+
+    @Test
+    void refusesAShareWithASlippedDigit() {
+        assertThatThrownBy(() ->
+                new BlessingLoader("classpath:bad-blessings-percent-huge/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("5000%");
+    }
+
+    @Test
+    void refusesAShareOfSomethingAlreadyMeasuredInPoints() {
+        // "10% of five percentage points of dodge" is a sentence with no agreed
+        // meaning. Refused rather than quietly rounded to nothing.
+        assertThatThrownBy(() ->
+                new BlessingLoader("classpath:bad-blessings-percent-points/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("already measured in points");
+    }
+
+    @Test
+    void refusesARegistryWithNothingForDyingToLeaveBehind() {
+        // The same rule as the class every character falls back to: content the
+        // code cannot do without is content the server refuses to start without.
+        assertThatThrownBy(() ->
+                new BlessingLoader("classpath:bad-blessings-no-death/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(BlessingLoader.DEATH_WEAKNESS);
+    }
+
+    @Test
+    void refusesALineThatIsNeitherANumberNorAShare() {
+        assertThatThrownBy(() ->
+                new BlessingLoader("classpath:bad-blessings-percent-shape/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("neither a number nor a percentage");
+    }
 }

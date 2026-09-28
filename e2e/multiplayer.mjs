@@ -30,6 +30,10 @@ const fail = (message) => {
     console.error(`FAIL - ${message}`);
     failures++;
 };
+// For a check that depends on something this run may not manage to bring about
+// - the obvious one being dying on purpose against creatures that may simply
+// lose. Counted as neither passed nor failed, and said out loud either way.
+const skip = (message) => console.log(`skip - ${message}`);
 
 const launchOptions = { args: ['--no-sandbox'] };
 if (process.env.CHROMIUM_PATH) launchOptions.executablePath = process.env.CHROMIUM_PATH;
@@ -1264,6 +1268,49 @@ try {
                 : fail('nothing appeared on the blessing panel');
             await ala.screenshot({ path: 'blogoslawienstwo.png' });
         }
+    }
+
+    // ---- and what dying leaves behind ------------------------------------
+    // The other side of the same panel: a blessing with nothing in it but
+    // minuses, laid on by the world rather than bought.
+    await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+    await escapeAnyFight(ala);
+
+    const wasKilled = await (async () => {
+        const until = Date.now() + 240_000;
+        while (Date.now() < until) {
+            const out = await ala.evaluate(() => !!(state.you && state.you.wakesAt > Date.now()));
+            if (out) return true;
+            const prey = await ala.evaluate(() => {
+                const self = state.actors.get(state.selfId);
+                const mobs = [...state.actors.values()].filter((a) => a.kind === 'MOB');
+                if (!self || !mobs.length) return null;
+                mobs.sort((a, b) => (Math.abs(a.x - self.x) + Math.abs(a.y - self.y))
+                    - (Math.abs(b.x - self.x) + Math.abs(b.y - self.y)));
+                return mobs[0].id;
+            });
+            if (prey === null) return false;
+            await ala.evaluate((id) => state.ws.send(JSON.stringify({ type: 'attack', id })), prey);
+            await ala.waitForTimeout(3_000);
+        }
+        return false;
+    })();
+
+    if (!wasKilled) {
+        skip('nothing on this map managed to kill her, so the penalty went untested');
+    } else {
+        const penalty = await ala
+            .waitForFunction(() => (state.blessings ? state.blessings.active : [])
+                .find((b) => b.id === 'oslabienie-po-smierci') || null, null, { timeout: 15_000 })
+            .then((handle) => handle.jsonValue())
+            .catch(() => null);
+        penalty
+            ? ok(`dying left something behind: ${penalty.name}`
+                + ` (${penalty.lines.map((l) => l.text).join(', ')})`)
+            : fail('dying cost nothing once she was back on her feet');
+        await ala.screenshot({ path: 'oslabienie-po-smierci.png' });
+        await waitIfOut(ala);
+        await mendIfHurt(ala, 0.5);
     }
 
     // ---- what a skill point costs, and where it costs less ---------------

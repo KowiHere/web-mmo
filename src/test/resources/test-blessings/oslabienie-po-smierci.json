@@ -1,0 +1,14 @@
+{
+  "id": "oslabienie-po-smierci",
+  "name": "Osłabienie po śmierci",
+  "rarity": "COMMON",
+  "minutes": 5,
+  "requiresLevel": 1,
+  "lines": {
+    "strength": "-10%",
+    "agility": "-10%",
+    "intellect": "-10%",
+    "attack": "-10%",
+    "armor": "-10%"
+  }
+}

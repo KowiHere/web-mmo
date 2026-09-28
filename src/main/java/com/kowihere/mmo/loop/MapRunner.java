@@ -17,6 +17,7 @@ import com.kowihere.mmo.protocol.ServerMessages.MapDto;
 import com.kowihere.mmo.protocol.ServerMessages.MoveDto;
 import com.kowihere.mmo.protocol.ServerMessages.PresenceDto;
 import com.kowihere.mmo.world.BlessingDef;
+import com.kowihere.mmo.world.BlessingLoader;
 import com.kowihere.mmo.world.Direction;
 import com.kowihere.mmo.world.MapDef;
 import com.kowihere.mmo.world.ClassDef;
@@ -2078,6 +2079,7 @@ public final class MapRunner implements Runnable {
         player.wakesAt = System.currentTimeMillis()
                 + CombatRules.wakeSeconds(player.level) * 1000L;
         player.dirty = true;
+        weakenAfterDeath(player);
 
         chat.add(new ChatDto(player.id, player.name, "* ginie *"));
         if (!wakeUpAt.mapId().equals(map.id())) {
@@ -2092,6 +2094,36 @@ public final class MapRunner implements Runnable {
         // the spawn; a plain move would have them walk the whole way back.
         joined.add(toDto(player));
         sendYou(player);
+    }
+
+    /**
+     * What dying leaves behind once the character is back on its feet.
+     *
+     * <p>A blessing with nothing but minuses in it, so it costs no new
+     * machinery: the same panel, the same clock that stops when you log out,
+     * the same row in the database, and the same rule that a second one
+     * refreshes rather than stacks - which is exactly what a second death
+     * should do.
+     *
+     * <p>Laid over the cap rather than under it. Three bottles must not be a
+     * way of not being punished.
+     *
+     * <p>Sent here and not after the handover: when the respawn is on another
+     * map the character leaves this one immediately, and everything it carries
+     * goes with it - blessings included.
+     */
+    private void weakenAfterDeath(Actor player) {
+        BlessingDef weakness = content.blessings().get(BlessingLoader.DEATH_WEAKNESS);
+        if (weakness == null) {
+            // Only in tests built on content with no blessings at all; the
+            // loader refuses to start a server without this one.
+            return;
+        }
+        int healthBefore = player.maxHp();
+        player.blessings.layAnyway(weakness);
+        keepHealthInRange(player, healthBefore);
+        player.blessingsDirty = true;
+        sendBlessings(player);
     }
 
     private void awardExperience(Actor player, Actor creature) {
@@ -2729,9 +2761,9 @@ public final class MapRunner implements Runnable {
         List<ServerMessages.BlessingDto> active = new ArrayList<>();
         for (Blessings.Active one : actor.blessings.all()) {
             List<ServerMessages.BlessingLineDto> lines = new ArrayList<>();
-            one.def.ordered().forEach((stat, value) -> lines.add(
+            one.def.ordered().forEach((stat, line) -> lines.add(
                     new ServerMessages.BlessingLineDto(
-                            (value > 0 ? "+" : "") + value + " " + stat.label(), value > 0)));
+                            line.written() + " " + stat.label(), line.amount() > 0)));
             active.add(new ServerMessages.BlessingDto(one.def.id(), one.def.name(),
                     one.def.rarity().name(), one.def.rarity().label(),
                     Math.max(0, one.remainingMs), lines));

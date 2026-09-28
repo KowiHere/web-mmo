@@ -1,0 +1,7 @@
+{
+  "id": "probne-cos",
+  "name": "Próbne coś",
+  "rarity": "COMMON",
+  "minutes": 5,
+  "lines": { "armor": -1 }
+}

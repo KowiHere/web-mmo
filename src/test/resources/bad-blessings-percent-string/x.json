@@ -1,0 +1,7 @@
+{
+  "id": "probny-napis",
+  "name": "Próbny napis",
+  "rarity": "COMMON",
+  "minutes": 5,
+  "lines": { "strength": "6" }
+}

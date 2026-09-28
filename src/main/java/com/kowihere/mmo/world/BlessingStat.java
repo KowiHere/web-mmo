@@ -11,32 +11,48 @@ import java.util.Locale;
  */
 public enum BlessingStat {
 
-    STRENGTH("strength", "siły"),
-    AGILITY("agility", "zwinności"),
-    INTELLECT("intellect", "inteligencji"),
-    ATTACK("attack", "ataku"),
-    ARMOR("armor", "pancerza"),
+    STRENGTH("strength", "siły", true),
+    AGILITY("agility", "zwinności", true),
+    INTELLECT("intellect", "inteligencji", true),
+    ATTACK("attack", "ataku", true),
+    ARMOR("armor", "pancerza", true),
 
     /**
      * Percentage points of dodge, added before the cap. The cap stays: a single
      * bottle must not turn somebody into a character nothing can hit, which is
      * the very case the cap exists for.
      */
-    DODGE_POINTS("dodgePoints", "uniku"),
-    SECOND_BLOW_POINTS("secondBlowPoints", "drugiego ciosu"),
+    DODGE_POINTS("dodgePoints", "uniku", false),
+    SECOND_BLOW_POINTS("secondBlowPoints", "drugiego ciosu", false),
 
     /** Flat health on top of what strength gives. */
-    MAX_HP("maxHp", "życia"),
+    MAX_HP("maxHp", "życia", true),
 
     /** Health given back once a round, and only in a fight - as in the original. */
-    HEAL_PER_ROUND("healPerRound", "leczenia co rundę");
+    HEAL_PER_ROUND("healPerRound", "leczenia co rundę", false);
 
     private final String key;
     private final String label;
+    private final boolean share;
 
-    BlessingStat(String key, String label) {
+    BlessingStat(String key, String label, boolean share) {
         this.key = key;
         this.label = label;
+        this.share = share;
+    }
+
+    /**
+     * Whether a line on this may be written as a percentage.
+     *
+     * <p>Only statistics that are a quantity the character already has. The
+     * three that are not - percentage points of dodge and of a second blow, and
+     * health given back each round - are already shares or already rates, and
+     * "10% of 5 percentage points" is a sentence with no agreed meaning. A file
+     * that tries it is refused rather than rounded to nothing, which is how a
+     * line ends up in a tooltip doing nothing at all.
+     */
+    public boolean takesAShare() {
+        return share;
     }
 
     /** What content writes. */

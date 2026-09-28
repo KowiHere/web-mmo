@@ -279,13 +279,32 @@ final class Actor {
             return Attributes.FRESH;
         }
         Attributes total = attributes.plus(inventory.grantedAttributes());
-        // Never below zero: a curse worth more than a character has takes
-        // everything it has and stops, rather than turning the attribute into a
-        // negative number that every formula below would then quietly obey.
         return new Attributes(
-                Math.max(0, total.strength() + blessings.total(BlessingStat.STRENGTH)),
-                Math.max(0, total.agility() + blessings.total(BlessingStat.AGILITY)),
-                Math.max(0, total.intellect() + blessings.total(BlessingStat.INTELLECT)));
+                blessed(total.strength(), BlessingStat.STRENGTH),
+                blessed(total.agility(), BlessingStat.AGILITY),
+                blessed(total.intellect(), BlessingStat.INTELLECT));
+    }
+
+    /**
+     * One statistic, after everything blessing or cursing this character.
+     *
+     * <p>Flat points first, then the percentages on the sum of all of it - so
+     * "-10% armour" is a tenth of the armour the character really has, plate
+     * included, and not a tenth of the attributes it grew from.
+     *
+     * <p>Integer division truncates towards zero, which rounds a loss down and
+     * a gain down with it: a tenth off fifteen is one point, not two. That is
+     * deliberate for the one line the player did not choose. A penalty that
+     * bites harder than it promises is how a lesson turns into a grudge.
+     *
+     * <p>Never below zero: a curse worth more than a character has takes
+     * everything it has and stops, rather than turning the statistic into a
+     * negative number that every formula would then quietly obey.
+     */
+    private int blessed(int base, BlessingStat stat) {
+        long flat = base + blessings.total(stat);
+        long withShare = flat + flat * blessings.percent(stat) / 100;
+        return (int) Math.max(0, withShare);
     }
 
     int maxHp() {
@@ -297,9 +316,8 @@ final class Actor {
         if (isMob()) {
             return mob.hp();
         }
-        return Math.max(1, totalAttributes().maxHp()
-                + (characterClass == null ? 0 : characterClass.hpBonus())
-                + blessings.total(BlessingStat.MAX_HP));
+        return Math.max(1, blessed(totalAttributes().maxHp()
+                + (characterClass == null ? 0 : characterClass.hpBonus()), BlessingStat.MAX_HP));
     }
 
     int attack() {
@@ -310,8 +328,12 @@ final class Actor {
         int fromClass = characterClass == null
                 ? total.attack()
                 : characterClass.attackFrom(total);
-        return Math.max(0, fromClass + inventory.grantedAttack()
-                + blessings.total(BlessingStat.ATTACK));
+        // Note that a blessing lowering strength has already lowered this once,
+        // through the attributes above; a line on attack lowers it again. For
+        // the death penalty that doubling is the point - it is meant to reach
+        // the sword as well as the arm - but it means the attack a player loses
+        // is rather more than the percentage on the line.
+        return blessed(fromClass + inventory.grantedAttack(), BlessingStat.ATTACK);
     }
 
     /** How much of an opponent's armour this actor's blows pass through. */
@@ -322,8 +344,8 @@ final class Actor {
     int armor() {
         return isMob()
                 ? mob.armor()
-                : Math.max(0, totalAttributes().armor() + inventory.grantedArmor()
-                        + blessings.total(BlessingStat.ARMOR));
+                : blessed(totalAttributes().armor() + inventory.grantedArmor(),
+                        BlessingStat.ARMOR);
     }
 
     /**

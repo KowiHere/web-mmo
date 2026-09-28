@@ -102,11 +102,40 @@ final class Blessings {
         return gone;
     }
 
-    /** What every blessing together is worth on one statistic. */
+    /**
+     * Lays one on whatever else is already there.
+     *
+     * <p>The way out of {@link #MAX_ACTIVE} for the one blessing nobody
+     * chooses: a penalty that three bottles could lock out would be a penalty
+     * you buy your way out of, which is the opposite of what it is for.
+     */
+    void layAnyway(BlessingDef def) {
+        Active already = find(def.id());
+        if (already != null) {
+            already.remainingMs = def.durationMs();
+            return;
+        }
+        active.add(new Active(def, def.durationMs()));
+    }
+
+    /** What every blessing together is worth on one statistic, in flat points. */
     int total(BlessingStat stat) {
         int sum = 0;
         for (Active one : active) {
             sum += one.def.of(stat);
+        }
+        return sum;
+    }
+
+    /**
+     * And in percentage points, which are counted apart because they apply to
+     * something else: flat points to the statistic, these to the total of
+     * everything flat - attributes, equipment and flat lines together.
+     */
+    int percent(BlessingStat stat) {
+        int sum = 0;
+        for (Active one : active) {
+            sum += one.def.percentOf(stat);
         }
         return sum;
     }
@@ -124,7 +153,11 @@ final class Blessings {
                 // is bad; refusing to let somebody play is worse.
                 continue;
             }
-            if (one.remainingMs() <= 0 || active.size() >= MAX_ACTIVE || has(def.id())) {
+            // The cap is a rule about laying one on, not about remembering it.
+            // Enforcing it here would silently drop whichever blessing was read
+            // back last - and the one that can push a character over the cap is
+            // the penalty for dying, which is exactly the one nobody may lose.
+            if (one.remainingMs() <= 0 || active.size() > MAX_ACTIVE || has(def.id())) {
                 continue;
             }
             active.add(new Active(def, Math.min(one.remainingMs(), def.durationMs())));
