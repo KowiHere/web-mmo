@@ -1,0 +1,8 @@
+{
+  "id": "probna-wysoka",
+  "name": "Próbne wyżyny",
+  "rarity": "LEGENDARY",
+  "minutes": 12,
+  "requiresLevel": 9,
+  "lines": { "attack": 40 }
+}

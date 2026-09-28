@@ -16,6 +16,9 @@ import com.kowihere.mmo.combat.Attributes;
  * @param armor         added to the wearer's armour, which is otherwise almost nothing
  * @param healing       what drinking it gives back, or null when it is not
  *                      something you drink
+ * @param grants        the blessing drinking it lays on, or null. A bottle
+ *                      either mends you or blesses you; never both, because
+ *                      "drink" would then mean two things at once
  * @param value         what it is worth. A trader sells at this and buys back at
  *                      a fraction of it, so the two prices cannot drift apart:
  *                      there is only one number to edit
@@ -29,10 +32,15 @@ public record ItemDef(
         int attack,
         int armor,
         Healing healing,
+        String grants,
         int value
 ) {
 
     public boolean isDrinkable() {
-        return healing != null;
+        return healing != null || grants != null;
+    }
+
+    public boolean isBlessing() {
+        return grants != null;
     }
 }

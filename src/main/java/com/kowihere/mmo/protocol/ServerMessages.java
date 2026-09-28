@@ -372,6 +372,29 @@ public final class ServerMessages {
         }
     }
 
+    /** One line of a blessing, already worded: "+6 siły", "-3 pancerza". */
+    public record BlessingLineDto(String text, boolean good) {
+    }
+
+    /**
+     * One blessing on a character: what it is called, how rare it is, what it
+     * does and how much of it is left.
+     *
+     * @param remainingMs of <em>played</em> time, which is why it can be sent
+     *                    as a number and counted down by the client without the
+     *                    two ever disagreeing for long
+     */
+    public record BlessingDto(String id, String name, String rarity, String rarityLabel,
+                              long remainingMs, List<BlessingLineDto> lines) {
+    }
+
+    /** Everything blessing or cursing a character, sent only to its owner. */
+    public record Blessings(String type, int capacity, List<BlessingDto> active) {
+        public Blessings(int capacity, List<BlessingDto> active) {
+            this("blessings", capacity, active);
+        }
+    }
+
     public record Error(String type, String message) {
         public Error(String message) {
             this("error", message);

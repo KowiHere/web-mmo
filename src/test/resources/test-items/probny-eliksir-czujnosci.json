@@ -1,0 +1,2 @@
+{ "id": "probny-eliksir-czujnosci", "name": "Próbny eliksir czujności", "slot": "NONE",
+  "requiresLevel": 1, "value": 50, "grants": "probna-czujnosc" }

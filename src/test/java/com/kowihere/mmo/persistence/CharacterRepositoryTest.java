@@ -4,6 +4,7 @@ import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.loop.ActorSnapshot;
 import com.kowihere.mmo.loop.Deposit;
 import com.kowihere.mmo.loop.StoredCoin;
+import com.kowihere.mmo.loop.StoredBlessing;
 import com.kowihere.mmo.loop.StoredDeposit;
 import com.kowihere.mmo.loop.SavedCharacter;
 import com.kowihere.mmo.loop.StoredItem;
@@ -188,6 +189,51 @@ class CharacterRepositoryTest {
 
         SavedCharacter found = characters.find("ala").orElseThrow();
         assertThat(found.unspentPoints()).isEqualTo(Attributes.pointsEarnedBy(5));
+    }
+
+    @Test
+    void aBlessingIsStoredAsTimeLeftRatherThanAnEnding() {
+        // The knockout after death stores a moment, because a penalty you can
+        // sleep off is not a penalty. A blessing was paid for, so its clock
+        // stops when nobody is playing - and what is written down is therefore
+        // what is left of it.
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+
+        characters.save(withBlessings("ala",
+                List.of(new StoredBlessing("mestwo-rycerza", 540_000L))));
+
+        assertThat(characters.find("ala").orElseThrow().blessings())
+                .containsExactly(new StoredBlessing("mestwo-rycerza", 540_000L));
+    }
+
+    @Test
+    void andIsReplacedWholeLikeEverythingElseWrittenRarely() {
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+        characters.save(withBlessings("ala",
+                List.of(new StoredBlessing("mestwo-rycerza", 540_000L),
+                        new StoredBlessing("furia-berserka", 30_000L))));
+
+        characters.save(withBlessings("ala", List.of(new StoredBlessing("furia-berserka", 10L))));
+
+        assertThat(characters.find("ala").orElseThrow().blessings())
+                .containsExactly(new StoredBlessing("furia-berserka", 10L));
+    }
+
+    @Test
+    void nullLeavesBlessingsAlone() {
+        characters.create(ala, character("Ala", 7, 11, Direction.LEFT));
+        characters.save(withBlessings("ala",
+                List.of(new StoredBlessing("mestwo-rycerza", 540_000L))));
+
+        characters.save(new ActorSnapshot("ala", "Ala", "starter", 8, 8, "UP", 1, 0L, 20, 0L,
+                Attributes.FRESH, 0, null, "wojownik", 1, null, null, ala, null, null));
+
+        assertThat(characters.find("ala").orElseThrow().blessings()).hasSize(1);
+    }
+
+    private static ActorSnapshot withBlessings(String nameKey, List<StoredBlessing> blessings) {
+        return new ActorSnapshot(nameKey, "Ala", "starter", 7, 11, "LEFT", 1, 0L, 20, 0L,
+                Attributes.FRESH, 0, null, "wojownik", 1, null, null, 0L, null, null, blessings);
     }
 
     @Test

@@ -5,6 +5,7 @@ import com.kowihere.mmo.loop.ActorSnapshot;
 import com.kowihere.mmo.loop.Deposit;
 import com.kowihere.mmo.loop.SavedCharacter;
 import com.kowihere.mmo.loop.StoredCoin;
+import com.kowihere.mmo.loop.StoredBlessing;
 import com.kowihere.mmo.loop.StoredDeposit;
 import com.kowihere.mmo.loop.StoredItem;
 import com.kowihere.mmo.loop.StoredSkill;
@@ -52,7 +53,8 @@ public class CharacterRepository {
                 .stream().findFirst()
                 .map(character -> withBelongings(character, itemsOf(nameKey), skillsOf(nameKey),
                         coinsOf(nameKey), depositOf(nameKey),
-                        accountDepositOf(ownerOf(nameKey).orElse(0L))));
+                        accountDepositOf(ownerOf(nameKey).orElse(0L)),
+                        blessingsOf(nameKey)));
     }
 
     /**
@@ -124,6 +126,20 @@ public class CharacterRepository {
                 nameKey);
     }
 
+    /**
+     * What is blessing or cursing a character, and how much of it is left.
+     *
+     * <p>How much is left, not when it ends: the clock only runs while the
+     * character is being played, so an absolute moment would spend a bottle
+     * somebody paid for while they were asleep.
+     */
+    public List<StoredBlessing> blessingsOf(String nameKey) {
+        return jdbc.query("SELECT def_id, remaining_ms FROM character_blessing"
+                        + " WHERE character_key = ? ORDER BY def_id",
+                (rs, row) -> new StoredBlessing(rs.getString("def_id"), rs.getLong("remaining_ms")),
+                nameKey);
+    }
+
     public List<StoredSkill> skillsOf(String nameKey) {
         return jdbc.query("SELECT skill_id, rank FROM character_skill"
                         + " WHERE character_key = ? ORDER BY skill_id",
@@ -133,12 +149,13 @@ public class CharacterRepository {
 
     private static SavedCharacter withBelongings(SavedCharacter character, List<StoredItem> items,
                                                  List<StoredSkill> skills, List<StoredCoin> coins,
-                                                 Deposit deposit, Deposit accountDeposit) {
+                                                 Deposit deposit, Deposit accountDeposit,
+                                                 List<StoredBlessing> blessings) {
         return new SavedCharacter(character.nameKey(), character.name(), character.mapId(),
                 character.x(), character.y(), character.dir(), character.level(), character.xp(),
                 character.hp(), character.wakesAt(), character.attributes(),
                 character.unspentPoints(), items, character.classId(),
-                character.skillPoints(), skills, coins, deposit, accountDeposit);
+                character.skillPoints(), skills, coins, deposit, accountDeposit, blessings);
     }
 
     /**
@@ -186,9 +203,11 @@ public class CharacterRepository {
                 List.of(),
                 List.of(),
                 // Both chests are read separately, by the two queries beside
-                // this one. A row on the selection screen carries neither.
+                // this one. A row on the selection screen carries neither, and
+                // neither does it carry blessings.
                 null,
-                null);
+                null,
+                List.of());
     }
 
     /**
@@ -225,6 +244,9 @@ public class CharacterRepository {
         }
         if (snapshot.coins() != null) {
             replaceCoins(snapshot.nameKey(), snapshot.coins());
+        }
+        if (snapshot.blessings() != null) {
+            replaceBlessings(snapshot.nameKey(), snapshot.blessings());
         }
         if (snapshot.deposit() != null) {
             replaceDeposit(snapshot.nameKey(), snapshot.deposit());
@@ -304,6 +326,19 @@ public class CharacterRepository {
                         + " VALUES (?, ?, ?)",
                 coins.stream()
                         .map(coin -> new Object[]{nameKey, coin.currencyId(), coin.amount()})
+                        .toList());
+    }
+
+    /** And again for blessings, which change when one is drunk and when one ends. */
+    private void replaceBlessings(String nameKey, List<StoredBlessing> blessings) {
+        jdbc.update("DELETE FROM character_blessing WHERE character_key = ?", nameKey);
+        if (blessings.isEmpty()) {
+            return;
+        }
+        jdbc.batchUpdate("INSERT INTO character_blessing (character_key, def_id, remaining_ms)"
+                        + " VALUES (?, ?, ?)",
+                blessings.stream()
+                        .map(one -> new Object[]{nameKey, one.defId(), one.remainingMs()})
                         .toList());
     }
 

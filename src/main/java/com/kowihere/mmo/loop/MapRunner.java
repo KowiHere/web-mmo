@@ -16,6 +16,7 @@ import com.kowihere.mmo.protocol.ServerMessages.Delta;
 import com.kowihere.mmo.protocol.ServerMessages.MapDto;
 import com.kowihere.mmo.protocol.ServerMessages.MoveDto;
 import com.kowihere.mmo.protocol.ServerMessages.PresenceDto;
+import com.kowihere.mmo.world.BlessingDef;
 import com.kowihere.mmo.world.Direction;
 import com.kowihere.mmo.world.MapDef;
 import com.kowihere.mmo.world.ClassDef;
@@ -124,6 +125,8 @@ public final class MapRunner implements Runnable {
     private final Set<Integer> pendingSkills = new LinkedHashSet<>();
     /** And for what they have to spend, which a kill changes. */
     private final Set<Integer> pendingPurse = new LinkedHashSet<>();
+    /** Changes when a bottle is drunk and when one runs out, and at no other time. */
+    private final Set<Integer> pendingBlessings = new LinkedHashSet<>();
     private final Map<String, Long> nextRoamTick = new HashMap<>();
     private final List<Fight> fights = new ArrayList<>();
     private final List<PendingRespawn> respawning = new ArrayList<>();
@@ -283,6 +286,7 @@ public final class MapRunner implements Runnable {
                 wakeTheSleeping();
                 reapExpiredActors();
                 carryOutTransfers();
+                tickBlessings();
                 saveDirtyActors();
                 publishVitals();
                 flush();
@@ -432,6 +436,7 @@ public final class MapRunner implements Runnable {
         sendBag(actor);
         sendSkills(actor);
         sendPurse(actor);
+        sendBlessings(actor);
     }
 
     private void attach(Actor actor, Command.Join join) {
@@ -451,6 +456,7 @@ public final class MapRunner implements Runnable {
         sendBag(actor);
         sendSkills(actor);
         sendPurse(actor);
+        sendBlessings(actor);
     }
 
     /**
@@ -483,6 +489,7 @@ public final class MapRunner implements Runnable {
         actor.inventory.restore(saved.items(), content.items());
         actor.skills.restore(saved.skills(), content.skills());
         actor.purse.restore(saved.coins(), content.currencies());
+        actor.blessings.restore(saved.blessings(), content.blessings());
         actor.storage = new Storage(saved.deposit().tabs());
         actor.storage.restore(saved.deposit().items(), content.items());
         actor.storagePurse.restore(saved.deposit().coins(), content.currencies());
@@ -658,6 +665,10 @@ public final class MapRunner implements Runnable {
             sendError(actor, def.name() + " wymaga poziomu " + def.requiresLevel() + ".");
             return;
         }
+        if (def.isBlessing()) {
+            drinkBlessing(actor, stack, def);
+            return;
+        }
         int missing = actor.maxHp() - actor.hp;
         if (missing <= 0) {
             // Refused rather than poured away. Nobody decided to waste it, and
@@ -678,6 +689,45 @@ public final class MapRunner implements Runnable {
         chat.add(new ChatDto(actor.id, actor.name, "* wypija: " + def.name() + " *"));
         sendYou(actor);
         sendBag(actor);
+    }
+
+    /**
+     * A bottle that blesses rather than mends.
+     *
+     * <p>Same rules as any other bottle - out of a fight, from the bag, at the
+     * right level - and one more of its own: three at a time. Refreshing one
+     * already on always passes, because that is not a fourth.
+     */
+    private void drinkBlessing(Actor actor, ItemStack stack, ItemDef def) {
+        BlessingDef blessing = content.blessings().get(def.grants());
+        if (blessing == null) {
+            // Refused at startup; nothing sensible to say at runtime.
+            log.warn("'{}' grants '{}', which content no longer has", def.id(), def.grants());
+            return;
+        }
+        if (actor.level < blessing.requiresLevel()) {
+            sendError(actor, blessing.name() + " wymaga poziomu "
+                    + blessing.requiresLevel() + ".");
+            return;
+        }
+        // What the ceiling was before any of this: a blessing that lowers the
+        // maximum has to bring current health down with it, and asking after
+        // the change would be asking a question that has already moved.
+        int healthBefore = actor.maxHp();
+        if (!actor.blessings.lay(blessing)) {
+            sendError(actor, "Więcej niż " + Blessings.MAX_ACTIVE
+                    + " błogosławieństwa naraz cię rozerwą. Poczekaj, aż któreś minie.");
+            return;
+        }
+        actor.inventory.removeFromBag(stack.id());
+        keepHealthInRange(actor, healthBefore);
+        actor.dirty = true;
+        actor.itemsDirty = true;
+        actor.blessingsDirty = true;
+        chat.add(new ChatDto(actor.id, actor.name, "* " + blessing.name() + " *"));
+        sendYou(actor);
+        sendBag(actor);
+        sendBlessings(actor);
     }
 
     private void handleUnequip(Command.Unequip unequip) {
@@ -1584,13 +1634,15 @@ public final class MapRunner implements Runnable {
                     actor.attributes, actor.unspentPoints, actor.inventory.stored(),
                     actor.characterClass == null ? null : actor.characterClass.id(),
                     actor.skillPoints, actor.skills.stored(), actor.purse.stored(),
-                    actor.accountId, depositOf(actor), accountDepositOf(actor)));
+                    actor.accountId, depositOf(actor), accountDepositOf(actor),
+                    actor.blessings.stored()));
             actor.dirty = false;
             actor.itemsDirty = false;
             actor.skillsDirty = false;
             actor.purseDirty = false;
             actor.depositDirty = false;
             actor.accountDepositDirty = false;
+            actor.blessingsDirty = false;
 
             endConversation(actor);
             actors.remove(actor.id);
@@ -1620,7 +1672,8 @@ public final class MapRunner implements Runnable {
                 new Deposit(actor.storage.tabs(), actor.storage.stored(),
                         actor.storagePurse.stored()),
                 new Deposit(actor.accountStorage.tabs(), actor.accountStorage.stored(),
-                        actor.accountPurse.stored()));
+                        actor.accountPurse.stored()),
+                actor.blessings.stored());
     }
 
     /** Both chests, whole, for a character that is on its way somewhere else. */
@@ -1773,6 +1826,7 @@ public final class MapRunner implements Runnable {
             strike(attacker, target, fight);
         }
 
+        mendTheBlessed(fight);
         fight.clearFleeRequests();
         endIfOver(fight);
     }
@@ -1784,6 +1838,33 @@ public final class MapRunner implements Runnable {
      * to spend it on, and that is a milestone of its own rather than something
      * to slip in here.
      */
+    /**
+     * The one line of a blessing that happens rather than simply counts: health
+     * back, once a round, and only in a fight - which is how the original words
+     * it, and what keeps it from quietly replacing bottles on the road.
+     *
+     * <p>After the blows, so that a round which would have killed somebody
+     * still kills them. Healing first would make the same blessing worth more
+     * in the round that matters most.
+     */
+    private void mendTheBlessed(Fight fight) {
+        for (int playerId : fight.players()) {
+            Actor actor = actors.get(playerId);
+            if (actor == null || !actor.isAlive()) {
+                continue;
+            }
+            int mends = actor.healPerRound();
+            if (mends <= 0 || actor.hp >= actor.maxHp()) {
+                continue;
+            }
+            int before = actor.hp;
+            actor.hp = Math.min(actor.maxHp(), actor.hp + mends);
+            actor.dirty = true;
+            damage.add(new DamageDto(actor.id, actor.id, before - actor.hp, actor.hp));
+            sendYou(actor);
+        }
+    }
+
     private void chargeEnergy(Fight fight) {
         for (int playerId : fight.players()) {
             Actor player = actors.get(playerId);
@@ -2351,6 +2432,13 @@ public final class MapRunner implements Runnable {
             }
         }
         pendingPurse.clear();
+        for (int id : pendingBlessings) {
+            Actor actor = actors.get(id);
+            if (actor != null) {
+                sendBlessingsNow(actor);
+            }
+        }
+        pendingBlessings.clear();
     }
 
     private void sendInit(Actor self, Client client) {
@@ -2404,6 +2492,37 @@ public final class MapRunner implements Runnable {
         lastOverrunWarningTick = tick;
         log.warn("Map '{}' missed its {} ms tick by {} ms - the world is running slow",
                 map.id(), TICK_MS, overrunNanos / 1_000_000L);
+    }
+
+    /**
+     * Counts every blessing down by one tick.
+     *
+     * <p>Played time, not wall-clock time: this only runs while a map is
+     * running the character, so logging out stops the clock without anybody
+     * writing down when it stopped. The knockout after death is deliberately
+     * the other way round - a penalty you can sleep off is not a penalty.
+     */
+    private void tickBlessings() {
+        for (Actor actor : actors.values()) {
+            if (!actor.isPlayer() || actor.blessings.size() == 0) {
+                continue;
+            }
+            int healthBefore = actor.maxHp();
+            List<BlessingDef> gone = actor.blessings.tick(TICK_MS);
+            if (gone.isEmpty()) {
+                continue;
+            }
+            for (BlessingDef def : gone) {
+                chat.add(new ChatDto(actor.id, actor.name, "* mija: " + def.name() + " *"));
+            }
+            // Health is clamped after the change, not before: a blessing that
+            // was holding up a maximum takes that much away as it goes.
+            keepHealthInRange(actor, healthBefore);
+            actor.dirty = true;
+            actor.blessingsDirty = true;
+            sendYou(actor);
+            sendBlessings(actor);
+        }
     }
 
     /**
@@ -2464,6 +2583,13 @@ public final class MapRunner implements Runnable {
         actor.depositDirty = false;
         Deposit accountDeposit = actor.accountDepositDirty ? accountDepositOf(actor) : null;
         actor.accountDepositDirty = false;
+        // Blessings are written whenever one is drunk or runs out - and also
+        // on the way out of the world, because what is saved is how much time
+        // is left, and leaving is exactly when that stops changing.
+        List<StoredBlessing> blessings =
+                actor.blessingsDirty || actor.blessings.size() > 0
+                        ? actor.blessings.stored() : null;
+        actor.blessingsDirty = false;
         // A copy, never the live actor: anything handed across threads must not
         // be something the tick is still writing to.
         persistence.save(new ActorSnapshot(actor.nameKey, actor.name, map.id(),
@@ -2472,7 +2598,7 @@ public final class MapRunner implements Runnable {
                 actor.attributes, actor.unspentPoints, items,
                 actor.characterClass == null ? null : actor.characterClass.id(),
                 actor.skillPoints, skills, coins,
-                actor.accountId, deposit, accountDeposit));
+                actor.accountId, deposit, accountDeposit, blessings));
     }
 
     private ActorDto toDto(Actor actor) {
@@ -2589,6 +2715,33 @@ public final class MapRunner implements Runnable {
         }
     }
 
+    private void sendBlessings(Actor actor) {
+        if (!actor.isPlayer() || actor.client == null) {
+            return;
+        }
+        pendingBlessings.add(actor.id);
+    }
+
+    private void sendBlessingsNow(Actor actor) {
+        if (!actor.isPlayer() || actor.client == null) {
+            return;
+        }
+        List<ServerMessages.BlessingDto> active = new ArrayList<>();
+        for (Blessings.Active one : actor.blessings.all()) {
+            List<ServerMessages.BlessingLineDto> lines = new ArrayList<>();
+            one.def.ordered().forEach((stat, value) -> lines.add(
+                    new ServerMessages.BlessingLineDto(
+                            (value > 0 ? "+" : "") + value + " " + stat.label(), value > 0)));
+            active.add(new ServerMessages.BlessingDto(one.def.id(), one.def.name(),
+                    one.def.rarity().name(), one.def.rarity().label(),
+                    Math.max(0, one.remainingMs), lines));
+        }
+        String frame = serialise(new ServerMessages.Blessings(Blessings.MAX_ACTIVE, active));
+        if (frame != null) {
+            actor.client.send(frame);
+        }
+    }
+
     private void sendPurse(Actor actor) {
         if (!actor.isPlayer() || actor.client == null) {
             return;
@@ -2639,8 +2792,9 @@ public final class MapRunner implements Runnable {
                     def.requiresLevel(), def.value(), Shop.buybackPrice(def.value()),
                     def.bonuses().strength(), def.bonuses().agility(), def.bonuses().intellect(),
                     def.attack(), def.armor(),
-                    def.isDrinkable() ? def.healing().describe() : null,
-                    def.isDrinkable() && def.healing().hasPool() ? def.healing().pool() : null));
+                    describeBottle(def),
+                    def.healing() != null && def.healing().hasPool()
+                            ? def.healing().pool() : null));
         }
         String frame = serialise(new ServerMessages.Shop(npc.id, npc.name, currency.id(),
                 currency.shortName(), goods));
@@ -2691,13 +2845,30 @@ public final class MapRunner implements Runnable {
                 tabCurrency == null ? null : tabCurrency.shortName());
     }
 
-    private static ServerMessages.ItemDto toDto(ItemStack stack, Actor owner) {
+    /**
+     * What one line on a bottle says: how much it mends, or what it lays on.
+     *
+     * <p>Two kinds of bottle now share one verb, and only one of them has a
+     * "heal" block - which a map thread found out the hard way.
+     */
+    private String describeBottle(ItemDef def) {
+        if (def.healing() != null) {
+            return def.healing().describe();
+        }
+        if (def.isBlessing()) {
+            BlessingDef blessing = content.blessings().get(def.grants());
+            return blessing == null ? null : blessing.name();
+        }
+        return null;
+    }
+
+    private ServerMessages.ItemDto toDto(ItemStack stack, Actor owner) {
         ItemDef def = stack.def();
         return new ServerMessages.ItemDto(stack.id(), def.id(), def.name(), def.slot().name(),
                 def.requiresLevel(), owner.level >= def.requiresLevel(),
                 def.bonuses().strength(), def.bonuses().agility(), def.bonuses().intellect(),
                 def.attack(), def.armor(),
-                def.isDrinkable() ? def.healing().describe() : null,
+                describeBottle(def),
                 stack.remaining() < 0 ? null : stack.remaining());
     }
 }

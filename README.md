@@ -582,6 +582,47 @@ The herbalist sells them, and only she does. She was already the one cure in the
 game; now she is the first NPC doing two things at once, which is what a
 **list** of functions was for.
 
+### Blessings
+
+A blessing is not one effect but a **list of them**, on a clock, and any line of
+it may be negative. That shape is lifted from the original, where one blessing
+grants four or five things at once; the negative lines are ours, so a bottle is
+a bargain rather than a present.
+
+```json
+{ "rarity": "HEROIC", "minutes": 20, "requiresLevel": 5,
+  "lines": { "strength": 6, "maxHp": 25, "healPerRound": 6, "armor": -3 } }
+```
+
+The lines are a closed list of things the engine **already computes**:
+attributes, attack, armour, points of dodge and of second blow, flat health,
+and health back once a round. That is why a blessing works on a road and in a
+fight without either of them knowing it exists — it is a third layer under the
+same statistics everything already reads, after the character's own attributes
+and what it is wearing. A statistic this game does not have is refused while
+the file is read, because a misspelt line is the one failure nobody reports:
+the tooltip says `+5 siły`, the player pays for it, and the number is simply
+never added.
+
+Two rules keep it honest. **Nothing goes below zero** — a curse worth more
+armour than you have takes all of it and stops, rather than turning the number
+negative and having every formula below politely obey. And **the ceilings
+hold**: points of dodge are added before the 35% cap, not after, because a cap
+that one bottle can step over is not a cap, and a character nothing can hit is
+a fight that never ends.
+
+**The clock counts played time.** What is stored is how much is *left*, not
+when it ends, so logging out stops it — you paid for twenty minutes of playing,
+not twenty minutes of the afternoon. The knockout after death is deliberately
+the opposite: that one stores a moment, because a penalty you can sleep off is
+not a penalty. Three at a time; the same one again refreshes the clock rather
+than stacking, so five bottles are five times the time and never five times the
+strength.
+
+Death does not touch them. It is tempting to have dying strip the curses, but
+the minuses live *inside* the same bottle as the pluses — so stripping half the
+package would make dying the cheapest way to get out of paying.
+
 ### A party is not world state
 
 Everything else in this game belongs to a map and is written by that map's one
@@ -861,11 +902,17 @@ for the conversation at a door — and so does `NpcFunction.TELEPORT`, still
 refused at startup, because an NPC who moves you somewhere is that conversation
 by another name.
 
-**Nothing a bottle does lasts longer than the swallow.** Healing over time, a
-drink that helps inside a fight, a draught that raises strength for ten minutes
-— all three are the same missing thing: an effect with a duration, which is
-state that has to tick, be sent, and survive a logout. That is a milestone, not
-a field, and until it exists a bottle is instant or it is nothing.
+**Blessings are the only effects with a duration.** A curse that a monster
+lands on you, a weakness after dying, an item that is worth carrying and worth
+regretting — none of those exist. The machinery would take them tomorrow; what
+is missing is the decision about how hard this world should be, which is the
+owner's to make and not the engine's.
+
+**Nothing in a fight lasts beyond the round it happened in.** Bleeding, a
+shield for three rounds, a blow that weakens the next one: all of that is a
+second kind of effect, measured in rounds and dying with the fight, and it is
+not built. Neither is attack speed — a round is 1.5 seconds for everybody at
+once, which is the floor the whole of combat stands on, not a field in a file.
 
 **Empty bottles cannot be refilled**, because they do not exist: a flask drunk
 dry disappears. Refilling at the herbalist for less than a new one is the
@@ -880,8 +927,8 @@ that makes hunting together worth doing. Public party listings and effects with
 a duration (the buffs and debuffs that would make a party more than five people
 in one place) come after that.
 
-Roughly in order: sharing experience and loot inside a party, then the talking
-at a passage (`NpcFunction.TELEPORT` with it), then effects with a duration,
+Roughly in order: sharing experience and loot inside a party, then effects
+inside a fight, then the talking at a passage (`NpcFunction.TELEPORT` with it),
 then instances — which is what heroes and colossi are waiting on.
 
 ## Layout

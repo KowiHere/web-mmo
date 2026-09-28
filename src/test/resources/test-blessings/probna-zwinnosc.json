@@ -1,0 +1,8 @@
+{
+  "id": "probna-zwinnosc",
+  "name": "Próbna zwinność",
+  "rarity": "COMMON",
+  "minutes": 1,
+  "requiresLevel": 1,
+  "lines": { "dodgePoints": 50, "secondBlowPoints": 50, "healPerRound": 7 }
+}

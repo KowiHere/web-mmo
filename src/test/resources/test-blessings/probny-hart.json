@@ -1,0 +1,8 @@
+{
+  "id": "probny-hart",
+  "name": "Próbny hart",
+  "rarity": "UNCOMMON",
+  "minutes": 8,
+  "requiresLevel": 1,
+  "lines": { "maxHp": 30 }
+}

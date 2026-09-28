@@ -21,6 +21,7 @@ import java.util.List;
  *               by somebody who has neither killed nor bought anything since.
  * @param accountId whose account this character is on - which the chest shared
  *                  by that account is written against
+ * @param blessings what is on the character, or null when none of it changed
  * @param deposit the character's own chest, or null when nothing in it moved
  * @param accountDeposit the account's chest, same rule
  */
@@ -29,5 +30,18 @@ public record ActorSnapshot(String nameKey, String name, String mapId, int x, in
                             Attributes attributes, int unspentPoints, List<StoredItem> items,
                             String classId, int skillPoints,
                             List<StoredSkill> skills, List<StoredCoin> coins,
-                            long accountId, Deposit deposit, Deposit accountDeposit) {
+                            long accountId, Deposit deposit, Deposit accountDeposit,
+                            List<StoredBlessing> blessings) {
+
+    /** A snapshot that says nothing about blessings, which means "leave them alone". */
+    public ActorSnapshot(String nameKey, String name, String mapId, int x, int y, String dir,
+                         int level, long xp, int hp, long wakesAt,
+                         Attributes attributes, int unspentPoints, List<StoredItem> items,
+                         String classId, int skillPoints,
+                         List<StoredSkill> skills, List<StoredCoin> coins,
+                         long accountId, Deposit deposit, Deposit accountDeposit) {
+        this(nameKey, name, mapId, x, y, dir, level, xp, hp, wakesAt, attributes, unspentPoints,
+                items, classId, skillPoints, skills, coins, accountId, deposit, accountDeposit,
+                null);
+    }
 }

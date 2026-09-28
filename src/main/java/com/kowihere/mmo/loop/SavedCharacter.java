@@ -16,6 +16,9 @@ import java.util.List;
  *                says which it was
  * @param skills  what has been learned, and how far
  * @param coins   what there is to spend, in however many currencies
+ * @param blessings what is blessing or cursing it, with how much of each is
+ *                  left - in played time, so the clock is stopped by this
+ *                  record being written down at all
  * @param deposit what is lying in this character's own chest
  * @param accountDeposit what is lying in the chest shared by every character on
  *                       the account. Held in memory like the rest of this, and
@@ -27,14 +30,33 @@ public record SavedCharacter(String nameKey, String name, String mapId, int x, i
                              Attributes attributes, int unspentPoints, List<StoredItem> items,
                              String classId, int skillPoints,
                              List<StoredSkill> skills, List<StoredCoin> coins,
-                             Deposit deposit, Deposit accountDeposit) {
+                             Deposit deposit, Deposit accountDeposit,
+                             List<StoredBlessing> blessings) {
 
     public SavedCharacter {
         items = items == null ? List.of() : List.copyOf(items);
         skills = skills == null ? List.of() : List.copyOf(skills);
         coins = coins == null ? List.of() : List.copyOf(coins);
+        blessings = blessings == null ? List.of() : List.copyOf(blessings);
         deposit = deposit == null ? Deposit.EMPTY : deposit;
         accountDeposit = accountDeposit == null ? Deposit.EMPTY : accountDeposit;
+    }
+
+    /**
+     * The same character with nothing on it.
+     *
+     * <p>Kept because most of the world has no opinion about blessings: a
+     * character crossing a door, a row read for the selection screen, and every
+     * test that is about something else.
+     */
+    public SavedCharacter(String nameKey, String name, String mapId, int x, int y, Direction dir,
+                          int level, long xp, int hp, long wakesAt,
+                          Attributes attributes, int unspentPoints, List<StoredItem> items,
+                          String classId, int skillPoints,
+                          List<StoredSkill> skills, List<StoredCoin> coins,
+                          Deposit deposit, Deposit accountDeposit) {
+        this(nameKey, name, mapId, x, y, dir, level, xp, hp, wakesAt, attributes, unspentPoints,
+                items, classId, skillPoints, skills, coins, deposit, accountDeposit, List.of());
     }
 
     /** A brand new character: level one, unhurt, unpenalised, empty-handed and broke. */
@@ -54,6 +76,6 @@ public record SavedCharacter(String nameKey, String name, String mapId, int x, i
         // cannot see until it levels.
         return new SavedCharacter(nameKey, name, mapId, x, y, dir, 1, 0L, -1, 0L,
                 attributes, 0, List.of(), classId, 1, List.of(), List.of(),
-                Deposit.EMPTY, Deposit.EMPTY);
+                Deposit.EMPTY, Deposit.EMPTY, List.of());
     }
 }

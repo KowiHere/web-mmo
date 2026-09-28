@@ -1,0 +1,13 @@
+{
+  "id": "oko-tropicielki",
+  "name": "Oko tropicielki",
+  "rarity": "UNCOMMON",
+  "minutes": 15,
+  "requiresLevel": 3,
+  "lines": {
+    "agility": 5,
+    "dodgePoints": 4,
+    "secondBlowPoints": 3,
+    "strength": -2
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "id": "mestwo-rycerza",
+  "name": "Męstwo nieugiętego rycerza",
+  "rarity": "HEROIC",
+  "minutes": 20,
+  "requiresLevel": 5,
+  "lines": {
+    "strength": 6,
+    "maxHp": 25,
+    "healPerRound": 6,
+    "armor": -3
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "id": "furia-berserka",
+  "name": "Furia berserka",
+  "rarity": "COMMON",
+  "minutes": 2,
+  "requiresLevel": 1,
+  "lines": {
+    "attack": 8,
+    "armor": -4,
+    "dodgePoints": -5
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "id": "eliksir-mestwa",
+  "name": "Eliksir męstwa",
+  "slot": "NONE",
+  "requiresLevel": 5,
+  "value": 420,
+  "grants": "mestwo-rycerza"
+}

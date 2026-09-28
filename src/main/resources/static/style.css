@@ -682,14 +682,76 @@ label {
 
 /* The chests. Same corner as the stall, and only one of the two is ever open
    at a time, because only one deed can be the last one chosen. */
-/* The party. Under the health bars on the left, because it is the same kind of
-   thing: how everybody is doing, at a glance. */
-#party {
+/* Blessings, right under the bars they change. */
+#left-stack {
     position: absolute;
     left: 12px;
     top: 118px;
     z-index: 6;
     width: min(216px, calc(100% - 24px));
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none; /* the gap between panels is still map */
+}
+
+#left-stack > * {
+    pointer-events: auto;
+}
+
+#blessings {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.blessing {
+    padding: 4px 8px;
+    border: 1px solid #2b3550;
+    border-left-width: 3px;
+    border-radius: 6px;
+    background: rgba(16, 20, 30, .92);
+    font-size: 11px;
+    cursor: default;
+}
+
+.blessing.COMMON { border-left-color: #8a93a5; }
+.blessing.UNCOMMON { border-left-color: #7fd39b; }
+.blessing.HEROIC { border-left-color: #7fb2e8; }
+.blessing.LEGENDARY { border-left-color: #e8c87a; }
+
+.blessing-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.blessing-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #dbe6f5;
+}
+
+.blessing-left {
+    font-variant-numeric: tabular-nums;
+    color: #8a93a5;
+}
+
+.blessing-lines {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+    margin-top: 2px;
+    font-size: 10px;
+}
+
+.blessing-good { color: #7fd39b; }
+.blessing-bad { color: #e06c75; }
+
+/* The party. Under the health bars on the left, because it is the same kind of
+   thing: how everybody is doing, at a glance. */
+#party {
     padding: 10px 12px;
     border: 1px solid #2b3550;
     border-radius: 10px;

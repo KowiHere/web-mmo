@@ -27,7 +27,11 @@ public final class ItemStack {
     private int remaining;
 
     public ItemStack(String id, ItemDef def) {
-        this(id, def, def.isDrinkable() && def.healing().hasPool() ? def.healing().pool() : -1);
+        // Only a bottle that mends has a pool. A bottle that blesses is drunk
+        // once and gone, and asking it how much is left used to be a question
+        // that crashed a map thread.
+        this(id, def, def.healing() != null && def.healing().hasPool()
+                ? def.healing().pool() : -1);
     }
 
     public ItemStack(String id, ItemDef def, int remaining) {

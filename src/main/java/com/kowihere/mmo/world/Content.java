@@ -13,7 +13,17 @@ import java.util.Map;
  */
 public record Content(Map<String, MobDef> mobs, Map<String, ItemDef> items,
                       Map<String, ClassDef> classes, Map<String, SkillDef> skills,
-                      Map<String, NpcDef> npcs, Map<String, CurrencyDef> currencies) {
+                      Map<String, NpcDef> npcs, Map<String, CurrencyDef> currencies,
+                      Map<String, BlessingDef> blessings) {
+
+    public Content(Map<String, MobDef> mobs, Map<String, ItemDef> items,
+                   Map<String, ClassDef> classes, Map<String, SkillDef> skills,
+                   Map<String, NpcDef> npcs, Map<String, CurrencyDef> currencies) {
+        // Blessings are their own registry, shared by every map, and most tests
+        // have none - so this stays the constructor everything else calls.
+        this(mobs, items, classes, skills, npcs, currencies,
+                new BlessingLoader().loadAll());
+    }
 
     public Content(Map<String, MobDef> mobs, Map<String, ItemDef> items,
                    Map<String, ClassDef> classes, Map<String, SkillDef> skills) {

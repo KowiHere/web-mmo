@@ -1,0 +1,8 @@
+{
+  "id": "probna-klatwa",
+  "name": "Próbna klątwa",
+  "rarity": "COMMON",
+  "minutes": 5,
+  "requiresLevel": 1,
+  "lines": { "armor": -100, "strength": -100, "maxHp": -20 }
+}

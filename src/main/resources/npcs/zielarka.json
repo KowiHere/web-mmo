@@ -5,7 +5,8 @@
   "functions": ["DIALOGUE", "HEALER", "SHOP"],
   "shop": {
     "currency": "zloto",
-    "sells": ["mikstura-mala", "flakon-25", "flakon-50", "flakon-75", "flakon-100"]
+    "sells": ["mikstura-mala", "flakon-25", "flakon-50", "flakon-75", "flakon-100",
+               "eliksir-furii", "eliksir-tropicielki", "eliksir-mestwa"]
   },
   "dialogue": {
     "start": "powitanie",
@@ -30,9 +31,23 @@
       "kramik": {
         "text": "Mikstura na raz, flakon na dłużej. Flakon bierze tyle, ile trzeba — draśnięcie kosztuje draśnięcie, nie cały flakon. Wypić możesz tylko wtedy, gdy nikt cię akurat nie bije.",
         "options": [
+          { "text": "A te trzy na dole?", "goto": "eliksiry" },
           { "text": "A gdybym wypiła w walce?", "goto": "w-walce" },
           { "text": "Rozumiem.", "goto": "powitanie" },
           { "text": "Bywaj.", "action": "END" }
+        ]
+      },
+      "eliksiry": {
+        "text": "Eliksiry. Każdy daje i każdy zabiera — nie ma darmowej siły, dziecko. Trzymają się ciebie przez kilkanaście minut twojej gry; jak pójdziesz spać, poczekają. Więcej niż trzy naraz cię rozerwą.",
+        "options": [
+          { "text": "Co konkretnie zabierają?", "goto": "cena" },
+          { "text": "Rozumiem.", "goto": "kramik" }
+        ]
+      },
+      "cena": {
+        "text": "Furia daje cios, a odbiera pancerz i zwinność. Wywar wyostrza oko kosztem siły. Męstwo rycerza dodaje krzepy i goi w walce, ale zbroja siedzi na tobie gorzej. Wybieraj pod to, co idziesz bić.",
+        "options": [
+          { "text": "Zapamiętam.", "goto": "kramik" }
         ]
       },
       "w-walce": {

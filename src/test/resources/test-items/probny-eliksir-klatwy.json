@@ -1,0 +1,2 @@
+{ "id": "probny-eliksir-klatwy", "name": "Próbny eliksir klątwy", "slot": "NONE",
+  "requiresLevel": 1, "value": 50, "grants": "probna-klatwa" }

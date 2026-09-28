@@ -1,0 +1,8 @@
+{
+  "id": "eliksir-tropicielki",
+  "name": "Wywar tropicielki",
+  "slot": "NONE",
+  "requiresLevel": 3,
+  "value": 260,
+  "grants": "oko-tropicielki"
+}

@@ -1,0 +1,8 @@
+{
+  "id": "eliksir-furii",
+  "name": "Wyciąg z furii",
+  "slot": "NONE",
+  "requiresLevel": 1,
+  "value": 60,
+  "grants": "furia-berserka"
+}

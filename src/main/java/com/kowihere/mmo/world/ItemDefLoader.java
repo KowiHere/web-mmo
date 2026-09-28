@@ -69,6 +69,18 @@ public class ItemDefLoader {
                 atLeast(bonuses, "intellect", 0, 0, where));
 
         Healing healing = root.has("heal") ? healing(root.get("heal"), where, id) : null;
+        String grants = root.path("grants").asText(null);
+        grants = grants == null || grants.isBlank() ? null : grants;
+        if (healing != null && grants != null) {
+            // "Drink" would mean two things at once, and which of them happened
+            // would be decided by whichever branch the code reads first.
+            throw new IllegalStateException(where + ": '" + id
+                    + "' both heals and grants a blessing; a bottle does one or the other.");
+        }
+        if (grants != null && slot.isWorn()) {
+            throw new IllegalStateException(where + ": '" + id + "' is worn in " + slot
+                    + " and also drunk for a blessing; it has to be one or the other.");
+        }
         if (healing != null && slot.isWorn()) {
             // Something you wear and something you drink are two different
             // verbs, and an item claiming both would be worn for its bonuses
@@ -83,6 +95,7 @@ public class ItemDefLoader {
                 atLeast(bonuses, "attack", 0, 0, where),
                 atLeast(bonuses, "armor", 0, 0, where),
                 healing,
+                grants,
                 // Worth something, always. A free item makes every price in
                 // the game meaningless, and "value" left out of the JSON by
                 // accident would be exactly that.

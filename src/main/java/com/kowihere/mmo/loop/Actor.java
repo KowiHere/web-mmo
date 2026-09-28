@@ -3,6 +3,7 @@ package com.kowihere.mmo.loop;
 import com.kowihere.mmo.combat.Attributes;
 import com.kowihere.mmo.combat.CombatRules;
 import com.kowihere.mmo.combat.Fight;
+import com.kowihere.mmo.world.BlessingStat;
 import com.kowihere.mmo.world.ClassDef;
 import com.kowihere.mmo.world.Direction;
 import com.kowihere.mmo.world.MobDef;
@@ -66,6 +67,14 @@ final class Actor {
     int unspentPoints;
 
     final Inventory inventory = new Inventory();
+
+    /**
+     * What is blessing or cursing this character: the third layer of
+     * statistics, after its own attributes and what it is wearing. Every number
+     * below is computed with it, so a blessing works in a fight and on a road
+     * without either place knowing it exists.
+     */
+    final Blessings blessings = new Blessings();
     final Skills skills = new Skills();
     final Purse purse = new Purse();
 
@@ -107,6 +116,9 @@ final class Actor {
 
     /** And for what it has to spend, which changes on every kill and purchase. */
     boolean purseDirty;
+
+    /** And for blessings, which change when one is drunk and when one runs out. */
+    boolean blessingsDirty;
 
     /** And for each chest, which changes only while somebody is standing at one. */
     boolean depositDirty;
@@ -263,7 +275,17 @@ final class Actor {
      * can fall out of step with what it was computed from.
      */
     Attributes totalAttributes() {
-        return isMob() ? Attributes.FRESH : attributes.plus(inventory.grantedAttributes());
+        if (isMob()) {
+            return Attributes.FRESH;
+        }
+        Attributes total = attributes.plus(inventory.grantedAttributes());
+        // Never below zero: a curse worth more than a character has takes
+        // everything it has and stops, rather than turning the attribute into a
+        // negative number that every formula below would then quietly obey.
+        return new Attributes(
+                Math.max(0, total.strength() + blessings.total(BlessingStat.STRENGTH)),
+                Math.max(0, total.agility() + blessings.total(BlessingStat.AGILITY)),
+                Math.max(0, total.intellect() + blessings.total(BlessingStat.INTELLECT)));
     }
 
     int maxHp() {
@@ -275,7 +297,9 @@ final class Actor {
         if (isMob()) {
             return mob.hp();
         }
-        return totalAttributes().maxHp() + (characterClass == null ? 0 : characterClass.hpBonus());
+        return Math.max(1, totalAttributes().maxHp()
+                + (characterClass == null ? 0 : characterClass.hpBonus())
+                + blessings.total(BlessingStat.MAX_HP));
     }
 
     int attack() {
@@ -286,7 +310,8 @@ final class Actor {
         int fromClass = characterClass == null
                 ? total.attack()
                 : characterClass.attackFrom(total);
-        return fromClass + inventory.grantedAttack();
+        return Math.max(0, fromClass + inventory.grantedAttack()
+                + blessings.total(BlessingStat.ATTACK));
     }
 
     /** How much of an opponent's armour this actor's blows pass through. */
@@ -297,16 +322,38 @@ final class Actor {
     int armor() {
         return isMob()
                 ? mob.armor()
-                : totalAttributes().armor() + inventory.grantedArmor();
+                : Math.max(0, totalAttributes().armor() + inventory.grantedArmor()
+                        + blessings.total(BlessingStat.ARMOR));
     }
 
-    /** A creature never evades; only characters have agility. */
+    /**
+     * A creature never evades; only characters have agility.
+     *
+     * <p>A blessing adds percentage points <em>before</em> the ceiling, which
+     * therefore still holds. Letting a bottle past it would undo the rule it
+     * exists for: a character nothing can hit is a fight that never ends.
+     */
     double dodgeChance() {
-        return isMob() ? 0 : totalAttributes().dodgeChance();
+        if (isMob()) {
+            return 0;
+        }
+        double chance = totalAttributes().dodgeChance()
+                + blessings.total(BlessingStat.DODGE_POINTS) / 100.0;
+        return Math.max(0, Math.min(Attributes.MAX_DODGE, chance));
     }
 
     double secondBlowChance() {
-        return isMob() ? 0 : totalAttributes().secondBlowChance();
+        if (isMob()) {
+            return 0;
+        }
+        double chance = totalAttributes().secondBlowChance()
+                + blessings.total(BlessingStat.SECOND_BLOW_POINTS) / 100.0;
+        return Math.max(0, Math.min(Attributes.MAX_SECOND_BLOW, chance));
+    }
+
+    /** Health given back once a round, and only in a fight - as in the original. */
+    int healPerRound() {
+        return isMob() ? 0 : Math.max(0, blessings.total(BlessingStat.HEAL_PER_ROUND));
     }
 
     /**

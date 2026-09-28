@@ -79,6 +79,7 @@ const state = {
     storage: null,
     passage: null,
     party: null,
+    blessings: null,
     invite: null,
     // Which tab of each chest is being looked at. The client's own business:
     // the server sends every tab at once and has no idea one is on top.
@@ -123,6 +124,7 @@ const skillbarEl = document.getElementById('skillbar');
 const purseEl = document.getElementById('purse');
 const knockoutEl = document.getElementById('knockout');
 const knockoutCountEl = document.getElementById('knockout-count');
+const blessingsEl = document.getElementById('blessings');
 const partyEl = document.getElementById('party');
 const partyMembersEl = document.getElementById('party-members');
 const partyNameEl = document.getElementById('party-name');
@@ -188,6 +190,7 @@ function connect(characterKey) {
         else if (msg.type === 'shop') applyShop(msg);
         else if (msg.type === 'storage') applyStorage(msg);
         else if (msg.type === 'passage') applyPassage(msg);
+        else if (msg.type === 'blessings') applyBlessings(msg);
         else if (msg.type === 'party') applyParty(msg);
         else if (msg.type === 'partyInvite') applyInvite(msg);
         else if (msg.type === 'partyChat') logParty(msg.from, msg.text);
@@ -237,6 +240,7 @@ function applyInit(msg) {
     applyShop({});
     applyStorage({});
     applyPassage({});
+    renderBlessings();
     // The party is not the map's: a reload or a walk through a door does not
     // break one up, so it is redrawn rather than cleared - and the panel is
     // shown even when empty, because inviting somebody is how a party starts.
@@ -291,8 +295,11 @@ function applyDelta(msg) {
             // because by then the target may be dead, or back at the spawn.
             x: target.rx ?? target.x,
             y: target.ry ?? target.y,
-            text: `-${blow.amount}`,
-            colour: blow.target === state.selfId ? '#e06c75' : '#f0c07a',
+            // A negative blow is health going the other way: a blessing that
+            // mends once a round. Same frame, same list, opposite sign.
+            text: blow.amount < 0 ? `+${-blow.amount}` : `-${blow.amount}`,
+            colour: blow.amount < 0 ? '#7fd39b'
+                : blow.target === state.selfId ? '#e06c75' : '#f0c07a',
             until: now + FLOATER_LIFETIME_MS,
             born: now,
         });
@@ -429,6 +436,80 @@ function renderShop() {
         shopSellEl.append(row);
     }
     shopEl.hidden = false;
+}
+
+/**
+ * What is blessing or cursing the character.
+ *
+ * <p>The server sends how much is left rather than when it ends, because the
+ * clock stops when nobody is playing. The client counts it down between frames
+ * purely so the number moves; the server's next word always wins.
+ */
+function applyBlessings(msg) {
+    state.blessings = (msg.active || []).length ? msg : null;
+    renderBlessings();
+}
+
+function renderBlessings() {
+    blessingsEl.innerHTML = '';
+    if (!state.blessings) {
+        blessingsEl.hidden = true;
+        return;
+    }
+    for (const one of state.blessings.active) {
+        const box = document.createElement('div');
+        box.className = `blessing ${one.rarity}`;
+        box.title = one.rarityLabel;
+
+        const head = document.createElement('div');
+        head.className = 'blessing-head';
+        const name = document.createElement('span');
+        name.className = 'blessing-name';
+        name.textContent = one.name;
+        const left = document.createElement('span');
+        left.className = 'blessing-left';
+        left.textContent = timeLeft(one.remainingMs);
+        head.append(name, left);
+
+        const lines = document.createElement('div');
+        lines.className = 'blessing-lines';
+        for (const line of one.lines || []) {
+            const span = document.createElement('span');
+            span.className = line.good ? 'blessing-good' : 'blessing-bad';
+            span.textContent = line.text;
+            lines.append(span);
+        }
+
+        box.append(head, lines);
+        blessingsEl.append(box);
+    }
+    blessingsEl.hidden = false;
+}
+
+/**
+ * Moves the numbers between frames from the server.
+ *
+ * <p>Only the display: the next frame from the server overwrites whatever this
+ * arrived at, so a clock that drifts is a clock that is corrected twice a
+ * minute rather than a second opinion about when a blessing ends.
+ */
+let lastBlessingCount = 0;
+
+function countBlessingsDown(now) {
+    if (!state.blessings) return;
+    if (!lastBlessingCount) lastBlessingCount = now;
+    const elapsed = now - lastBlessingCount;
+    if (elapsed < 1000) return;
+    lastBlessingCount = now;
+    for (const one of state.blessings.active) {
+        one.remainingMs = Math.max(0, one.remainingMs - elapsed);
+    }
+    renderBlessings();
+}
+
+function timeLeft(ms) {
+    const seconds = Math.max(0, Math.round(ms / 1000));
+    return seconds >= 60 ? `${Math.ceil(seconds / 60)} min` : `${seconds} s`;
 }
 
 /**
@@ -1178,6 +1259,7 @@ function frame(now) {
 
     repeatHeldMovement(now);
     askWhenWeGetThere();
+    countBlessingsDown(now);
     for (const actor of state.actors.values()) advanceAnimation(actor, now);
 
     const { ox, oy } = cameraOrigin();
@@ -1658,6 +1740,7 @@ document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
             event.preventDefault();
             applyPassage({});
+    renderBlessings();
     // The party is not the map's: a reload or a walk through a door does not
     // break one up, so it is redrawn rather than cleared - and the panel is
     // shown even when empty, because inviting somebody is how a party starts.

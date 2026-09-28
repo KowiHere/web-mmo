@@ -1,0 +1,8 @@
+{
+  "id": "probne-mestwo",
+  "name": "Próbne męstwo",
+  "rarity": "HEROIC",
+  "minutes": 10,
+  "requiresLevel": 1,
+  "lines": { "strength": 10, "attack": 5, "armor": -2 }
+}

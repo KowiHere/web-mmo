@@ -1,0 +1,8 @@
+{
+  "id": "probny-eliksir-zwinnosci",
+  "name": "Próbny eliksir zwinności",
+  "slot": "NONE",
+  "requiresLevel": 1,
+  "value": 50,
+  "grants": "probna-zwinnosc"
+}

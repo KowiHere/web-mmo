@@ -1,0 +1,8 @@
+{
+  "id": "probna-czujnosc",
+  "name": "Próbna czujność",
+  "rarity": "COMMON",
+  "minutes": 9,
+  "requiresLevel": 1,
+  "lines": { "agility": 3 }
+}

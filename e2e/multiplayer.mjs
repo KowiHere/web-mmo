@@ -1201,6 +1201,71 @@ try {
         }
     }
 
+    // ---- a blessing, which works on the road and in a fight alike ---------
+    await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+    await escapeAnyFight(ala);
+
+    if (!(await openStall(ala, 'Miłka'))) {
+        fail('the herbalist would not open her stall for the elixirs');
+    } else {
+        const elixirs = await ala.evaluate(() => (state.shop.goods || [])
+            .filter((g) => g.restores && !/%|\+/.test(g.restores))
+            .map((g) => ({ defId: g.defId, price: g.price, restores: g.restores })));
+        const cheapest = elixirs.sort((a, b) => a.price - b.price)[0];
+        if (!cheapest) {
+            fail('the herbalist has no elixirs on her shelf');
+        } else {
+            ok(`her shelf carries blessings too: ${cheapest.restores}`);
+            await earnAtLeast(ala, cheapest.price);
+            if (!(await openStall(ala, 'Miłka'))) {
+                fail('the herbalist would not open her stall again');
+            }
+            await ala.evaluate((defId) => state.ws.send(JSON.stringify({
+                type: 'buy', itemId: defId,
+            })), cheapest.defId);
+            const bought = await ala
+                .waitForFunction((defId) => (state.bag.carried || [])
+                    .some((i) => i.defId === defId), cheapest.defId, { timeout: 10_000 })
+                .then(() => true).catch(() => false);
+            bought ? ok(`bought one for ${cheapest.price} gold`) : fail('the elixir never arrived');
+
+            await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+            await escapeAnyFight(ala);
+
+            const before = await ala.evaluate(() => ({
+                attack: state.you.attack, armor: state.you.armor,
+            }));
+            const bottle = await ala.evaluate((defId) =>
+                (state.bag.carried || []).find((i) => i.defId === defId) || null, cheapest.defId);
+            await ala.evaluate((id) => state.ws.send(JSON.stringify({
+                type: 'drink', itemId: id,
+            })), bottle.id);
+
+            const laid = await ala
+                .waitForFunction(() => state.blessings && state.blessings.active.length === 1,
+                    null, { timeout: 10_000 })
+                .then(() => true).catch(() => false);
+            const after = await ala.evaluate(() => ({
+                attack: state.you.attack, armor: state.you.armor,
+            }));
+            laid && after.attack > before.attack
+                ? ok(`it raised attack ${before.attack} → ${after.attack} on an empty road`)
+                : fail(`after drinking: ${JSON.stringify({ laid, before, after })}`);
+            after.armor < before.armor
+                ? ok(`and took armour ${before.armor} → ${after.armor} for it — a bargain,`
+                    + ' not a present')
+                : fail(`the blessing cost nothing: armour ${before.armor} → ${after.armor}`);
+
+            const shown = await ala.evaluate(() =>
+                !document.querySelector('#blessings').hidden
+                && document.querySelector('.blessing-name').textContent);
+            shown
+                ? ok(`and the panel names it: ${shown}`)
+                : fail('nothing appeared on the blessing panel');
+            await ala.screenshot({ path: 'blogoslawienstwo.png' });
+        }
+    }
+
     // ---- what a skill point costs, and where it costs less ---------------
     await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
     await escapeAnyFight(ala);

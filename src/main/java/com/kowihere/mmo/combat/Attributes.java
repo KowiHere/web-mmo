@@ -45,9 +45,9 @@ public record Attributes(int strength, int agility, int intellect) {
      * floor of one under every blow, seen from the other side.
      */
     private static final double DODGE_PER_AGILITY = 0.010;
-    private static final double MAX_DODGE = 0.35;
+    public static final double MAX_DODGE = 0.35;
     private static final double SECOND_BLOW_PER_AGILITY = 0.012;
-    private static final double MAX_SECOND_BLOW = 0.40;
+    public static final double MAX_SECOND_BLOW = 0.40;
 
     public Attributes {
         if (strength < 0 || agility < 0 || intellect < 0) {
