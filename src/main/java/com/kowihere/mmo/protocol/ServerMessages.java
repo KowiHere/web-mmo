@@ -160,8 +160,19 @@ public final class ServerMessages {
      * answer to a question the client can settle for itself, having both the
      * cost here and the energy in every {@code you}.
      */
+    /**
+     * @param element what its blows carry beyond force, or null; named so the
+     *                panel can say "prądu" without knowing what elements are
+     * @param elementChance how often that takes hold, in percentage points
+     */
     public record SkillDto(String id, String name, String description, int rank, int maxRank,
-                           int cost, boolean passive) {
+                           int cost, boolean passive, String element, String elementLabel,
+                           int elementChance) {
+
+        public SkillDto(String id, String name, String description, int rank, int maxRank,
+                        int cost, boolean passive) {
+            this(id, name, description, rank, maxRank, cost, passive, null, null, 0);
+        }
     }
 
     /** What a character has learned, sent only to its owner. */

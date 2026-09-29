@@ -203,6 +203,76 @@ class SkillsInTheWorldTest {
                 .isGreaterThanOrEqualTo(3);
     }
 
+    // ---- what a skill is made of -----------------------------------------
+
+    @Test
+    void aSkillLeavesItsOwnElementBehind() throws Exception {
+        // Until now an element could only ride on a weapon, so the mage's
+        // Lightning struck with whatever happened to be in his hand - and with
+        // nothing at all when his hands were empty.
+        FakeClient client = join("Iskra", "mag");
+        learn(client, "blyskawica");
+        int target = dummy(client);
+
+        runner.submit(new Command.Attack(client, target));
+        assertThat(client.await(f -> f.contains("\"type\":\"you\"")
+                && numberIn(f, "energy") >= 30)).isTrue();
+        runner.submit(new Command.Use(client, "blyskawica"));
+
+        assertThat(client.await(f -> f.contains("jest porażony")))
+                .as("it is called Lightning; now it stuns")
+                .isTrue();
+    }
+
+    @Test
+    void whatIsHeldAndWhatIsCastBothTakeHold() throws Exception {
+        // One blow, two elements: the brand in the hand and the spell that
+        // threw it. Each rolls against its own resistance, and neither waits
+        // for the other.
+        FakeClient client = join("Iskra", "mag", "probne-zarzewie");
+        learn(client, "blyskawica");
+        int target = dummy(client);
+
+        runner.submit(new Command.Attack(client, target));
+        assertThat(client.await(f -> f.contains("\"type\":\"you\"")
+                && numberIn(f, "energy") >= 30)).isTrue();
+        runner.submit(new Command.Use(client, "blyskawica"));
+
+        assertThat(client.await(f -> f.contains("jest porażony"))).isTrue();
+        assertThat(client.await(f -> f.contains("płonie")))
+                .as("the fire of the brand, on the same blow as the shock of the spell")
+                .isTrue();
+    }
+
+    @Test
+    void aSkillOfElementStillMeetsArmour() throws Exception {
+        // Pinned on purpose, with a number rather than a comparison. Whether an
+        // elemental skill should ignore armour the way an elemental weapon does
+        // is a question about balance, and it is waiting for the simulation
+        // that will settle the balance. Until then this is what it is worth -
+        // and if somebody changes it, this test says so rather than the change
+        // passing unnoticed.
+        FakeClient client = join("Iskra", "mag");
+        learn(client, "blyskawica");
+        int target = dummy(client);
+        int attack = numberIn(latestYou(client), "attack");
+
+        runner.submit(new Command.Attack(client, target));
+        assertThat(client.await(f -> f.contains("\"type\":\"you\"")
+                && numberIn(f, "energy") >= 30)).isTrue();
+        runner.submit(new Command.Use(client, "blyskawica"));
+        assertThat(client.await(f -> f.contains("* Błyskawica *"))).isTrue();
+        sleep(400);
+
+        // The same arithmetic the map runs: attack raised by the skill's power,
+        // then softened by forty of armour that the skill passes nine tenths of.
+        int expected = new com.kowihere.mmo.combat.CombatRules(alwaysLowest())
+                .damage((int) Math.round(attack * 1.4), 40, 0.9);
+        assertThat(biggestBlowBy(client, target))
+                .as("armour still answers a skill, element or no element")
+                .isEqualTo(expected);
+    }
+
     @Test
     void aSkillNobodyCanAffordIsRefusedRatherThanQueued() throws Exception {
         FakeClient client = join("Iskra", "mag");
@@ -404,6 +474,23 @@ class SkillsInTheWorldTest {
                 SavedCharacter.fresh(PlayerNames.key(name), name, ARENA.id(), 5, 5,
                         Direction.DOWN, classId,
                         chosen == null ? Attributes.FRESH : chosen.startingAttributes()), 0));
+        assertThat(client.await(f -> f.contains("\"type\":\"you\""))).isTrue();
+        return client;
+    }
+
+    /** The same, with something already in hand - for the tests about elements. */
+    private FakeClient join(String name, String classId, String wearing) {
+        ClassDef chosen = CLASSES.get(classId);
+        com.kowihere.mmo.world.ItemDef def = CONTENT.items().get(wearing);
+        assertThat(def).as("no test item called %s", wearing).isNotNull();
+        FakeClient client = new FakeClient();
+        runner.submit(new Command.Join(client, 1L,
+                new SavedCharacter(PlayerNames.key(name), name, ARENA.id(), 5, 5, Direction.DOWN,
+                        1, 0L, -1, 0L,
+                        chosen == null ? Attributes.FRESH : chosen.startingAttributes(), 0,
+                        List.of(new StoredItem(wearing + "#1", wearing, def.slot(), null)),
+                        classId, 1, List.of(), List.of(), Deposit.EMPTY, Deposit.EMPTY,
+                        List.of()), 0));
         assertThat(client.await(f -> f.contains("\"type\":\"you\""))).isTrue();
         return client;
     }

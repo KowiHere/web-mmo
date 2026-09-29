@@ -1,5 +1,7 @@
 package com.kowihere.mmo.world;
 
+import com.kowihere.mmo.combat.Strikes;
+
 /**
  * One skill, as content rather than code.
  *
@@ -18,6 +20,8 @@ package com.kowihere.mmo.world;
  *                     or a negative number to use whatever the class does
  * @param energyPerRank what each rank adds to charging, for the one skill whose
  *                      whole purpose is that
+ * @param strikes      what this skill puts into its blows beyond force, or null
+ *                     when it strikes with nothing but what is in the hand
  */
 public record SkillDef(
         String id,
@@ -29,8 +33,16 @@ public record SkillDef(
         double power,
         int blows,
         double armorIgnored,
-        int energyPerRank
+        int energyPerRank,
+        Strikes strikes
 ) {
+
+    /** The shape every test with no opinion about elements uses. */
+    public SkillDef(String id, String name, String description, String classId, int cost,
+                    int maxRank, double power, int blows, double armorIgnored, int energyPerRank) {
+        this(id, name, description, classId, cost, maxRank, power, blows, armorIgnored,
+                energyPerRank, null);
+    }
 
     /** A skill with no cost strikes nothing: it works simply by being known. */
     public boolean isPassive() {

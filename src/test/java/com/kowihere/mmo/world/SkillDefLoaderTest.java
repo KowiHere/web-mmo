@@ -92,6 +92,37 @@ class SkillDefLoaderTest {
     }
 
     @Test
+    void aSkillMaySayWhatItsBlowsAreMadeOf() {
+        SkillDef lightning = skills.get("blyskawica");
+
+        assertThat(lightning.strikes()).isNotNull();
+        assertThat(lightning.strikes().element())
+                .as("it is called Lightning and had nothing to do with lightning")
+                .isEqualTo(com.kowihere.mmo.combat.Element.SHOCK);
+        assertThat(skills.get("potezny-cios").strikes())
+                .as("and a skill that carries nothing says so by saying nothing")
+                .isNull();
+    }
+
+    @Test
+    void refusesASkillStrikingWithAnElementThisGameDoesNotHave() {
+        assertThatThrownBy(() ->
+                new SkillDefLoader("classpath:bad-skills-element/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("ciemnosc");
+    }
+
+    @Test
+    void refusesAPassiveSkillThatStrikesWithSomething() {
+        // An element rides on a blow, and a passive skill lands none. In the
+        // panel it would read exactly like a skill that sets things alight.
+        assertThatThrownBy(() ->
+                new SkillDefLoader("classpath:bad-skills-element-passive/*.json").loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("lands no blows");
+    }
+
+    @Test
     void refusesASkillNobodyCouldEverAfford() {
         assertThatThrownBy(() -> new SkillDefLoader("classpath:bad-skills-costly/*.json").loadAll())
                 .isInstanceOf(IllegalStateException.class)

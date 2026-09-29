@@ -1,0 +1,9 @@
+{
+  "id": "zaklecie",
+  "name": "Zaklęcie",
+  "cost": 20,
+  "maxRank": 3,
+  "power": 1.2,
+  "blows": 1,
+  "strikes": { "element": "ciemnosc", "chance": 20 }
+}

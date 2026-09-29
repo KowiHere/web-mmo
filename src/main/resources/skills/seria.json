@@ -1,10 +1,11 @@
 {
   "id": "seria",
   "name": "Seria",
-  "description": "Trzy szybkie, słabsze ciosy zamiast jednego.",
+  "description": "Trzy szybkie, słabsze ciosy zamiast jednego. Każdy może otworzyć ranę.",
   "classId": "lowca",
   "cost": 35,
   "maxRank": 5,
   "power": 0.7,
-  "blows": 3
+  "blows": 3,
+  "strikes": { "element": "bleed", "chance": 15 }
 }

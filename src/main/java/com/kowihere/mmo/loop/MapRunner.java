@@ -2093,6 +2093,14 @@ public final class MapRunner implements Runnable {
         if (strikes != null && dealt > 0) {
             takeHold(attacker, target, strikes, dealt);
         }
+        if (skill != null && skill.strikes() != null && dealt > 0) {
+            // Both, deliberately: what is in the hand and what was cast are two
+            // different things happening in one blow, so a brand of ice thrown
+            // as lightning chills and stuns at once. Each rolls against its own
+            // resistance, and the same element from both sources refreshes
+            // rather than doubling.
+            takeHold(attacker, target, skill.strikes(), dealt);
+        }
         if (target.isPlayer()) {
             sendYou(target);
         }
@@ -2884,8 +2892,12 @@ public final class MapRunner implements Runnable {
         List<ServerMessages.SkillDto> mine = new ArrayList<>();
         for (SkillDef skill : content.skillsFor(classId)) {
             int rank = actor.skills.rankOf(skill.id());
+            Strikes carries = skill.strikes();
             mine.add(new ServerMessages.SkillDto(skill.id(), skill.name(), skill.description(),
-                    rank, skill.maxRank(), skill.cost(), skill.isPassive()));
+                    rank, skill.maxRank(), skill.cost(), skill.isPassive(),
+                    carries == null ? null : carries.element().key(),
+                    carries == null ? null : carries.element().label(),
+                    carries == null ? 0 : carries.chance()));
         }
         String frame = serialise(new ServerMessages.Skills(actor.skillPoints, mine));
         if (frame != null) {

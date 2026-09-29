@@ -1026,6 +1026,14 @@ function renderSkills() {
             ? `${skill.rank}/${skill.maxRank} · stale`
             : `${skill.rank}/${skill.maxRank} · ${skill.cost} en.`;
         row.append(name, rank);
+        if (skill.element) {
+            // What the blow carries beyond force, next to what it costs: the
+            // same badge the health bar uses for what is already burning you.
+            const carries = document.createElement('span');
+            carries.className = `ailment ${skill.element}`;
+            carries.textContent = `${skill.elementChance}% ${skill.elementLabel}`;
+            row.append(carries);
+        }
 
         if (points > 0 && skill.rank < skill.maxRank) {
             // The first rank of anything is free, so the button says so rather

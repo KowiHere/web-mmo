@@ -1,0 +1,8 @@
+{
+  "id": "aura",
+  "name": "Aura",
+  "cost": 0,
+  "maxRank": 3,
+  "energyPerRank": 4,
+  "strikes": { "element": "fire", "chance": 20 }
+}

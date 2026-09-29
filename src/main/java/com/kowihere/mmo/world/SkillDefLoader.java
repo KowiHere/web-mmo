@@ -3,6 +3,7 @@ package com.kowihere.mmo.world;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kowihere.mmo.combat.Energy;
+import com.kowihere.mmo.combat.Strikes;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.stereotype.Component;
@@ -120,11 +121,21 @@ public class SkillDefLoader {
                     + " Check the spelling of \"energyPerRank\".");
         }
 
+        Strikes strikes = ElementsInContent.strikes(root, where, id);
+        if (strikes != null && cost == 0) {
+            // An element rides on a blow, and a passive skill strikes none. In
+            // the panel it would read exactly like a skill that sets things
+            // alight, and it never could.
+            throw new IllegalStateException(where + ": is passive but strikes with "
+                    + strikes.element().key() + ", and a skill nobody uses lands no blows.");
+        }
+
         return new SkillDef(id, name, description, classId, cost,
                 atLeast(root, "maxRank", 1, 1, where),
                 power, blows,
                 root.path("armorIgnored").asDouble(-1),
-                energyPerRank);
+                energyPerRank,
+                strikes);
     }
 
     private static String text(JsonNode root, String field, String where) {

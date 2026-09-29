@@ -787,6 +787,21 @@ try {
         ? ok('a skill was thrown from the bar, and it cost energy')
         : fail('the skill never went off');
 
+    // What the spell itself is made of, which is new: until now an element
+    // could only ride on a weapon, so Lightning struck with whatever was in
+    // hand - and with nothing at all when the hands were empty.
+    const spell = await ala.evaluate(() =>
+        (state.skills.skills || []).find((s) => s.id === 'blyskawica') || null);
+    spell && spell.element === 'shock'
+        ? ok(`the panel says what Lightning is made of: ${spell.elementChance}% ${spell.elementLabel}`)
+        : fail(`Lightning carries no element: ${JSON.stringify(spell)}`);
+    // Two in five, thrown once or twice, so this is worth saying either way
+    // rather than worth failing over.
+    (await ala.evaluate(() =>
+        document.querySelector('#chat-log').textContent.includes('jest porażony')))
+        ? ok('and it stunned what it hit')
+        : skip('the lightning did not stun this time (two in five)');
+
     // ---- and it is gone when the fight is --------------------------------
     await escapeAnyFight(ala);
     const afterwards = await ala
