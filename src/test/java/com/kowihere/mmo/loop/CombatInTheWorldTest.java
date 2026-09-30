@@ -212,6 +212,31 @@ class CombatInTheWorldTest {
     }
 
     @Test
+    void oneCharacterCannotRaiseAHandAgainstAnother() throws Exception {
+        // This world is player against creature and nothing else. Pinned rather
+        // than assumed: fighting each other is not a feature waiting to be
+        // switched on, it is one that has to stay off, and the refusal here is
+        // the only thing standing between the two.
+        FakeClient ala = join("Ala", 5, 5);
+        FakeClient bob = join("Bob", 6, 5, 2L);
+        int her = JSON.readTree(ala.await("\"type\":\"init\"")).path("selfId").asInt();
+
+        runner.submit(new Command.Attack(bob, her));
+
+        assertThat(bob.await(f -> f.contains("tylko z potworami")))
+                .as("and told why, rather than the click vanishing in silence")
+                .isTrue();
+        sleep(1_700); // a whole round, had one started
+        assertThat(inFight(bob)).isFalse();
+        assertThat(inFight(ala))
+                .as("nor is she dragged into anything")
+                .isFalse();
+        assertThat(ala.frames())
+                .as("not one blow was struck at her")
+                .noneMatch(f -> f.contains("\"damage\":[{"));
+    }
+
+    @Test
     void fleeingEventuallyEndsAFight() throws Exception {
         // Fought against a creature that cannot win and cannot lose: the killer
         // would end the fight by killing, and the weakling by dying, and either
@@ -455,8 +480,13 @@ class CombatInTheWorldTest {
     }
 
     private FakeClient join(String name, int x, int y) {
+        return join(name, x, y, ACCOUNT);
+    }
+
+    /** One character from an account at a time, so a second player needs a second account. */
+    private FakeClient join(String name, int x, int y, long account) {
         FakeClient client = new FakeClient();
-        runner.submit(new Command.Join(client, ACCOUNT,
+        runner.submit(new Command.Join(client, account,
                 SavedCharacter.fresh(PlayerNames.key(name), name, ARENA.id(), x, y, Direction.DOWN), 0));
         assertThat(client.await(f -> f.contains("\"type\":\"init\""))).isTrue();
         return client;
