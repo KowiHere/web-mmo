@@ -6,9 +6,6 @@
   "hp": 420,
   "attack": 30,
   "armor": 12,
-  "stepTicks": 3,
-  "aggroRadius": 7,
-  "leashRadius": 14,
   "respawnSeconds": 900,
   "coins": [
     { "currency": "zloto", "min": 60, "max": 110 },

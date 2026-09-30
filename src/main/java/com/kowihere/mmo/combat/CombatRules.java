@@ -129,6 +129,30 @@ public final class CombatRules {
         return random.nextDouble() < chance * (100 - against) / 10_000.0;
     }
 
+    // ---- being set upon ---------------------------------------------------
+
+    /**
+     * How far above somebody a creature has to be before it attacks them on its
+     * own, in levels.
+     *
+     * <p>Creatures stand where they were put and never take a step, so the only
+     * way to be set upon is to walk up to one. Even then most of them wait: a
+     * wolf does not pick a fight it might lose. What makes a creature dangerous
+     * to stand beside is being far enough above you that the fight is not
+     * really a fight, and twenty levels is that distance for now.
+     *
+     * <p>The effect on the world as it stands today is worth saying out loud:
+     * nothing on any shipped map is twenty levels above a character who could
+     * reach it, so nothing attacks first. Walking about is safe, and every
+     * fight starts with a click.
+     */
+    public static final int LEVELS_ABOVE_TO_POUNCE = 20;
+
+    /** Whether this creature would set upon a character of that level. */
+    public static boolean pouncesOn(int creatureLevel, int characterLevel) {
+        return creatureLevel - characterLevel >= LEVELS_ABOVE_TO_POUNCE;
+    }
+
     // ---- getting out of a fight -------------------------------------------
 
     public static final double FLEE_CHANCE = 0.6;

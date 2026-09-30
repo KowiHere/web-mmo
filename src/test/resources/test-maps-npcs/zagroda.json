@@ -18,6 +18,5 @@
   "npcs": [
     { "npc": "zielarka", "x": 5, "y": 4, "dir": "DOWN" },
     { "npc": "tablica", "x": 1, "y": 7, "dir": "DOWN" }
-  ],
-  "roaming": []
+  ]
 }

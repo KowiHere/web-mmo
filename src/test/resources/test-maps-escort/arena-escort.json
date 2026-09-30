@@ -17,9 +17,7 @@
     "#............#",
     "##############"
   ],
-  "spawns": [],
-  "roaming": [
-    { "mob": "krolowa", "everySeconds": 1, "chance": 1.0,
-      "escort": { "mob": "ciura", "count": 2 } }
+  "spawns": [
+    { "mob": "krolowa", "x": 11, "y": 2, "escort": { "mob": "ciura", "count": 2 } }
   ]
 }

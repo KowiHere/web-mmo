@@ -20,7 +20,6 @@ public final class MapDef {
     private final BitSet blocked;
     private final List<String> collisionRows;
     private final List<SpawnPoint> spawns;
-    private final List<RoamingSpawn> roaming;
     private final List<NpcPlacement> npcs;
     private final boolean starting;
     private final List<Door> doors;
@@ -29,7 +28,7 @@ public final class MapDef {
 
     MapDef(String id, String name, int width, int height, int tileSize,
            int spawnX, int spawnY, BitSet blocked, List<String> collisionRows,
-           List<SpawnPoint> spawns, List<RoamingSpawn> roaming, List<NpcPlacement> npcs,
+           List<SpawnPoint> spawns, List<NpcPlacement> npcs,
            boolean starting, List<Door> doors, RespawnPoint respawn, RespawnPoint offers) {
         this.starting = starting;
         this.doors = List.copyOf(doors);
@@ -45,7 +44,6 @@ public final class MapDef {
         this.blocked = blocked;
         this.collisionRows = List.copyOf(collisionRows);
         this.spawns = List.copyOf(spawns);
-        this.roaming = List.copyOf(roaming);
         this.npcs = List.copyOf(npcs);
     }
 
@@ -60,11 +58,13 @@ public final class MapDef {
     /** Collision as one string per row, '#' blocked and '.' free — what the client renders and the loader parsed. */
     public List<String> collisionRows() { return collisionRows; }
 
-    /** Creatures that stand at marked places and go back to them. */
+    /**
+     * Creatures, and where each of them stands.
+     *
+     * <p>Every one of them: a group is worked out into its own spawn points
+     * while the map is read, so nothing at runtime knows what a pack is.
+     */
     public List<SpawnPoint> spawns() { return spawns; }
-
-    /** Elites that appear on their own schedule, somewhere unpredictable. */
-    public List<RoamingSpawn> roaming() { return roaming; }
 
     /** People and things that stand where they were put and stay there. */
     public List<NpcPlacement> npcs() { return npcs; }

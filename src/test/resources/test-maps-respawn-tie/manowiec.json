@@ -15,6 +15,5 @@
   "doors": [
     { "x": 10, "y": 4, "to": "kapliczka-wschod", "toX": 4, "toY": 3, "name": "Do kapliczki" }
   ],
-  "spawns": [ { "mob": "zabojca", "x": 6, "y": 4 } ],
-  "roaming": []
+  "spawns": [ { "mob": "zabojca", "x": 6, "y": 4 } ]
 }

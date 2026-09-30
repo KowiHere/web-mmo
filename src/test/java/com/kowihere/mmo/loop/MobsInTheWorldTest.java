@@ -25,9 +25,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The map with its creatures actually running.
  *
  * <p>Separate from {@link MapRunnerTest} on purpose: those tests run a world
- * with no creatures, because a wandering mob emits movement of its own and
- * would let an assertion about a player's movement pass by accident. Here the
- * creatures are the subject, so they are switched on.
+ * with no creatures at all. Here the creatures are the subject - and the
+ * subject is now mostly what they do <em>not</em> do. They stand where the map
+ * put them, they never take a step, and they leave alone anybody who is not far
+ * enough beneath them to be worth the trouble.
  */
 class MobsInTheWorldTest {
 
@@ -94,47 +95,38 @@ class MobsInTheWorldTest {
     }
 
     @Test
-    void creaturesMoveWithoutAnybodyTellingThemTo() {
+    void creaturesNeverMoveOfTheirOwnAccord() {
+        // They used to wander, and the map was "visibly alive" for it. Now a
+        // creature is as fixed as the tree beside it: what makes the map worth
+        // learning is where things stand, and things that shuffle about cannot
+        // be learned.
         FakeClient client = join("Ala", MAP.spawnX(), MAP.spawnY());
         client.frames().clear();
 
-        // No commands are sent at all. Anything that moves, moved by itself.
-        assertThat(client.await(f -> f.contains("\"moved\"")))
-                .as("the map should be visibly alive on its own")
-                .isTrue();
+        sleep(3_000); // thirty ticks, and no command sent at all
+
+        assertThat(client.frames())
+                .as("nothing moved, because nothing had any reason to")
+                .noneMatch(f -> f.contains("\"moved\""));
     }
 
     @Test
-    void aCreatureWalksTowardsAPlayerWhoComesClose() throws Exception {
+    void aCreatureStaysOnItsPostEvenWithSomebodyStandingOnTopOfIt() throws Exception {
         SpawnPoint post = MAP.spawns().get(0);
         MobDef guard = MOBS.get(post.mobId());
-        // At the very edge of what the creature notices, so it has ground to
-        // cover. A tile closer would already be adjacent to a short-sighted
-        // creature, and "closed in" would have nothing left to mean.
-        int[] playerTile = {post.x() + guard.aggroRadius(), post.y()};
-        FakeClient client = join("Ala", playerTile[0], playerTile[1]);
-
-        // Found by name, not by the tile it was placed on. Creatures wander from
-        // the first tick, so by the time this character's init frame is built
-        // the guard may well have stepped off its post - and looking for it
-        // there is how this test used to fail for no reason at all.
+        FakeClient client = join("Ala", post.x() + 1, post.y());
         String init = client.await("\"type\":\"init\"");
         int guardId = creatureNamed(init, guard.name());
         int[] home = {post.x(), post.y()};
 
-        // What chasing means, stated as the thing a player would see: it comes
-        // and stands next to you. Measuring "closer than it started" depends on
-        // where it happened to have wandered, which is the same coin flip.
-        long deadline = System.currentTimeMillis() + TIMEOUT_MS;
-        int distance = Integer.MAX_VALUE;
-        while (System.currentTimeMillis() < deadline && distance > 1) {
-            sleep(100);
-            distance = chebyshev(lastKnownPosition(client, guardId, home), playerTile);
-        }
+        sleep(3_000);
 
-        assertThat(distance)
-                .as("'%s' never came over, and stopped %d tiles away", guard.name(), distance)
-                .isLessThanOrEqualTo(1);
+        assertThat(lastKnownPosition(client, guardId, home))
+                .as("'%s' should be exactly where the map put it", guard.name())
+                .containsExactly(post.x(), post.y());
+        assertThat(client.frames())
+                .as("and a boar is not twenty levels above anybody, so it starts nothing")
+                .noneMatch(f -> f.contains("\"damage\""));
     }
 
     @Test
@@ -179,19 +171,19 @@ class MobsInTheWorldTest {
     }
 
     @Test
-    void theWholeMapCannotSpendMoreThanItsPathBudget() {
-        // Measured, not assumed. Creatures sit outside the per-player limit, so
-        // without a shared cap a crowd of chasers would run one A* each per tick
-        // and delay the tick for every player on the map.
+    void creaturesCostNoPathfindingAtAll() {
+        // There used to be a budget here, shared between the chasers so that a
+        // crowd of them degraded into milling about rather than stalling the
+        // tick. Nothing walks any more, so the budget is not merely under
+        // control - there is nothing to spend.
         join("Ala", MAP.spawnX(), MAP.spawnY());
         long before = runner.pathSearches();
 
-        sleep(2_000); // roughly 20 ticks
+        sleep(2_000); // roughly 20 ticks, nobody clicking anywhere
 
-        long searches = runner.pathSearches() - before;
-        assertThat(searches)
-                .as("20 ticks at a budget of 4 leaves ample headroom; %d would mean no cap", searches)
-                .isLessThanOrEqualTo(20L * 4);
+        assertThat(runner.pathSearches() - before)
+                .as("every search this map runs now belongs to somebody who asked for it")
+                .isZero();
     }
 
     // ------------------------------------------------------------------

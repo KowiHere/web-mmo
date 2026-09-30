@@ -43,7 +43,6 @@ import com.kowihere.mmo.world.NpcPlacement;
 import com.kowihere.mmo.world.SkillDef;
 import com.kowihere.mmo.world.SkillDefLoader;
 import com.kowihere.mmo.world.RespawnPoint;
-import com.kowihere.mmo.world.RoamingSpawn;
 import com.kowihere.mmo.world.SpawnPoint;
 import com.kowihere.mmo.world.Vault;
 import org.slf4j.Logger;
@@ -89,17 +88,6 @@ public final class MapRunner implements Runnable {
     private static final int CHAT_COOLDOWN_TICKS = 5;
     /** How often a moving character's position is handed to persistence. */
     private static final int SAVE_INTERVAL_TICKS = 150;
-    /**
-     * How many paths every mob on this map may collectively buy in one tick.
-     *
-     * The Etap 0 fix capped what one PLAYER could spend on pathfinding; mobs sit
-     * outside that limit and can spend the same budget between them, so thirty
-     * chasers would mean thirty A* searches per tick. Past this cap the rest
-     * wander instead - a crowd should slow down, not freeze.
-     */
-    private static final int MOB_PATHS_PER_TICK = 4;
-    /** How far from the player spawn a roaming pack has to keep, in tiles. */
-    private static final int SPAWN_CLEARANCE = 8;
     /** 1.5 s between rounds: slow enough to read, fast enough not to be a wait. */
     private static final int ROUND_TICKS = 15;
     private static final int MAX_CHAT_LENGTH = 200;
@@ -131,7 +119,6 @@ public final class MapRunner implements Runnable {
     private final Set<Integer> pendingPurse = new LinkedHashSet<>();
     /** Changes when a bottle is drunk and when one runs out, and at no other time. */
     private final Set<Integer> pendingBlessings = new LinkedHashSet<>();
-    private final Map<String, Long> nextRoamTick = new HashMap<>();
     private final List<Fight> fights = new ArrayList<>();
     private final List<PendingRespawn> respawning = new ArrayList<>();
     private final CombatRules combat;
@@ -225,7 +212,7 @@ public final class MapRunner implements Runnable {
         // The same pathfinder players use, deliberately: both run on this thread,
         // and sharing it makes pathSearches() the map's true total rather than
         // half of it.
-        this.brain = new MobBehaviour(map, pathfinder, random, this::startFight);
+        this.brain = new MobBehaviour(map, this::startFight);
         this.combat = new CombatRules(random);
         // MapDef is immutable, so this never changes - build it once instead of
         // rebuilding the whole collision grid on every player's arrival.
@@ -2427,145 +2414,18 @@ public final class MapRunner implements Runnable {
     }
 
     /**
-     * Lets every creature decide, within one shared pathfinding budget.
+     * Lets every creature look at whoever is standing beside it.
      *
-     * <p>The budget is the point: a mob that cannot afford a path this tick
-     * wanders instead of standing still, so a crowd of chasers degrades into
-     * milling about rather than stalling the map for everyone on it.
+     * <p>There used to be a pathfinding budget here, shared out so that a crowd
+     * of chasers degraded into milling about rather than stalling the map.
+     * Creatures no longer walk at all, so there is nothing left to ration.
      */
     private void advanceMobs() {
-        rollForRoamingElites();
-
-        int budget = MOB_PATHS_PER_TICK;
         for (Actor actor : actors.values()) {
-            if (!actor.isMob()) {
-                continue;
-            }
-            budget -= brain.think(actor, actors.values(), tick, budget > 0);
-        }
-    }
-
-    /**
-     * Elites are not placed on the map; they turn up. Each entry rolls on its own
-     * schedule, and only while the previous one is gone - otherwise a long enough
-     * session would carpet the map in them.
-     */
-    private void rollForRoamingElites() {
-        for (RoamingSpawn roaming : map.roaming()) {
-            // The first roll waits a full interval rather than firing at tick
-            // zero: an elite that is simply there when the map starts is part of
-            // the furniture, not an event worth noticing.
-            long due = nextRoamTick.computeIfAbsent(roaming.mobId(),
-                    id -> secondsToTicks(roaming.everySeconds()));
-            if (tick < due) {
-                continue;
-            }
-            nextRoamTick.put(roaming.mobId(), tick + secondsToTicks(roaming.everySeconds()));
-
-            if (isAlive(roaming.mobId()) || random.nextDouble() > roaming.chance()) {
-                continue;
-            }
-            spawnRoaming(roaming);
-        }
-    }
-
-    private void spawnRoaming(RoamingSpawn roaming) {
-        MobDef elite = mobDefs.get(roaming.mobId());
-        int[] tile = randomFreeTile();
-        if (elite == null || tile == null) {
-            return;
-        }
-        Actor spawned = spawn(elite, tile[0], tile[1], false);
-        log.info("Elite '{}' appeared on '{}' at {},{}", elite.name(), map.id(), tile[0], tile[1]);
-
-        MobDef escort = roaming.escortMobId() == null ? null : mobDefs.get(roaming.escortMobId());
-        if (escort == null) {
-            return;
-        }
-        // Only the shortfall. An escort that survived the last elite is still a
-        // wolf on this map, and counting it is the difference between a pack of
-        // a fixed size and a map that grows two wolves every appearance for as
-        // long as the server is up.
-        int living = countEscorts(escort.id());
-        for (int i = living; i < roaming.escortCount(); i++) {
-            int[] beside = freeTileNear(spawned.x, spawned.y);
-            if (beside != null) {
-                spawn(escort, beside[0], beside[1], false).escort = true;
+            if (actor.isMob()) {
+                brain.watch(actor, actors.values(), tick);
             }
         }
-    }
-
-    private int countEscorts(String mobId) {
-        int count = 0;
-        for (Actor actor : actors.values()) {
-            if (actor.escort && actor.isMob() && actor.mob.id().equals(mobId)) {
-                count++;
-            }
-        }
-        return count;
-    }
-
-    private boolean isAlive(String mobId) {
-        for (Actor actor : actors.values()) {
-            if (actor.isMob() && actor.mob.id().equals(mobId)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * A walkable tile well away from where players arrive, or null if a bounded
-     * search could not find one.
-     *
-     * <p>The clearance is not decoration: an elite and its pack placed on the
-     * spawn tile means every character that logs in is attacked before it can
-     * take a step, and a character that dies there is attacked again the moment
-     * it comes back.
-     */
-    private int[] randomFreeTile() {
-        // Two passes, because the clearance is a courtesy and not an invariant:
-        // a map smaller than the clearance has no such tile to offer, and
-        // refusing to place anything at all would be the worse answer.
-        for (int pass = 0; pass < 2; pass++) {
-            int clearance = pass == 0 ? clearanceFor(map) : 0;
-            for (int attempt = 0; attempt < 64; attempt++) {
-                int x = random.nextInt(map.width());
-                int y = random.nextInt(map.height());
-                if (map.walkable(x, y) && distance(x, y, map.spawnX(), map.spawnY()) >= clearance) {
-                    return new int[]{x, y};
-                }
-            }
-        }
-        return null;
-    }
-
-    private static int distance(int x, int y, int toX, int toY) {
-        return Math.abs(x - toX) + Math.abs(y - toY);
-    }
-
-    /**
-     * A walkable tile within two steps of the given one.
-     *
-     * <p>No clearance check of its own: an escort is placed beside an elite that
-     * already keeps its distance, so it inherits all but those two steps. Making
-     * the escort keep the full clearance as well leaves packs short-handed on a
-     * small map, where few tiles satisfy both conditions at once.
-     */
-    private int[] freeTileNear(int x, int y) {
-        for (int attempt = 0; attempt < 16; attempt++) {
-            int nx = x + random.nextInt(5) - 2;
-            int ny = y + random.nextInt(5) - 2;
-            if (map.walkable(nx, ny)) {
-                return new int[]{nx, ny};
-            }
-        }
-        return null;
-    }
-
-    /** Zero on a map too small to offer the clearance, as in randomFreeTile. */
-    private static int clearanceFor(MapDef map) {
-        return map.width() + map.height() > SPAWN_CLEARANCE * 2 ? SPAWN_CLEARANCE : 0;
     }
 
     private static long secondsToTicks(int seconds) {

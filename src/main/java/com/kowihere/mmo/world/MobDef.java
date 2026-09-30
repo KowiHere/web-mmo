@@ -6,10 +6,13 @@ import com.kowihere.mmo.combat.Strikes;
 /**
  * An immutable creature definition, shared by every copy of it in the world.
  *
- * @param stepTicks    ticks to cross one tile; higher is slower
- * @param aggroRadius  how close a player must come before this creature reacts
- * @param leashRadius  how far it will chase from home before giving up
- * @param loot         what killing it may leave behind; empty for most things
+ * <p>It has no speed, no aggression range and no leash. Creatures stand where
+ * the map put them and never take a step, so all three described a journey
+ * nothing makes any more. What decides whether one sets upon somebody standing
+ * beside it is the gap in levels; see
+ * {@link com.kowihere.mmo.combat.CombatRules#LEVELS_ABOVE_TO_POUNCE}.
+ *
+ * @param loot what killing it may leave behind; empty for most things
  */
 public record MobDef(
         String id,
@@ -19,9 +22,6 @@ public record MobDef(
         int hp,
         int attack,
         int armor,
-        int stepTicks,
-        int aggroRadius,
-        int leashRadius,
         int respawnSeconds,
         java.util.List<LootEntry> loot,
         java.util.List<CoinDrop> coins,
@@ -37,9 +37,9 @@ public record MobDef(
 
     /** The shape every test that has no opinion about elements uses. */
     public MobDef(String id, String name, MobTier tier, int level, int hp, int attack, int armor,
-                  int stepTicks, int aggroRadius, int leashRadius, int respawnSeconds,
-                  java.util.List<LootEntry> loot, java.util.List<CoinDrop> coins) {
-        this(id, name, tier, level, hp, attack, armor, stepTicks, aggroRadius, leashRadius,
-                respawnSeconds, loot, coins, null, Resistances.NONE);
+                  int respawnSeconds, java.util.List<LootEntry> loot,
+                  java.util.List<CoinDrop> coins) {
+        this(id, name, tier, level, hp, attack, armor, respawnSeconds, loot, coins,
+                null, Resistances.NONE);
     }
 }

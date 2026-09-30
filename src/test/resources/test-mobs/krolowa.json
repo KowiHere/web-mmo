@@ -6,8 +6,5 @@
   "hp": 10,
   "attack": 1,
   "armor": 0,
-  "stepTicks": 6,
-  "aggroRadius": 1,
-  "leashRadius": 3,
   "respawnSeconds": 1
 }

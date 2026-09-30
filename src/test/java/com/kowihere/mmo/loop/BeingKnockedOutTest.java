@@ -212,13 +212,17 @@ class BeingKnockedOutTest {
         // A countdown held by the client, or restarted on joining, would make
         // closing the tab the fastest way out of this.
         FakeClient client = joinOut("Ala", 5, 5, 120);
+        // Waited for rather than read off whatever has arrived: the sheet is
+        // queued during the tick and sent at the end of it, so asking straight
+        // after joining can beat the first one out of the door.
+        assertThat(client.await(f -> f.contains("\"type\":\"you\""))).isTrue();
         long told = longIn(latestYou(client), "wakesAt");
 
         runner.submit(new Command.Detach(client));
         sleep(400);
         FakeClient again = new FakeClient();
         runner.submit(new Command.Join(again, 1L, out("Ala", 5, 5, told), 0));
-        assertThat(again.await(f -> f.contains("\"type\":\"init\""))).isTrue();
+        assertThat(again.await(f -> f.contains("\"type\":\"you\""))).isTrue();
 
         assertThat(longIn(latestYou(again), "wakesAt"))
                 .as("the same moment, not a fresh count from now")

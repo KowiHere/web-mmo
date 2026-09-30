@@ -1,0 +1,17 @@
+{
+  "id": "ciasnota",
+  "name": "Ciasnota",
+  "starting": true,
+  "tileSize": 32,
+  "spawn": [5, 3],
+  "collision": [
+    "#######",
+    "#.###.#",
+    "#.###.#",
+    "#.....#",
+    "#######"
+  ],
+  "spawns": [
+    { "mob": "krolowa", "x": 1, "y": 1, "escort": { "mob": "ciura", "count": 6 } }
+  ]
+}

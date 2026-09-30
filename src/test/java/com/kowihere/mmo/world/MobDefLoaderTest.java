@@ -23,7 +23,6 @@ class MobDefLoaderTest {
         assertThat(boar).isNotNull();
         assertThat(boar.name()).isEqualTo("Dzik");
         assertThat(boar.tier()).isEqualTo(MobTier.MOB);
-        assertThat(boar.aggroRadius()).isPositive();
     }
 
     @Test
@@ -58,11 +57,13 @@ class MobDefLoaderTest {
     }
 
     @Test
-    void aLeashShorterThanTheAggroRadiusIsRefused() {
-        // Such a creature would notice a player, take one step, find itself past
-        // its leash and turn back - jittering on the spot for ever.
+    void aCreatureToldHowToWalkIsRefused() {
+        // Creatures stand still now. A leash, an aggression range or a walking
+        // speed left in a file describes a journey nothing makes - and reads,
+        // to whoever wrote it, like a creature that behaves differently from
+        // its neighbours.
         assertThatThrownBy(() -> new MobDefLoader("classpath:bad-mobs-leash/*.json").loadAll())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("leashRadius");
+                .hasMessageContaining("creatures do not move");
     }
 }

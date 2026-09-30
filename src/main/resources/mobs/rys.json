@@ -6,9 +6,6 @@
   "hp": 70,
   "attack": 11,
   "armor": 3,
-  "stepTicks": 3,
-  "aggroRadius": 5,
-  "leashRadius": 10,
   "respawnSeconds": 50,
   "strikes": { "element": "bleed", "chance": 30 },
   "coins": [

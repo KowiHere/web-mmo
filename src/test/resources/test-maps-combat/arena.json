@@ -18,6 +18,5 @@
     { "mob": "slabeusz", "x": 2, "y": 2 },
     { "mob": "zabojca", "x": 8, "y": 7 },
     { "mob": "kloda", "x": 2, "y": 7 }
-  ],
-  "roaming": []
+  ]
 }

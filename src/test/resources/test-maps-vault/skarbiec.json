@@ -17,6 +17,5 @@
   "spawns": [],
   "npcs": [
     { "npc": "magazynier", "x": 5, "y": 4, "dir": "DOWN" }
-  ],
-  "roaming": []
+  ]
 }

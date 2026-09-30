@@ -20,6 +20,5 @@
     { "mob": "ognik", "x": 9, "y": 2 },
     { "mob": "piorun", "x": 5, "y": 7 },
     { "mob": "iskra", "x": 3, "y": 2 }
-  ],
-  "roaming": []
+  ]
 }

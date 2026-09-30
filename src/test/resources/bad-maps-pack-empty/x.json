@@ -1,0 +1,17 @@
+{
+  "id": "pustka",
+  "name": "Pustka",
+  "starting": true,
+  "tileSize": 32,
+  "spawn": [3, 3],
+  "collision": [
+    "#######",
+    "#.....#",
+    "#.....#",
+    "#.....#",
+    "#######"
+  ],
+  "spawns": [
+    { "mob": "krolowa", "x": 1, "y": 1, "escort": { "mob": "ciura", "count": 0 } }
+  ]
+}

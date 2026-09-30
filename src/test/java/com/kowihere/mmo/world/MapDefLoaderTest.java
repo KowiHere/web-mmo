@@ -62,9 +62,35 @@ class MapDefLoaderTest {
         MapDef starter = maps.get("starter");
 
         assertThat(starter.spawns()).isNotEmpty();
-        assertThat(starter.roaming())
-                .as("the map should offer at least one elite that turns up on its own")
-                .isNotEmpty();
+        // The pack is not a thing of its own by the time the map is loaded: the
+        // she-wolf and both her wolves are three spawn points, each with a tile
+        // to come back to.
+        assertThat(starter.spawns())
+                .as("the she-wolf should be standing somewhere on the clearing")
+                .anyMatch(point -> point.mobId().equals("wilczyca"));
+        assertThat(starter.spawns().stream().filter(p -> p.mobId().equals("wilk")).count())
+                .as("three wolves: one at each marked place, two escorting her")
+                .isEqualTo(5);
+    }
+
+    @Test
+    void aPackWithNowhereToStandIsRefused() {
+        // Quietly placing three of the six would be a pack somebody counts and
+        // finds wrong, with nothing at runtime ever saying why.
+        assertThatThrownBy(() -> new MapDefLoader(
+                new MobDefLoader("classpath:test-mobs/*.json"), "classpath:bad-maps-pack-room/*.json")
+                .loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("escorts");
+    }
+
+    @Test
+    void anEscortOfNobodyIsRefused() {
+        assertThatThrownBy(() -> new MapDefLoader(
+                new MobDefLoader("classpath:test-mobs/*.json"), "classpath:bad-maps-pack-empty/*.json")
+                .loadAll())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("not an escort at all");
     }
 
     @Test

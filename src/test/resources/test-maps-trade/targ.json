@@ -18,6 +18,5 @@
   "npcs": [
     { "npc": "kupiec", "x": 5, "y": 4, "dir": "DOWN" },
     { "npc": "skrzynia", "x": 1, "y": 7, "dir": "DOWN" }
-  ],
-  "roaming": []
+  ]
 }

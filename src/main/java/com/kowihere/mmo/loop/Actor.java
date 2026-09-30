@@ -159,12 +159,6 @@ final class Actor {
     /** Set when this actor has moved since it was last handed to persistence. */
     boolean dirty;
 
-    /**
-     * Set on a creature that arrived as an elite's escort. Escorts outlive the
-     * elite they came with, so without a mark on them every appearance would
-     * leave two more wolves behind and the map would silently fill up.
-     */
-    boolean escort;
 
     int x;
     int y;
@@ -219,10 +213,13 @@ final class Actor {
     /**
      * A creature. It has no account and no session: it is derived from map data,
      * so it is never saved and never reaped for being offline.
+     *
+     * <p>One step's worth of ticks, which it will never spend: a creature does
+     * not walk. The field is shared with characters, who do.
      */
     Actor(int id, MobDef mob, int x, int y, boolean respawns) {
         this(Kind.MOB, mob, null, id, mob.name(), "mob:" + mob.id() + "#" + id, 0, x, y,
-                mob.stepTicks(), respawns);
+                1, respawns);
         this.level = mob.level();
         this.hp = mob.hp();
     }

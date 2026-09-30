@@ -81,15 +81,15 @@ public class MobDefLoader {
         String name = root.path("name").asText(id);
         MobTier tier = tier(root, where);
 
-        int stepTicks = positive(root, "stepTicks", 4, where);
-        int aggroRadius = atLeast(root, "aggroRadius", 0, 4, where);
-        int leashRadius = atLeast(root, "leashRadius", 0, 8, where);
-        if (leashRadius < aggroRadius) {
-            // Otherwise a creature notices a player, takes one step, finds itself
-            // past the leash and turns back - jittering in place for ever.
-            throw new IllegalStateException(
-                    where + ": leashRadius (" + leashRadius + ") must be at least aggroRadius ("
-                            + aggroRadius + "), or the creature would give up the moment it starts");
+        for (String walking : new String[]{"stepTicks", "aggroRadius", "leashRadius"}) {
+            if (root.has(walking)) {
+                // Left in a file after creatures stopped walking, it reads like
+                // a creature that behaves differently from its neighbours and
+                // is a line that can never do anything at all.
+                throw new IllegalStateException(where + ": has \"" + walking + "\", and creatures"
+                        + " do not move. Whether one sets upon you is decided by how far above"
+                        + " you it is, and that is its level.");
+            }
         }
 
         return new MobDef(id, name, tier,
@@ -97,7 +97,6 @@ public class MobDefLoader {
                 positive(root, "hp", 10, where),
                 atLeast(root, "attack", 0, 1, where),
                 atLeast(root, "armor", 0, 0, where),
-                stepTicks, aggroRadius, leashRadius,
                 positive(root, "respawnSeconds", 30, where),
                 loot(root, where),
                 coins(root, where),

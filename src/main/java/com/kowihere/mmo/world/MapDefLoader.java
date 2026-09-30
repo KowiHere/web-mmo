@@ -182,11 +182,10 @@ public class MapDefLoader {
         // Built once without its creatures purely so the spawn validation below
         // can ask walkable() instead of re-deriving collision from the bitset.
         MapDef map = new MapDef(id, name, width, height, tileSize, spawnX, spawnY, blocked, rows,
-                List.of(), List.of(), List.of(), false, List.of(), null, null);
+                List.of(), List.of(), false, List.of(), null, null);
         List<Door> doors = doors(root, map, where);
         return new MapDef(id, name, width, height, tileSize, spawnX, spawnY, blocked, rows,
                 spawnPoints(root, map, creatures, where),
-                roamingSpawns(root, creatures, where),
                 npcPlacements(root, map, people, where),
                 root.path("starting").asBoolean(false),
                 doors,
@@ -198,6 +197,11 @@ public class MapDefLoader {
      * Creatures at marked places. A spawn inside a wall is refused rather than
      * nudged aside: a creature that cannot be reached is content that looks
      * present and is not, which is worse than a server that will not start.
+     *
+     * <p>A spawn may bring a group with it. The escorts are worked out here,
+     * once, into spawn points of their own on the tiles around it - so by the
+     * time the map runs there are no packs, only creatures standing where they
+     * were put, each with its own place to come back to after it is killed.
      */
     private static List<SpawnPoint> spawnPoints(JsonNode root, MapDef map,
                                                 Map<String, MobDef> creatures, String where) {
@@ -211,32 +215,66 @@ public class MapDefLoader {
                         + y + " is not a tile anything can stand on");
             }
             points.add(new SpawnPoint(mobId, x, y));
+            addEscorts(node, map, creatures, where, mobId, x, y, points);
         }
         return points;
     }
 
-    private static List<RoamingSpawn> roamingSpawns(JsonNode root, Map<String, MobDef> creatures,
-                                                    String where) {
-        List<RoamingSpawn> roaming = new ArrayList<>();
-        for (JsonNode node : root.path("roaming")) {
-            String mobId = requireKnownMob(node, "mob", creatures, where);
-            int everySeconds = node.path("everySeconds").asInt(300);
-            double chance = node.path("chance").asDouble(1.0);
-            if (everySeconds < 1) {
-                throw new IllegalStateException(where + ": everySeconds for '" + mobId + "' must be positive");
-            }
-            if (chance <= 0 || chance > 1) {
-                throw new IllegalStateException(
-                        where + ": chance for '" + mobId + "' must be between 0 (exclusive) and 1");
-            }
-
-            JsonNode escort = node.path("escort");
-            String escortId = escort.isMissingNode() || escort.isNull()
-                    ? null : requireKnownMob(escort, "mob", creatures, where);
-            int escortCount = escortId == null ? 0 : Math.max(0, escort.path("count").asInt(0));
-            roaming.add(new RoamingSpawn(mobId, everySeconds, chance, escortId, escortCount));
+    /**
+     * The rest of a group, on the tiles around the one that leads it.
+     *
+     * <p>Laid out in a fixed order - the four sides first, then the corners,
+     * then one ring further out - rather than at random. A pack that stands
+     * somewhere slightly different every time the server restarts is a map
+     * nobody can learn, and learning where things stand is most of what a
+     * player does with a map now that nothing walks.
+     */
+    private static void addEscorts(JsonNode node, MapDef map, Map<String, MobDef> creatures,
+                                   String where, String leader, int x, int y,
+                                   List<SpawnPoint> points) {
+        JsonNode escort = node.path("escort");
+        if (escort.isMissingNode() || escort.isNull()) {
+            return;
         }
-        return roaming;
+        String escortId = requireKnownMob(escort, "mob", creatures, where);
+        int count = escort.path("count").asInt(0);
+        if (count < 1) {
+            throw new IllegalStateException(where + ": '" + leader + "' is escorted by "
+                    + count + " of '" + escortId + "', which is not an escort at all.");
+        }
+        int placed = 0;
+        for (int[] step : AROUND) {
+            if (placed == count) {
+                return;
+            }
+            int nx = x + step[0];
+            int ny = y + step[1];
+            if (!map.walkable(nx, ny) || taken(points, nx, ny)) {
+                continue;
+            }
+            points.add(new SpawnPoint(escortId, nx, ny));
+            placed++;
+        }
+        if (placed < count) {
+            // Refused rather than quietly shrunk: a pack of four that the map
+            // has room for three of is a pack somebody will count and find
+            // wrong, and nothing at runtime would ever say why.
+            throw new IllegalStateException(where + ": '" + leader + "' at " + x + "," + y
+                    + " has room for " + placed + " of its " + count + " escorts."
+                    + " Move it somewhere with more space around it.");
+        }
+    }
+
+    /** Sides first, then corners, then one ring out: sixteen places in all. */
+    private static final int[][] AROUND = {
+            {0, -1}, {0, 1}, {-1, 0}, {1, 0},
+            {-1, -1}, {1, -1}, {-1, 1}, {1, 1},
+            {0, -2}, {0, 2}, {-2, 0}, {2, 0},
+            {-2, -2}, {2, -2}, {-2, 2}, {2, 2},
+    };
+
+    private static boolean taken(List<SpawnPoint> points, int x, int y) {
+        return points.stream().anyMatch(point -> point.x() == x && point.y() == y);
     }
 
     /**

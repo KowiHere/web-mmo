@@ -16,6 +16,5 @@
   ],
   "spawns": [
     { "mob": "lowca", "x": 10, "y": 7 }
-  ],
-  "roaming": []
+  ]
 }

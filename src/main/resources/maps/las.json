@@ -36,14 +36,7 @@
     { "mob": "rys", "x": 15, "y": 11 },
     { "mob": "rys", "x": 20, "y": 8 },
     { "mob": "niedzwiedz", "x": 7, "y": 16 },
-    { "mob": "niedzwiedz", "x": 21, "y": 2 }
-  ],
-  "roaming": [
-    {
-      "mob": "matecznik",
-      "everySeconds": 90,
-      "chance": 0.5,
-      "escort": { "mob": "rys", "count": 2 }
-    }
+    { "mob": "niedzwiedz", "x": 21, "y": 2 },
+    { "mob": "matecznik", "x": 20, "y": 17, "escort": { "mob": "rys", "count": 2 } }
   ]
 }

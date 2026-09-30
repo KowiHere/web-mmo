@@ -27,8 +27,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Every character starts on the spawn tile and returns to it after dying,
  * already knocked out. A creature free to attack there turns one death into a
  * loop that a new character cannot break, and the arena here is the worst
- * case: a hunter with an aggression range that covers the whole map, standing
- * two tiles from the spawn.
+ * case: a hunter twenty-four levels above a fresh character, standing on the
+ * very next tile.
+ *
+ * <p>Creatures no longer walk, so the rule has moved rather than gone: what
+ * used to stop one crossing the map to the spawn now stops one that is already
+ * standing beside it.
  */
 class SafeSpawnTest {
 
@@ -76,11 +80,46 @@ class SafeSpawnTest {
         // fight from. Without this the first test would also pass on a creature
         // that never attacks anybody at all.
         FakeClient client = join(ARENA.spawnX(), ARENA.spawnY());
-        runner.submit(new Command.MoveTo(client, 11, 4)); // the far end
+        runner.submit(new Command.MoveTo(client, 11, 4)); // beside the far hunter
 
         assertThat(client.await(frame -> frame.contains("\"damage\"")))
-                .as("a character out in the open is fair game")
+                .as("standing next to that one, out in the open, is fair game")
                 .isTrue();
+    }
+
+    @Test
+    void outInTheOpenAndOutOfReachIsSafeToo() {
+        // The other thing that stops a fight: a tile away from everything.
+        // Without this the arena would pass just as happily on a creature that
+        // attacks anybody anywhere, since both the tests around this one stand
+        // the character right next to one.
+        FakeClient client = join(8, 5);
+
+        sleep(3_000);
+
+        assertThat(client.frames())
+                .as("far from the spawn, and next to nothing: nothing happens")
+                .noneMatch(frame -> frame.contains("\"damage\""));
+    }
+
+    @Test
+    void anythingSmallEnoughLeavesYouAlone() {
+        // What decides is the gap in levels, not the distance: a creature only
+        // picks a fight it cannot lose. This character is level twenty-five, the
+        // same as the hunter beside it, and nothing happens.
+        FakeClient client = new FakeClient();
+        runner.submit(new Command.Join(client, 2L,
+                new SavedCharacter(PlayerNames.key("Bela"), "Bela", ARENA.id(), 10, 3,
+                        Direction.DOWN, 25, com.kowihere.mmo.combat.CombatRules.xpForLevel(25),
+                        -1, 0L, com.kowihere.mmo.combat.Attributes.FRESH, 0, List.of(), null, 1,
+                        List.of(), List.of(), Deposit.EMPTY, Deposit.EMPTY, List.of()), 0));
+        assertThat(client.await(f -> f.contains("\"type\":\"init\""))).isTrue();
+
+        sleep(3_000); // many rounds' worth of chances
+
+        assertThat(client.frames())
+                .as("an equal is not prey")
+                .noneMatch(frame -> frame.contains("\"damage\""));
     }
 
     private FakeClient join(int x, int y) {

@@ -22,16 +22,15 @@ import java.util.function.Predicate;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * An elite's escort must not outlive its usefulness.
+ * A pack stands where the map put it.
  *
- * <p>The escort here is a creature that does not hunt, so the queen can be
- * reached and killed without her pack hijacking the fight first - the point
- * under test is bookkeeping, not who wins.
- *
- * <p>Escorts are spawned with the elite and are not respawning creatures, but
- * they do survive it - so an elite that turns up every so often would leave two
- * more wolves behind each time, for as long as the server is up. Nobody would
- * notice for an hour and then the map would be nothing but wolves.
+ * <p>Elites used to turn up somewhere unpredictable, every so often, with an
+ * escort in tow - and the bookkeeping that kept the map from filling with
+ * wolves was the hardest part of it. All of that is gone. A pack is a creature
+ * with a group written beside it, worked out into ordinary spawn points while
+ * the map is read, so by the time anything runs there is no such thing as a
+ * pack: only creatures standing where they were put, each with a tile of its
+ * own to come back to.
  */
 class EscortPackTest {
 
@@ -63,57 +62,96 @@ class EscortPackTest {
     }
 
     @Test
-    void aSecondEliteBringsNoSecondPack() throws Exception {
+    void thePackIsStandingThereFromTheFirstTick() throws Exception {
+        // Not "turns up within a minute": it is part of the map, like a tree.
         FakeClient client = join();
 
-        // First appearance: the queen and her two escorts.
-        assertThat(client.await(frame -> tiers(frame).contains("ELITE"))).isTrue();
-        assertThat(client.awaitCount(this::livingEscorts, 2))
-                .as("the first pack arrives whole")
-                .isTrue();
-
-        int queen = idOfTier(client, "ELITE");
-        runner.submit(new Command.Attack(client, queen));
-        assertThat(client.await(frame -> frame.contains("\"died\":[" + queen)))
-                .as("the queen has ten health; she should not last")
-                .isTrue();
-
-        // She is scheduled again a second later. Her escorts are still alive, so
-        // the new pack should be exactly the escorts that are missing: none.
-        assertThat(client.await(frame -> tiers(frame).contains("ELITE"), 2))
-                .as("she should turn up again")
-                .isTrue();
-        sleep(1_500);
-
-        assertThat(livingEscorts(client))
-                .as("the pack has a size; a second appearance refills it rather than doubling it")
-                .isBetween(1, 2);
+        String init = awaitInit(client);
+        assertThat(standing(init, "Krolowa"))
+                .as("the queen, on the tile the map names")
+                .containsExactly("11,2");
+        assertThat(standing(init, "Ciura"))
+                .as("and both of her own, on tiles beside her")
+                .hasSize(2);
+        for (String escort : standing(init, "Ciura")) {
+            int x = Integer.parseInt(escort.split(",")[0]);
+            int y = Integer.parseInt(escort.split(",")[1]);
+            assertThat(Math.max(Math.abs(x - 11), Math.abs(y - 2)))
+                    .as("an escort at %s is not beside her", escort)
+                    .isLessThanOrEqualTo(2);
+        }
     }
 
     @Test
-    void aPackNeverTurnsUpOnTopOfThePlaceCharactersArrive() throws Exception {
-        // Otherwise logging in, and coming back from a death, both mean being
-        // attacked before you can take a step - and a level-one character has
-        // no answer to an elite and two escorts.
+    void eachOfThemComesBackToItsOwnTile() throws Exception {
+        // The whole of respawning, now that there is nothing else: kill one,
+        // and after its own count it is standing where it stood. No pack, no
+        // schedule, no refilling of anything.
         FakeClient client = join();
-        assertThat(client.await(frame -> tiers(frame).contains("ELITE"))).isTrue();
+        String init = awaitInit(client);
+        int queen = idOfTier(client, "ELITE");
+        String where = standing(init, "Krolowa").get(0);
 
-        for (String frame : client.frames()) {
-            for (JsonNode joined : JSON.readTree(frame).path("joined")) {
-                if (!"MOB".equals(joined.path("kind").asText())) {
-                    continue;
-                }
-                int distance = Math.abs(joined.path("x").asInt() - ARENA.spawnX())
-                        + Math.abs(joined.path("y").asInt() - ARENA.spawnY());
-                // The elite keeps the whole clearance; an escort is placed within
-                // two steps of her, so it keeps all but four tiles of it. Either
-                // is far outside the aggression range of anything in this game.
-                int least = "ELITE".equals(joined.path("tier").asText()) ? 8 : 4;
-                assertThat(distance)
-                        .as("%s appeared %d tiles from the spawn", joined.path("name").asText(), distance)
-                        .isGreaterThanOrEqualTo(least);
+        runner.submit(new Command.Attack(client, queen));
+        assertThat(client.await(frame -> frame.contains("\"died\":[" + queen)))
+                .as("she has ten health; she should not last")
+                .isTrue();
+
+        assertThat(client.await(frame -> joinedAt(frame, "Krolowa", where)))
+                .as("and comes back to the same tile, a second later")
+                .isTrue();
+    }
+
+    @Test
+    void aPackIsPlacedNowhereNearWhereCharactersArrive() throws Exception {
+        // Otherwise logging in, and coming back from a death, both mean waking
+        // up inside a pack. It is content's job now rather than the runner's -
+        // which is the point: a map is checked by looking at it.
+        FakeClient client = join();
+        String init = awaitInit(client);
+
+        for (JsonNode actor : JSON.readTree(init).path("actors")) {
+            if (!"MOB".equals(actor.path("kind").asText())) {
+                continue;
+            }
+            int distance = Math.max(Math.abs(actor.path("x").asInt() - ARENA.spawnX()),
+                    Math.abs(actor.path("y").asInt() - ARENA.spawnY()));
+            assertThat(distance)
+                    .as("%s stands %d tiles from the spawn", actor.path("name").asText(), distance)
+                    .isGreaterThan(MobBehaviour.SAFE_RADIUS);
+        }
+    }
+
+    /** The init frame, once it has actually arrived. */
+    private String awaitInit(FakeClient client) {
+        assertThat(client.await(f -> f.contains("\"type\":\"init\""))).isTrue();
+        return client.frames().stream().filter(f -> f.contains("\"type\":\"init\""))
+                .findFirst().orElseThrow();
+    }
+
+    /** Where every creature of that name is standing, as "x,y". */
+    private List<String> standing(String initFrame, String name) throws Exception {
+        List<String> where = new ArrayList<>();
+        for (JsonNode actor : JSON.readTree(initFrame).path("actors")) {
+            if (name.equals(actor.path("name").asText())) {
+                where.add(actor.path("x").asInt() + "," + actor.path("y").asInt());
             }
         }
+        return where;
+    }
+
+    private boolean joinedAt(String frame, String name, String tile) {
+        try {
+            for (JsonNode actor : JSON.readTree(frame).path("joined")) {
+                if (name.equals(actor.path("name").asText())
+                        && tile.equals(actor.path("x").asInt() + "," + actor.path("y").asInt())) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            return false;
+        }
+        return false;
     }
 
     // ------------------------------------------------------------------
