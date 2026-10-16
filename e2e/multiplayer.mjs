@@ -1669,6 +1669,64 @@ try {
             : fail('party chat did not arrive');
 
         await ala.screenshot({ path: 'druzyna.png' });
+
+        // ---- and what a kill is worth to two of them ----------------------
+        // Which branch this takes is decided by the levels the run happens to
+        // have produced: Ala has been fighting since the start and Bob has
+        // been standing still, so they may well be too far apart to share -
+        // and that is a rule worth seeing work as much as the other one.
+        const levels = await ala.evaluate(() => ({
+            mine: state.you.level,
+            theirs: (state.party.members.find((m) => m.name !== state.you.name) || {}).level,
+        }));
+        const close = levels.theirs * 3 >= levels.mine * 2;
+        const before = {
+            ala: await ala.evaluate(() => state.you.xp),
+            bob: await bob.evaluate(() => state.you.xp),
+        };
+
+        const shared = await (async () => {
+            const until = Date.now() + 120_000;
+            while (Date.now() < until) {
+                await waitIfOut(ala);
+                await mendIfHurt(ala, 0.4);
+                // Picked from Bob's tab, so it is something he can reach too.
+                const prey = await bob.evaluate(() => {
+                    const self = state.actors.get(state.selfId);
+                    const mobs = [...state.actors.values()].filter((a) => a.kind === 'MOB');
+                    if (!self || !mobs.length) return null;
+                    mobs.sort((a, b) => (Math.abs(a.x - self.x) + Math.abs(a.y - self.y))
+                        - (Math.abs(b.x - self.x) + Math.abs(b.y - self.y)));
+                    return mobs[0].id;
+                });
+                if (prey === null) return false;
+                await ala.evaluate((id) =>
+                    state.ws.send(JSON.stringify({ type: 'attack', id })), prey);
+                await bob.evaluate((id) =>
+                    state.ws.send(JSON.stringify({ type: 'attack', id })), prey);
+                await ala.waitForTimeout(4_000);
+                const now = {
+                    ala: await ala.evaluate(() => state.you.xp),
+                    bob: await bob.evaluate(() => state.you.xp),
+                };
+                if (now.ala > before.ala || now.bob > before.bob) return now;
+            }
+            return false;
+        })();
+
+        if (!shared) {
+            skip('no kill happened while the two of them were together');
+        } else if (close) {
+            shared.bob > before.bob
+                ? ok(`a shared kill paid both of them (levels ${levels.mine} and ${levels.theirs})`)
+                : fail(`only one of them was paid: ${JSON.stringify({ before, shared })}`);
+        } else {
+            const told = await ala.evaluate(() =>
+                document.querySelector('#chat-log').textContent.includes('zbyt różna poziomami'));
+            told && shared.bob === before.bob
+                ? ok(`too far apart to share (${levels.mine} and ${levels.theirs}), and the party was told`)
+                : fail(`uneven party: ${JSON.stringify({ levels, before, shared, told })}`);
+        }
     }
 
     // ---- through the door, and back --------------------------------------

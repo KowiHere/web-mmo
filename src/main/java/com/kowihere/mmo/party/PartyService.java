@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 
@@ -80,6 +81,16 @@ public class PartyService implements PartyBoard {
     /** The socket each character is playing on. Written when they enter and leave the world. */
     private final Map<String, Client> clients = new ConcurrentHashMap<>();
 
+    /**
+     * Who shares a party with whom, as a map thread is allowed to read it.
+     *
+     * <p>The mirror image of {@link #vitals}: there a map writes and everybody
+     * reads, here this service writes and the maps read. Replaced whole rather
+     * than edited, so a reader either sees the party before a change or after
+     * it and never half of one - and never waits, which a tick must not do.
+     */
+    private volatile Map<String, Set<String>> fellows = Map.of();
+
     public PartyService() {
         this(System::currentTimeMillis);
     }
@@ -132,6 +143,11 @@ public class PartyService implements PartyBoard {
         return vitals.get(nameKey);
     }
 
+    @Override
+    public Set<String> fellowsOf(String nameKey) {
+        return fellows.getOrDefault(nameKey, Set.of());
+    }
+
     synchronized Invitation invitationTo(String nameKey) {
         return invitations.get(nameKey);
     }
@@ -172,6 +188,7 @@ public class PartyService implements PartyBoard {
             party = new Party(nextPartyId++, 1, fromKey, List.of(memberFor(fromKey)));
             parties.put(party.id(), party);
             partyOf.put(fromKey, party.id());
+            publishFellows();
         }
         invitations.put(toKey, new Invitation(party.id(), fromKey, nameOf(fromKey),
                 clock.getAsLong() + INVITE_MS));
@@ -216,6 +233,7 @@ public class PartyService implements PartyBoard {
             // filling up with parties of one nobody can see or join.
             without.members().forEach(member -> partyOf.remove(member.nameKey()));
             parties.remove(party.id());
+            publishFellows();
             return;
         }
         replace(without);
@@ -338,5 +356,25 @@ public class PartyService implements PartyBoard {
     private void replace(Party party) {
         parties.put(party.id(), party);
         party.members().forEach(member -> partyOf.put(member.nameKey(), party.id()));
+        publishFellows();
+    }
+
+    /**
+     * Hands the maps a fresh copy of who is with whom.
+     *
+     * <p>Rebuilt whole from what this service holds rather than patched in
+     * step with each change: patching is where a second copy of the truth
+     * starts to drift from the first, and this one is small enough that
+     * rebuilding it costs nothing anybody can measure.
+     */
+    private void publishFellows() {
+        Map<String, Set<String>> rebuilt = new LinkedHashMap<>();
+        for (Party party : parties.values()) {
+            Set<String> keys = party.members().stream()
+                    .map(Member::nameKey)
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+            keys.forEach(key -> rebuilt.put(key, keys));
+        }
+        fellows = Map.copyOf(rebuilt);
     }
 }

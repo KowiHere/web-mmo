@@ -212,6 +212,46 @@ public final class CombatRules {
         return 1 + (int) Math.sqrt(Math.max(0, xp) / (double) XP_SCALE);
     }
 
+    // ---- sharing a kill ----------------------------------------------------
+
+    /**
+     * What a party adds to the pot, in percentage points.
+     *
+     * <p>One figure whatever the size of the party. A bonus that grew with
+     * every head would be the best reason in the game to play five accounts at
+     * once; this one is small enough that a second account is not worth the
+     * trouble, and present enough that hunting together is worth choosing.
+     */
+    public static final int SHARED_BONUS_PERCENT = 15;
+
+    /**
+     * How far apart two levels may be before a party stops sharing at all.
+     *
+     * <p>The lowest must be at least two thirds of the highest. This is the
+     * guard that makes the bonus honest: a level-one character beside a
+     * level-twenty one does not take a small share, it switches sharing off
+     * entirely - so carrying somebody is not a thing that can be done.
+     */
+    public static boolean worthSharingBetween(int lowestLevel, int highestLevel) {
+        return lowestLevel * 3 >= highestLevel * 2;
+    }
+
+    /**
+     * What each of them gets out of one kill.
+     *
+     * <p>Equally, and the remainder of the division is simply lost: handing it
+     * to whoever struck last would be a quiet bonus for the last blow, which is
+     * the very thing this replaces.
+     *
+     * @param heads how many are sharing; one means no party and no bonus
+     */
+    public static long shareOf(long reward, int heads) {
+        if (heads <= 1) {
+            return reward;
+        }
+        return reward * (100 + SHARED_BONUS_PERCENT) / 100 / heads;
+    }
+
     public static long xpReward(MobDef mob) {
         return Math.max(1, Math.round(mob.level() * 10.0 * mob.tier().xpMultiplier()));
     }

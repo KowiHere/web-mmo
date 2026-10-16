@@ -19,6 +19,21 @@ public final class Fight {
     private final List<Integer> mobs = new ArrayList<>();
     private final Set<Integer> tryingToFlee = new HashSet<>();
 
+    /**
+     * Who has actually done something in this fight.
+     *
+     * <p>The whole of "taking part", and deliberately a yes or a no rather
+     * than a tally of damage. Counting blows would make a party a race and a
+     * supporting role unplayable, because there is no honest exchange rate
+     * between a sword and a bandage. This way there does not have to be one:
+     * whoever acted shares, and healing somebody will qualify exactly as
+     * hitting something does, on the day healing somebody exists.
+     *
+     * <p>Belongs to the fight and dies with it, like the energy a skill is
+     * paid for with.
+     */
+    private final Set<Integer> tookPart = new HashSet<>();
+
     private long nextRoundTick;
 
     public Fight(int playerId, int mobId, long firstRoundTick) {
@@ -33,6 +48,15 @@ public final class Fight {
 
     public List<Integer> mobs() {
         return mobs;
+    }
+
+    /** Noted once per fight, however many blows follow. */
+    public void tookPart(int actorId) {
+        tookPart.add(actorId);
+    }
+
+    public boolean didTakePart(int actorId) {
+        return tookPart.contains(actorId);
     }
 
     public boolean has(int actorId) {
@@ -56,6 +80,8 @@ public final class Fight {
         players.remove(Integer.valueOf(actorId));
         mobs.remove(Integer.valueOf(actorId));
         tryingToFlee.remove(actorId);
+        // Not tookPart: somebody who fought and then fled or was killed still
+        // fought, and the kill a moment later is partly theirs.
     }
 
     public boolean isOver() {

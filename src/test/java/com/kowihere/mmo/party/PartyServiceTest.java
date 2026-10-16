@@ -18,6 +18,59 @@ class PartyServiceTest {
     private long now = 1_000L;
     private final PartyService parties = new PartyService(() -> now);
 
+    // ---- what a map thread is allowed to read ---------------------------
+
+    @Test
+    void theMapsAreToldWhoIsWithWhom() {
+        // A tick may not wait on this service, so it reads an immutable copy
+        // instead. The copy has to say the same thing as the service itself
+        // after every single operation - a second truth that drifts from the
+        // first is worse than no second truth at all.
+        inTheWorld("Ala", "Bob", "Cela");
+        assertThat(parties.fellowsOf("ala")).as("alone is empty, not a party of one").isEmpty();
+
+        parties.invite("ala", "Bob");
+        assertThat(parties.fellowsOf("ala"))
+                .as("inviting makes a party of one, and the maps can see it")
+                .containsExactly("ala");
+
+        parties.accept("bob");
+        assertThat(parties.fellowsOf("ala")).containsExactlyInAnyOrder("ala", "bob");
+        assertThat(parties.fellowsOf("bob")).containsExactlyInAnyOrder("ala", "bob");
+
+        parties.invite("ala", "Cela");
+        parties.accept("cela");
+        assertThat(parties.fellowsOf("cela")).hasSize(3);
+
+        parties.remove("ala", "Cela");
+        assertThat(parties.fellowsOf("cela")).as("thrown out, and out of the copy too").isEmpty();
+        assertThat(parties.fellowsOf("ala")).hasSize(2);
+
+        parties.handOver("ala", "Bob");
+        assertThat(parties.fellowsOf("ala"))
+                .as("a new leader is not a new party")
+                .containsExactlyInAnyOrder("ala", "bob");
+
+        parties.leave("ala");
+        assertThat(parties.fellowsOf("ala")).isEmpty();
+        assertThat(parties.fellowsOf("bob"))
+                .as("one person is not a party, so the whole thing is gone")
+                .isEmpty();
+    }
+
+    @Test
+    void goingQuietTakesYouOutOfTheCopyAsWell() {
+        inTheWorld("Ala", "Bob");
+        parties.invite("ala", "Bob");
+        parties.accept("bob");
+
+        now += PartyService.SILENCE_MS + 1;
+        parties.forgetTheSilent();
+
+        assertThat(parties.fellowsOf("ala")).isEmpty();
+        assertThat(parties.fellowsOf("bob")).isEmpty();
+    }
+
     // ---- making one ----------------------------------------------------
 
     @Test

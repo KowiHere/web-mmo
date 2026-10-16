@@ -1,0 +1,10 @@
+{
+  "id": "cel-druzyny",
+  "name": "Cel druzyny",
+  "tier": "MOB",
+  "level": 3,
+  "hp": 40,
+  "attack": 1,
+  "armor": 0,
+  "respawnSeconds": 1
+}

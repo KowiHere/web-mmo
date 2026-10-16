@@ -44,8 +44,19 @@ class PublishingVitalsTest {
     @BeforeEach
     void startMap() {
         runner = new MapRunner(ARENA, JSON, WorldPersistence.NONE, CONTENT, 20);
-        runner.publishesTo((nameKey, name, level, hp, maxHp, mapId, mapName, x, y, online) ->
-                published.put(nameKey, new Object[]{name, level, hp, maxHp, mapId, mapName, online}));
+        runner.publishesTo(new PartyBoard() {
+            @Override
+            public void publish(String nameKey, String name, int level, int hp, int maxHp,
+                                String mapId, String mapName, int x, int y, boolean online) {
+                published.put(nameKey,
+                        new Object[]{name, level, hp, maxHp, mapId, mapName, online});
+            }
+
+            @Override
+            public java.util.Set<String> fellowsOf(String nameKey) {
+                return java.util.Set.of();
+            }
+        });
         thread = new Thread(runner, "test-vitals");
         thread.setDaemon(true);
         thread.start();

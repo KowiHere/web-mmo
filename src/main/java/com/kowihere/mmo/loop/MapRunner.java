@@ -2048,6 +2048,10 @@ public final class MapRunner implements Runnable {
      * @return true if the target is still standing and can be hit again
      */
     private boolean swing(Actor attacker, Actor target, Fight fight, SkillDef skill) {
+        // Before the roll, not after: a blow that misses is still taking part,
+        // and a share that depended on landing them would be a tally of damage
+        // wearing a yes-or-no disguise.
+        fight.tookPart(attacker.id);
         if (combat.dodges(target.dodgeChance())) {
             // Reported as a blow for zero, so the client can say "0" where it
             // would have said a number. A miss that shows nothing at all looks
@@ -2113,10 +2117,62 @@ public final class MapRunner implements Runnable {
                     tick + secondsToTicks(creature.mob.respawnSeconds())));
         }
 
-        if (killer != null && killer.isPlayer()) {
-            awardExperience(killer, creature);
-            awardLoot(killer, creature);
+        if (killer == null || !killer.isPlayer()) {
+            return;
         }
+        List<Actor> sharing = whoSharesThis(killer, fight);
+        long reward = CombatRules.shareOf(CombatRules.xpReward(creature.mob), sharing.size());
+        for (Actor player : sharing) {
+            awardExperience(player, reward);
+        }
+        // One roll of the table, one owner for whatever it drops: splitting an
+        // item is not a thing, so the dice decide which of them walks away with
+        // it. Everybody in the pool has the same chance, the killer included.
+        awardLoot(sharing.get(random.nextInt(sharing.size())), creature);
+    }
+
+    /**
+     * Everybody who gets a cut of this kill.
+     *
+     * <p>Three things have to hold, and the second two are what make the bonus
+     * honest. They must have <em>done</em> something in this fight - standing
+     * in a party earns nothing. They must be in the killer's party, which the
+     * map reads from the board without waiting on it. And the party must be
+     * close enough in level to share at all: when it is not, the kill belongs
+     * to whoever made it, and the party is told why rather than left to notice
+     * the missing experience and report the party as broken.
+     *
+     * <p>Being on the same map and in the same fight is what "near each other"
+     * means here, so there is nothing to measure for it.
+     */
+    private List<Actor> whoSharesThis(Actor killer, Fight fight) {
+        Set<String> fellows = board.fellowsOf(killer.nameKey);
+        List<Actor> sharing = new ArrayList<>();
+        sharing.add(killer);
+        if (fellows.isEmpty()) {
+            return sharing;
+        }
+        for (int playerId : fight.players()) {
+            Actor player = actors.get(playerId);
+            if (player == null || player == killer || !player.isPlayer()) {
+                continue;
+            }
+            if (fellows.contains(player.nameKey) && fight.didTakePart(player.id)) {
+                sharing.add(player);
+            }
+        }
+        if (sharing.size() == 1) {
+            return sharing;
+        }
+        int lowest = sharing.stream().mapToInt(one -> one.level).min().orElse(1);
+        int highest = sharing.stream().mapToInt(one -> one.level).max().orElse(1);
+        if (!CombatRules.worthSharingBetween(lowest, highest)) {
+            chat.add(new ChatDto(killer.id, killer.name,
+                    "* drużyna zbyt różna poziomami, by dzielić doświadczenie"
+                            + " (" + lowest + " i " + highest + ") *"));
+            return List.of(killer);
+        }
+        return sharing;
     }
 
     /**
@@ -2289,8 +2345,7 @@ public final class MapRunner implements Runnable {
         sendBlessings(player);
     }
 
-    private void awardExperience(Actor player, Actor creature) {
-        long reward = CombatRules.xpReward(creature.mob);
+    private void awardExperience(Actor player, long reward) {
         int before = player.level;
         player.xp += reward;
         player.level = CombatRules.levelForXp(player.xp);
