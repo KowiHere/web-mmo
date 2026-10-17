@@ -1,0 +1,2 @@
+{ "id": "probny-gad", "name": "Próbny gad", "look": "nie-ma-takiego-wygladu", "tier": "MOB",
+  "level": 3, "hp": 20, "attack": 4, "armor": 1, "respawnSeconds": 30 }

@@ -1,5 +1,6 @@
 {
   "id": "mag",
+  "look": "mag",
   "name": "Mag",
   "description": "Bije inteligencją, a pancerz niewiele przed tym chroni. Sam jest najkruchszy.",
   "startingAttributes": { "strength": 3, "agility": 4, "intellect": 8 },

@@ -1,6 +1,7 @@
 {
   "id": "skrzynia",
   "name": "Skrzynia traperska",
+  "look": "skrzynia",
   "kind": "OBJECT",
   "functions": ["DIALOGUE", "SHOP"],
   "shop": {

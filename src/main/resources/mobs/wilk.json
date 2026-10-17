@@ -1,6 +1,7 @@
 {
   "id": "wilk",
   "name": "Wilk",
+  "look": "wilk",
   "tier": "MOB",
   "level": 3,
   "hp": 44,

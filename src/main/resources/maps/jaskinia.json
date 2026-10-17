@@ -3,6 +3,20 @@
   "name": "Wilcza Jama",
   "tileSize": 32,
   "spawn": [2, 8],
+  "terrain": [
+    "kkkkkkkkkkkkkkkkkk",
+    "kzzzzzzzzzzzzzzzzk",
+    "kkkzzkkkkzzkkkkzzk",
+    "kzzzzzzkzzzzkzzzzk",
+    "kzzkkzzkzzzzkzzkkk",
+    "kzzkzzzzzzzzzzzkzk",
+    "kzzkzzkkkkkkzzzkzk",
+    "kzzzzzkzzzzkzzzzzk",
+    "kzsszzkzzzzkzzzzzk",
+    "kzzkkkkzzzzkkkkzzk",
+    "kzzzzzzzzzzzzzzzzk",
+    "kkkkkkkkkkkkkkkkkk"
+  ],
   "collision": [
     "##################",
     "#................#",

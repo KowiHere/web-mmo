@@ -29,6 +29,7 @@ public class MapDefLoader {
     private final NpcDefLoader npcs;
     private final String location;
     private final Map<String, ItemDef> items;
+    private final Map<String, TerrainDef> terrain;
 
     public MapDefLoader() {
         this(new MobDefLoader());
@@ -55,10 +56,21 @@ public class MapDefLoader {
      */
     public MapDefLoader(MobDefLoader mobs, NpcDefLoader npcs, String location,
                         Map<String, ItemDef> items) {
+        this(mobs, npcs, location, items, new TerrainDefLoader().loadAll());
+    }
+
+    /**
+     * @param terrain the kinds of ground a map's picture may be drawn with.
+     *                Defaulted from the classpath by the constructor above, so
+     *                that nothing had to be told about ground to keep working.
+     */
+    public MapDefLoader(MobDefLoader mobs, NpcDefLoader npcs, String location,
+                        Map<String, ItemDef> items, Map<String, TerrainDef> terrain) {
         this.mobs = mobs;
         this.npcs = npcs;
         this.location = location;
         this.items = items;
+        this.terrain = terrain;
     }
 
     public Map<String, MapDef> loadAll() {
@@ -169,6 +181,8 @@ public class MapDefLoader {
             }
         }
 
+        List<String> ground = ground(root, rows, where, id);
+
         JsonNode spawn = required(root, "spawn", where);
         int spawnX = spawn.get(0).asInt();
         int spawnY = spawn.get(1).asInt();
@@ -190,7 +204,66 @@ public class MapDefLoader {
                 root.path("starting").asBoolean(false),
                 doors,
                 respawn(root, where),
-                offeredRespawn(root, map, doors, where));
+                offeredRespawn(root, map, doors, where),
+                ground,
+                ground.isEmpty() ? Map.of() : legend());
+    }
+
+    /**
+     * The map's ground, drawn as one character per tile beside the collision
+     * grid - and optional, so that a map which says nothing about its ground is
+     * still a map, drawn the way every map was drawn before ground existed.
+     *
+     * <p>Checked row by row against the collision grid rather than only by the
+     * number of rows. A ground grid one character short is a map whose picture
+     * slides sideways partway down, and that reads in the game as a bug in the
+     * drawing rather than a mistake in a file.
+     */
+    private List<String> ground(JsonNode root, List<String> collision, String where, String id) {
+        JsonNode node = root.get("terrain");
+        if (node == null || node.isNull()) {
+            return List.of();
+        }
+        List<String> ground = mapper.convertValue(node, mapper.getTypeFactory()
+                .constructCollectionType(List.class, String.class));
+        if (ground.size() != collision.size()) {
+            throw new IllegalStateException(where + ": '" + id + "' has " + ground.size()
+                    + " rows of ground against " + collision.size() + " of collision.");
+        }
+        for (int y = 0; y < ground.size(); y++) {
+            String row = ground.get(y);
+            if (row.length() != collision.get(y).length()) {
+                throw new IllegalStateException(where + ": '" + id + "' has " + row.length()
+                        + " tiles of ground in row " + y + " against "
+                        + collision.get(y).length() + " of collision.");
+            }
+            for (int x = 0; x < row.length(); x++) {
+                if (!known(row.charAt(x))) {
+                    throw new IllegalStateException(where + ": '" + id + "' is drawn with '"
+                            + row.charAt(x) + "' at " + x + "," + y
+                            + ", which is not a kind of ground this game has. Known: " + marks());
+                }
+            }
+        }
+        return List.copyOf(ground);
+    }
+
+    private boolean known(char mark) {
+        return terrain.values().stream().anyMatch(def -> def.mark() == mark);
+    }
+
+    /** Symbol to kind, for the client, taken from the registry and nowhere else. */
+    private Map<String, String> legend() {
+        Map<String, String> legend = new LinkedHashMap<>();
+        terrain.values().forEach(def -> legend.put(def.symbol(), def.id()));
+        return legend;
+    }
+
+    private String marks() {
+        StringBuilder all = new StringBuilder();
+        terrain.values().forEach(def -> all.append(all.isEmpty() ? "" : ", ")
+                .append(def.mark()).append(" (").append(def.id()).append(")"));
+        return all.isEmpty() ? "none at all" : all.toString();
     }
 
     /**

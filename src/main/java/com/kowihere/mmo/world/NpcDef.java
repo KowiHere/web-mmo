@@ -15,10 +15,16 @@ import java.util.Set;
  */
 public record NpcDef(String id, String name, NpcKind kind,
                      Set<NpcFunction> functions, Dialogue dialogue, Shop shop, Master master,
-                     Vault vault) {
+                     Vault vault, String look) {
 
     public NpcDef {
         functions = Set.copyOf(functions);
+    }
+
+    /** The shape every test with no opinion about how people are drawn uses. */
+    public NpcDef(String id, String name, NpcKind kind, Set<NpcFunction> functions,
+                  Dialogue dialogue, Shop shop, Master master, Vault vault) {
+        this(id, name, kind, functions, dialogue, shop, master, vault, null);
     }
 
     public boolean does(NpcFunction function) {

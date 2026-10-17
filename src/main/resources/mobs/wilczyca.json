@@ -1,6 +1,7 @@
 {
   "id": "wilczyca",
   "name": "Wilczyca Watahy",
+  "look": "wilczyca",
   "tier": "ELITE",
   "level": 9,
   "hp": 240,

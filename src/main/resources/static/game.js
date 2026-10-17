@@ -57,6 +57,56 @@ const NPC_STYLE = {
     OBJECT: { fill: '#6b6250', stroke: '#c0b294', label: '#c0b294', radius: 8 },
 };
 
+/**
+ * What each kind of ground is drawn as.
+ *
+ * <p>This table and {@link paintBody}'s are the only places in the client that
+ * decide what anything looks like, and the only two that have to change when
+ * there are pictures to draw instead of colours: everything else - the content,
+ * the refusals at startup, the frame, the lookups - is already in place.
+ *
+ * `top` is a lighter edge along the north side, which is what gives a flat grid
+ * the suggestion of a surface rather than a colour swatch.
+ */
+const TERRAIN_PAINT = {
+    trawa: { fill: '#2d3a2a', alt: '#2a3627', top: '#36452f' },
+    ziemia: { fill: '#3a3127', alt: '#352d24', top: '#453a2d' },
+    sciezka: { fill: '#4a4133', alt: '#473e31', top: '#574c3b' },
+    woda: { fill: '#20313f', alt: '#1d2d3a', top: '#2a4254' },
+    skala: { fill: '#39404d', alt: '#363d49', top: '#454d5c' },
+    piasek: { fill: '#4c4535', alt: '#484131', top: '#5a5240' },
+    kamien: { fill: '#3c3c42', alt: '#38383e', top: '#49494f' },
+    mrok: { fill: '#1b1d22', alt: '#191b20', top: '#232630' },
+};
+
+/**
+ * What each look is drawn as, until there are sprites.
+ *
+ * <p>A shape and a size as well as a colour, because three shades of brown at
+ * the same radius are three creatures nobody can tell apart at a glance - and
+ * telling them apart is the entire point of a look being content.
+ */
+const LOOK_PAINT = {
+    wilk: { fill: '#7b8799', stroke: '#c3cedd', label: '#c3cedd', radius: 9, shape: 'wedge' },
+    wilczyca: { fill: '#8e9cb0', stroke: '#e2e9f3', label: '#e2e9f3', radius: 11, shape: 'wedge' },
+    dzik: { fill: '#6b5744', stroke: '#b59a7c', label: '#b59a7c', radius: 10, shape: 'blob' },
+    rys: { fill: '#9a7340', stroke: '#e0b472', label: '#e0b472', radius: 9, shape: 'wedge' },
+    niedzwiedz: { fill: '#54433a', stroke: '#9c8275', label: '#9c8275', radius: 13, shape: 'blob' },
+    matecznik: { fill: '#7d4a2e', stroke: '#d08a5c', label: '#d08a5c', radius: 14, shape: 'blob' },
+    nietoperz: { fill: '#453a55', stroke: '#9b86bd', label: '#9b86bd', radius: 8, shape: 'wedge' },
+    kupiec: { fill: '#4f8f74', stroke: '#9fd9bd', label: '#9fd9bd', radius: 10, shape: 'round' },
+    zielarka: { fill: '#5b8f4f', stroke: '#aedd9f', label: '#aedd9f', radius: 10, shape: 'round' },
+    magazynier: { fill: '#4f7f8f', stroke: '#9fcedd', label: '#9fcedd', radius: 10, shape: 'round' },
+    mistrz: { fill: '#8f8a4f', stroke: '#ded79f', label: '#ded79f', radius: 10, shape: 'round' },
+    skrzynia: { fill: '#6b6250', stroke: '#c0b294', label: '#c0b294', radius: 8, shape: 'box' },
+    wojownik: { fill: '#8f5f4f', stroke: '#e8c0b0', label: '#e8c0b0', radius: 10, shape: 'round' },
+    lowca: { fill: '#5f8f4f', stroke: '#c0e8b0', label: '#c0e8b0', radius: 10, shape: 'round' },
+    mag: { fill: '#5f4f8f', stroke: '#c0b0e8', label: '#c0b0e8', radius: 10, shape: 'round' },
+};
+
+/** Drawn for a look or a ground the client has never heard of: loud on purpose. */
+const UNKNOWN_PAINT = { fill: '#8a2be2', stroke: '#ff00ff', label: '#ff79ff', radius: 10, shape: 'round' };
+
 const MOVEMENT_KEYS = {
     ArrowUp: [0, -1], w: [0, -1], W: [0, -1],
     ArrowDown: [0, 1], s: [0, 1], S: [0, 1],
@@ -1390,22 +1440,60 @@ function drawTiles(ox, oy) {
     const lastX = Math.min(state.map.width - 1, Math.ceil((ox + canvas.clientWidth) / TILE));
     const lastY = Math.min(state.map.height - 1, Math.ceil((oy + canvas.clientHeight) / TILE));
 
+    const ground = state.map.ground || [];
     for (let y = firstY; y <= lastY; y++) {
         const row = state.map.collision[y];
+        const soil = ground[y];
         for (let x = firstX; x <= lastX; x++) {
-            const sx = Math.round(x * TILE - ox);
-            const sy = Math.round(y * TILE - oy);
-
-            if (row[x] === '#') {
-                ctx.fillStyle = '#39404d';
-                ctx.fillRect(sx, sy, TILE, TILE);
-                ctx.fillStyle = '#454d5c';
-                ctx.fillRect(sx, sy, TILE, 4);
-            } else {
-                ctx.fillStyle = (x + y) % 2 === 0 ? '#232b2b' : '#202727';
-                ctx.fillRect(sx, sy, TILE, TILE);
-            }
+            paintTile(Math.round(x * TILE - ox), Math.round(y * TILE - oy),
+                soil ? soil[x] : null, row[x] === '#', (x + y) % 2 === 0);
         }
+    }
+}
+
+/**
+ * One tile.
+ *
+ * <p>The only place in the client that draws ground, and half of the seam that
+ * pictures will arrive through: when there is an atlas, this becomes a
+ * `drawImage` and nothing else moves.
+ *
+ * @param mark what the map says this tile is made of, or null on a map that
+ *             says nothing - which is drawn exactly as every map was before
+ *             ground existed
+ */
+function paintTile(sx, sy, mark, blocked, even) {
+    if (mark === null || mark === undefined) {
+        if (blocked) {
+            ctx.fillStyle = '#39404d';
+            ctx.fillRect(sx, sy, TILE, TILE);
+            ctx.fillStyle = '#454d5c';
+            ctx.fillRect(sx, sy, TILE, 4);
+        } else {
+            ctx.fillStyle = even ? '#232b2b' : '#202727';
+            ctx.fillRect(sx, sy, TILE, TILE);
+        }
+        return;
+    }
+
+    const paint = TERRAIN_PAINT[(state.map.groundLegend || {})[mark]];
+    if (!paint) {
+        // Loud rather than invisible: a tile the client has never heard of is
+        // a mistake somebody has to see, and a quietly grey one is a mistake
+        // nobody reports.
+        ctx.fillStyle = UNKNOWN_PAINT.fill;
+        ctx.fillRect(sx, sy, TILE, TILE);
+        return;
+    }
+    ctx.fillStyle = even ? paint.fill : paint.alt;
+    ctx.fillRect(sx, sy, TILE, TILE);
+    if (blocked) {
+        // A lit edge along the north side, and only on what blocks: on open
+        // ground every tile having one turns a field into floorboards. What
+        // gives open ground its texture is the two shades alternating, which
+        // is quiet enough to read as ground rather than as a pattern.
+        ctx.fillStyle = paint.top;
+        ctx.fillRect(sx, sy, TILE, 5);
     }
 }
 
@@ -1472,10 +1560,14 @@ function drawActor(actor, ox, oy, now) {
     const px = actor.rx * TILE - ox + TILE / 2;
     const py = actor.ry * TILE - oy + TILE / 2 - bob;
     const isSelf = actor.id === state.selfId;
+    // What content says this one looks like comes first; what it *is* - a
+    // creature of some tier, a person, an object - is the fallback, and is how
+    // everything was drawn before looks existed.
     const mob = actor.kind === 'MOB' ? (MOB_STYLE[actor.tier] || MOB_STYLE.MOB) : null;
     const npc = actor.kind === 'NPC' ? (NPC_STYLE[actor.npcKind] || NPC_STYLE.PERSON) : null;
-    const look = mob || npc;
-    const radius = look ? look.radius : 10;
+    const named = actor.look ? (LOOK_PAINT[actor.look] || UNKNOWN_PAINT) : null;
+    const paint = named || mob || npc;
+    const radius = paint ? paint.radius : 10;
 
     // Somebody lying there is drawn flat and dim. Without it a knocked out
     // character is indistinguishable from one whose connection has gone.
@@ -1501,17 +1593,9 @@ function drawActor(actor, ox, oy, now) {
         ctx.globalAlpha = actor.online ? 1 : 0.4;
     }
 
-    ctx.beginPath();
-    if (down) {
-        ctx.ellipse(px, py + radius - 3, radius, radius * 0.45, 0, 0, Math.PI * 2);
-    } else {
-        ctx.arc(px, py, radius, 0, Math.PI * 2);
-    }
-    ctx.fillStyle = look ? look.fill : (isSelf ? '#6ea8fe' : `hsl(${(actor.id * 67) % 360} 45% 58%)`);
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = look ? look.stroke : (isSelf ? '#e8f0ff' : 'rgba(0,0,0,.45)');
-    ctx.stroke();
+    paintBody(px, py, radius, down, paint,
+        paint ? paint.fill : (isSelf ? '#6ea8fe' : `hsl(${(actor.id * 67) % 360} 45% 58%)`),
+        paint ? paint.stroke : (isSelf ? '#e8f0ff' : 'rgba(0,0,0,.45)'));
 
     // Which way the actor faces, as a notch on the rim.
     const facing = { UP: [0, -1], DOWN: [0, 1], LEFT: [-1, 0], RIGHT: [1, 0] }[actor.dir] || [0, 1];
@@ -1525,7 +1609,7 @@ function drawActor(actor, ox, oy, now) {
         ctx.textAlign = 'center';
         ctx.fillStyle = '#0f1116';
         ctx.fillText(actor.name, px + 1, py - radius - 5);
-        ctx.fillStyle = look ? look.label : (isSelf ? '#cfe0ff' : '#c2c9d6');
+        ctx.fillStyle = paint ? paint.label : (isSelf ? '#cfe0ff' : '#c2c9d6');
         ctx.fillText(actor.name, px, py - radius - 6);
     }
 
@@ -1548,6 +1632,42 @@ function drawActor(actor, ox, oy, now) {
     }
 
     ctx.globalAlpha = 1;
+}
+
+/**
+ * One body.
+ *
+ * <p>The other half of the seam, and the only place in the client that draws a
+ * creature, a person or a character: when there are sprites, this becomes a
+ * `drawImage` picking a frame from the actor's facing, and nothing around it
+ * moves - not the shadow, not the elite's ring, not the name, not the health
+ * bar, not the chat bubble.
+ *
+ * <p>Shape as well as colour, because three shades of brown at one radius are
+ * three creatures nobody can tell apart - and telling them apart is what a
+ * look in content is for.
+ */
+function paintBody(px, py, radius, down, paint, fill, stroke) {
+    const shape = down ? 'fallen' : (paint && paint.shape) || 'round';
+    ctx.beginPath();
+    if (shape === 'fallen') {
+        ctx.ellipse(px, py + radius - 3, radius, radius * 0.45, 0, 0, Math.PI * 2);
+    } else if (shape === 'wedge') {
+        // Long and low: something that runs on four legs.
+        ctx.ellipse(px, py, radius, radius * 0.66, 0, 0, Math.PI * 2);
+    } else if (shape === 'blob') {
+        // Heavy and square-shouldered: something that does not run from you.
+        ctx.ellipse(px, py, radius * 0.95, radius, 0, 0, Math.PI * 2);
+    } else if (shape === 'box') {
+        ctx.rect(px - radius, py - radius * 0.8, radius * 2, radius * 1.6);
+    } else {
+        ctx.arc(px, py, radius, 0, Math.PI * 2);
+    }
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = stroke;
+    ctx.stroke();
 }
 
 /** A bar only appears once something is hurt: a map of full bars is just noise. */

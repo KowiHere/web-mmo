@@ -344,16 +344,21 @@ try {
         ? ok('every creature says which tier it is')
         : fail('a creature arrived without a tier');
 
-    // Nobody sends a command here: anything that moves, moved by itself.
+    // Nobody sends a command here, and nothing may move anyway: creatures
+    // stand on the spot they were put on, so that a narrow passage cannot be
+    // corked by something wandering into it and a hunting ground is where the
+    // map says it is. A creature that drifts here is the rule coming undone.
     const before = Object.fromEntries(creatures.map((c) => [c.id, `${c.x},${c.y}`]));
     await ala.waitForTimeout(3_000);
     const after = await ala.evaluate(() =>
         Object.fromEntries([...state.actors.values()].filter((a) => a.kind === 'MOB')
             .map((a) => [a.id, `${a.x},${a.y}`])));
 
-    Object.keys(before).some((id) => after[id] && after[id] !== before[id])
-        ? ok('creatures move on their own, with no player input')
-        : fail('the creatures never moved by themselves');
+    const drifted = Object.keys(before).filter((id) => after[id] && after[id] !== before[id]);
+    drifted.length === 0
+        ? ok(`all ${creatures.length} creature(s) stayed exactly where they were put`)
+        : fail(`${drifted.length} creature(s) wandered off: `
+            + drifted.map((id) => `${before[id]} -> ${after[id]}`).join(', '));
 
     // ---- movement is server-driven and reaches the other client ----------
     const start = bobView.actors.find((a) => a.id === alaView.selfId);
@@ -367,6 +372,30 @@ try {
     moved.x !== start.x || moved.y !== start.y
         ? ok(`Bob saw Ala walk ${start.x},${start.y} -> ${moved.x},${moved.y}`)
         : fail('movement did not propagate to the other client');
+
+    // ---- what the world is drawn on --------------------------------------
+    // The ground arrives as a picture in characters with a legend beside it, so
+    // the client never holds a second copy of what each character means. Worth
+    // one check and one screenshot: this is the first milestone whose whole
+    // point is what the game looks like.
+    const drawn = await ala.evaluate(() => ({
+        rows: (state.map.ground || []).length,
+        collision: state.map.collision.length,
+        kinds: new Set(Object.values(state.map.groundLegend || {})).size,
+        road: (state.map.ground || []).some((row) => row.includes('s')),
+        looks: new Set([...state.actors.values()]
+            .filter((a) => a.kind === 'MOB' && a.look).map((a) => a.look)).size,
+    }));
+    drawn.rows === drawn.collision && drawn.rows > 0
+        ? ok(`the clearing arrived with ${drawn.rows} rows of ground and ${drawn.kinds} kinds of it`)
+        : fail(`ground and collision disagree: ${JSON.stringify(drawn)}`);
+    drawn.road
+        ? ok('and a road through it')
+        : fail('the clearing has no road on it');
+    drawn.looks > 1
+        ? ok(`creatures arrived with ${drawn.looks} different looks between them`)
+        : fail(`every creature looks the same: ${JSON.stringify(drawn)}`);
+    await ala.screenshot({ path: 'swiat.png' });
 
     // ---- the server, not the client, refuses a wall ----------------------
     await waitUntilStill(ala, STEP_MS);
@@ -1235,7 +1264,7 @@ try {
             fail('the herbalist has no elixirs on her shelf');
         } else {
             ok(`her shelf carries blessings too: ${cheapest.restores}`);
-            await earnAtLeast(ala, cheapest.price);
+            const paid = await earnAtLeast(ala, cheapest.price);
             if (!(await openStall(ala, 'Miłka'))) {
                 fail('the herbalist would not open her stall again');
             }
@@ -1246,42 +1275,62 @@ try {
                 .waitForFunction((defId) => (state.bag.carried || [])
                     .some((i) => i.defId === defId), cheapest.defId, { timeout: 10_000 })
                 .then(() => true).catch(() => false);
-            bought ? ok(`bought one for ${cheapest.price} gold`) : fail('the elixir never arrived');
+            if (!bought) {
+                // An empty purse is not a broken shop: three minutes of
+                // hunting may simply not pay for a bottle, and then there is
+                // nothing in the bag to drink or to report on.
+                paid
+                    ? fail('the elixir never arrived')
+                    : skip(`she never earned the ${cheapest.price} gold the elixir costs`);
+            } else {
+                ok(`bought one for ${cheapest.price} gold`);
 
-            await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
-            await escapeAnyFight(ala);
+                await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
+                // No bottle may be drunk in a fight, which is the rule working. So
+                // a character that cannot get loose has nothing to say about
+                // blessings, and saying it failed would be a lie about this run.
+                const loose = await escapeAnyFight(ala);
 
-            const before = await ala.evaluate(() => ({
-                attack: state.you.attack, armor: state.you.armor,
-            }));
-            const bottle = await ala.evaluate((defId) =>
-                (state.bag.carried || []).find((i) => i.defId === defId) || null, cheapest.defId);
-            await ala.evaluate((id) => state.ws.send(JSON.stringify({
-                type: 'drink', itemId: id,
-            })), bottle.id);
+                const before = await ala.evaluate(() => ({
+                    attack: state.you.attack, armor: state.you.armor,
+                    blessings: state.blessings ? state.blessings.active.length : 0,
+                }));
+                const bottle = await ala.evaluate((defId) =>
+                    (state.bag.carried || []).find((i) => i.defId === defId) || null, cheapest.defId);
+                await ala.evaluate((id) => state.ws.send(JSON.stringify({
+                    type: 'drink', itemId: id,
+                })), bottle.id);
 
-            const laid = await ala
-                .waitForFunction(() => state.blessings && state.blessings.active.length === 1,
-                    null, { timeout: 10_000 })
-                .then(() => true).catch(() => false);
-            const after = await ala.evaluate(() => ({
-                attack: state.you.attack, armor: state.you.armor,
-            }));
-            laid && after.attack > before.attack
-                ? ok(`it raised attack ${before.attack} → ${after.attack} on an empty road`)
-                : fail(`after drinking: ${JSON.stringify({ laid, before, after })}`);
-            after.armor < before.armor
-                ? ok(`and took armour ${before.armor} → ${after.armor} for it — a bargain,`
-                    + ' not a present')
-                : fail(`the blessing cost nothing: armour ${before.armor} → ${after.armor}`);
+                // One more than was on before, not one in total: dying earlier in
+                // the run leaves a weakening lying there, and it is a blessing too.
+                const laid = await ala
+                    .waitForFunction((had) => state.blessings
+                        && state.blessings.active.length === had + 1,
+                        before.blessings, { timeout: 10_000 })
+                    .then(() => true).catch(() => false);
+                const after = await ala.evaluate(() => ({
+                    attack: state.you.attack, armor: state.you.armor,
+                }));
+                if (!loose && !laid) {
+                    skip('she never got out of a fight, so the blessing went undrunk');
+                } else {
+                    laid && after.attack > before.attack
+                        ? ok(`it raised attack ${before.attack} → ${after.attack} on an empty road`)
+                        : fail(`after drinking: ${JSON.stringify({ laid, before, after })}`);
+                    after.armor < before.armor
+                        ? ok(`and took armour ${before.armor} → ${after.armor} for it — a bargain,`
+                            + ' not a present')
+                        : fail(`the blessing cost nothing: armour ${before.armor} → ${after.armor}`);
 
-            const shown = await ala.evaluate(() =>
-                !document.querySelector('#blessings').hidden
-                && document.querySelector('.blessing-name').textContent);
-            shown
-                ? ok(`and the panel names it: ${shown}`)
-                : fail('nothing appeared on the blessing panel');
-            await ala.screenshot({ path: 'blogoslawienstwo.png' });
+                    const shown = await ala.evaluate(() =>
+                        !document.querySelector('#blessings').hidden
+                        && document.querySelector('.blessing-name').textContent);
+                    shown
+                        ? ok(`and the panel names it: ${shown}`)
+                        : fail('nothing appeared on the blessing panel');
+                    await ala.screenshot({ path: 'blogoslawienstwo.png' });
+                }
+            }
         }
     }
 
@@ -1302,7 +1351,10 @@ try {
         fail('the trader has no brand on his shelf');
     } else {
         await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
-        await earnAtLeast(ala, brandPrice, 240);
+        // Four minutes of hunting for the price of a brand, which a run that
+        // keeps dying will not manage. Said out loud rather than counted
+        // against the server: an empty purse is not a broken shop.
+        const afforded = await earnAtLeast(ala, brandPrice, 240);
         const bought = await openStall(ala, 'Bartosz') && await (async () => {
             await ala.evaluate(() => state.ws.send(JSON.stringify({
                 type: 'buy', itemId: 'zarzewie',
@@ -1314,7 +1366,9 @@ try {
         await ala.evaluate(() => state.ws.send(JSON.stringify({ type: 'endTalk' })));
 
         if (!bought) {
-            fail(`the brand never arrived, at ${brandPrice} gold`);
+            afforded
+                ? fail(`the brand never arrived, at ${brandPrice} gold`)
+                : skip(`she never earned the ${brandPrice} gold a brand costs`);
         } else {
             ok(`bought a brand for ${brandPrice} gold`);
             const brandId = await ala.evaluate(() =>

@@ -30,8 +30,15 @@ public record ClassDef(
         Attributes startingAttributes,
         Attribute damageFrom,
         double armorIgnored,
-        int hpBonus
+        int hpBonus,
+        /** How a character of this class is drawn, or null for the plain one. */
+        String look
 ) {
+
+    public ClassDef(String id, String name, String description, Attributes startingAttributes,
+                    Attribute damageFrom, double armorIgnored, int hpBonus) {
+        this(id, name, description, startingAttributes, damageFrom, armorIgnored, hpBonus, null);
+    }
 
     /** What this class's blows are worth, before equipment. */
     public int attackFrom(Attributes attributes) {

@@ -1,6 +1,7 @@
 {
   "id": "mistrz-miecza",
   "name": "Mistrz Miecza",
+  "look": "mistrz",
   "kind": "PERSON",
   "functions": [
     "DIALOGUE",

@@ -1,0 +1,6 @@
+{
+  "id": "obca", "name": "Obca", "starting": true, "tileSize": 32, "spawn": [2, 2],
+  "terrain": ["tttttttttt","tttttQtttt","tttttttttt","tttttttttt","tttttttttt","tttttttttt","tttttttttt"],
+  "collision": ["##########","#........#","#........#","#........#","#........#","#........#","##########"],
+  "spawns": []
+}

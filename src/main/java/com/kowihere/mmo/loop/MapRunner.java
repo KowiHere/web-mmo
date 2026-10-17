@@ -226,7 +226,8 @@ public final class MapRunner implements Runnable {
                     door.takesSomething() ? nameOf(door.consumesItem()) : null));
         }
         this.mapDto = new MapDto(map.id(), map.name(), map.width(), map.height(),
-                map.tileSize(), map.collisionRows(), List.copyOf(doors));
+                map.tileSize(), map.collisionRows(), List.copyOf(doors),
+                map.ground(), map.groundLegend());
     }
 
     /** Told once, at startup, before this map is running. */
@@ -2734,7 +2735,23 @@ public final class MapRunner implements Runnable {
                 actor.isMob() ? actor.mob.tier().name() : null,
                 actor.isNpc() ? actor.npc.kind().name() : null,
                 actor.level, actor.hp, actor.maxHp(), actor.inFight(),
-                actor.isUnconscious(System.currentTimeMillis()));
+                actor.isUnconscious(System.currentTimeMillis()),
+                lookOf(actor));
+    }
+
+    /**
+     * How content says this one is drawn. A creature and a person carry their
+     * own; a character borrows its class's, because a character is not content
+     * and has nothing of its own to say about it.
+     */
+    private String lookOf(Actor actor) {
+        if (actor.isMob()) {
+            return actor.mob.look();
+        }
+        if (actor.isNpc()) {
+            return actor.npc.look();
+        }
+        return actor.characterClass == null ? null : actor.characterClass.look();
     }
 
     private void sendError(Actor actor, String message) {

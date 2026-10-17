@@ -25,6 +25,12 @@ public class MobDefLoader {
     private static final String LOCATION = "classpath:mobs/*.json";
 
     private final ObjectMapper mapper = new ObjectMapper();
+
+    /**
+     * How things may be drawn. Read here rather than handed in, so that nothing
+     * which already builds one of these had to learn about looks.
+     */
+    private final Map<String, LookDef> looks = new LookDefLoader().loadAll();
     private final String location;
     private final Map<String, ItemDef> items;
     private final Map<String, CurrencyDef> currencies;
@@ -101,7 +107,8 @@ public class MobDefLoader {
                 loot(root, where),
                 coins(root, where),
                 ElementsInContent.strikes(root, where, id),
-                ElementsInContent.resists(root, where, id));
+                ElementsInContent.resists(root, where, id),
+                LooksInContent.look(root, looks, where, id));
     }
 
     /**

@@ -1,0 +1,6 @@
+{
+  "id": "krzywa", "name": "Krzywa", "starting": true, "tileSize": 32, "spawn": [2, 2],
+  "terrain": ["tttttttttt","tttttttttt"],
+  "collision": ["##########","#........#","#........#","#........#","#........#","#........#","##########"],
+  "spawns": []
+}

@@ -49,6 +49,9 @@ public class NpcDefLoader {
             DialogueAction.OPEN_STORAGE, NpcFunction.STORAGE);
 
     private final ObjectMapper mapper = new ObjectMapper();
+
+    /** How things may be drawn; read here so nothing had to be told about looks. */
+    private final Map<String, LookDef> looks = new LookDefLoader().loadAll();
     private final String location;
     private final Map<String, ItemDef> items;
     private final Map<String, CurrencyDef> currencies;
@@ -158,7 +161,8 @@ public class NpcDefLoader {
             throw new IllegalStateException(where + ": '" + id
                     + "' has a \"vault\" but does not list STORAGE among its functions.");
         }
-        return new NpcDef(id, name, kind, functions, dialogue, shop, master, vault);
+        return new NpcDef(id, name, kind, functions, dialogue, shop, master, vault,
+                LooksInContent.look(root, looks, where, id));
     }
 
     /**

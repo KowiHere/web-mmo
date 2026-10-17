@@ -1,6 +1,7 @@
 {
   "id": "tropicielka",
   "name": "Tropicielka Jaga",
+  "look": "mistrz",
   "kind": "PERSON",
   "functions": [
     "DIALOGUE",

@@ -1,6 +1,7 @@
 {
   "id": "rys",
   "name": "Ryś",
+  "look": "rys",
   "tier": "MOB",
   "level": 5,
   "hp": 70,

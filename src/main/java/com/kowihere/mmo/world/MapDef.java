@@ -2,6 +2,7 @@ package com.kowihere.mmo.world;
 
 import java.util.BitSet;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Immutable, shared definition of a single map: its dimensions and which tiles
@@ -25,11 +26,24 @@ public final class MapDef {
     private final List<Door> doors;
     private final RespawnPoint respawn;
     private final RespawnPoint offers;
+    private final List<String> ground;
+    private final Map<String, String> groundLegend;
 
     MapDef(String id, String name, int width, int height, int tileSize,
            int spawnX, int spawnY, BitSet blocked, List<String> collisionRows,
            List<SpawnPoint> spawns, List<NpcPlacement> npcs,
            boolean starting, List<Door> doors, RespawnPoint respawn, RespawnPoint offers) {
+        this(id, name, width, height, tileSize, spawnX, spawnY, blocked, collisionRows, spawns,
+                npcs, starting, doors, respawn, offers, List.of(), Map.of());
+    }
+
+    MapDef(String id, String name, int width, int height, int tileSize,
+           int spawnX, int spawnY, BitSet blocked, List<String> collisionRows,
+           List<SpawnPoint> spawns, List<NpcPlacement> npcs,
+           boolean starting, List<Door> doors, RespawnPoint respawn, RespawnPoint offers,
+           List<String> ground, Map<String, String> groundLegend) {
+        this.ground = List.copyOf(ground);
+        this.groundLegend = Map.copyOf(groundLegend);
         this.starting = starting;
         this.doors = List.copyOf(doors);
         this.respawn = respawn;
@@ -57,6 +71,25 @@ public final class MapDef {
 
     /** Collision as one string per row, '#' blocked and '.' free — what the client renders and the loader parsed. */
     public List<String> collisionRows() { return collisionRows; }
+
+    /**
+     * What the ground is made of, one character per tile, or empty when this
+     * map says nothing about it.
+     *
+     * <p>Purely a picture: it decides nothing. Walking is the collision grid's
+     * business, so the two are allowed to disagree - which is what a bridge
+     * over water is.
+     */
+    public List<String> ground() { return ground; }
+
+    /**
+     * Which character in {@link #ground()} means which kind of ground.
+     *
+     * <p>Travels with the map so that the client never holds a second copy of
+     * the registry's symbols. Two tables of the same thing, one of them in
+     * another language, is how a map ends up drawn as somebody else's.
+     */
+    public Map<String, String> groundLegend() { return groundLegend; }
 
     /**
      * Creatures, and where each of them stands.

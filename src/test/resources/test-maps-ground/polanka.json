@@ -1,0 +1,6 @@
+{
+  "id": "polanka", "name": "Polanka", "starting": true, "tileSize": 32, "spawn": [2, 2],
+  "terrain": ["wwwwwwwwww","wttttttttw","wttttttttw","wttttttttw","wttttttttw","wttttttttw","wwwwwwwwww"],
+  "collision": ["##########","#........#","#........#","#........#","#........#","#........#","##########"],
+  "spawns": []
+}

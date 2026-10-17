@@ -1,5 +1,6 @@
 {
   "id": "wojownik",
+  "look": "wojownik",
   "name": "Wojownik",
   "description": "Bije siłą i wytrzymuje najwięcej. Nic go nie omija i nic nie omija jego.",
   "startingAttributes": { "strength": 8, "agility": 4, "intellect": 3 },

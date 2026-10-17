@@ -28,7 +28,9 @@ public record MobDef(
         /** What its claws carry beyond force, or null for teeth and nothing more. */
         Strikes strikes,
         /** What it shrugs off; never null. A creature of ice minds fire. */
-        Resistances resists
+        Resistances resists,
+        /** How it is drawn, or null to be drawn as whatever its tier is. */
+        String look
 ) {
 
     public MobDef {
@@ -40,6 +42,6 @@ public record MobDef(
                   int respawnSeconds, java.util.List<LootEntry> loot,
                   java.util.List<CoinDrop> coins) {
         this(id, name, tier, level, hp, attack, armor, respawnSeconds, loot, coins,
-                null, Resistances.NONE);
+                null, Resistances.NONE, null);
     }
 }

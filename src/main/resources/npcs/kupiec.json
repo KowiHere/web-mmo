@@ -1,6 +1,7 @@
 {
   "id": "kupiec",
   "name": "Kupiec Bartosz",
+  "look": "kupiec",
   "kind": "PERSON",
   "functions": ["DIALOGUE", "SHOP"],
   "shop": {

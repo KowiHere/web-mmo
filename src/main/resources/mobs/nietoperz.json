@@ -1,6 +1,7 @@
 {
   "id": "nietoperz",
   "name": "Nietoperz jaskiniowy",
+  "look": "nietoperz",
   "tier": "MOB",
   "level": 6,
   "hp": 55,

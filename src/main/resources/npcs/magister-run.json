@@ -1,6 +1,7 @@
 {
   "id": "magister-run",
   "name": "Magister Run",
+  "look": "mistrz",
   "kind": "PERSON",
   "functions": [
     "DIALOGUE",

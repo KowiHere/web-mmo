@@ -1,6 +1,7 @@
 {
   "id": "niedzwiedz",
   "name": "Niedźwiedź",
+  "look": "niedzwiedz",
   "tier": "MOB",
   "level": 7,
   "hp": 130,

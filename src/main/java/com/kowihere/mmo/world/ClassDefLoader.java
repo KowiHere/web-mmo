@@ -31,6 +31,9 @@ public class ClassDefLoader {
     public static final String FALLBACK_ID = "wojownik";
 
     private final ObjectMapper mapper = new ObjectMapper();
+
+    /** How things may be drawn; read here so nothing had to be told about looks. */
+    private final Map<String, LookDef> looks = new LookDefLoader().loadAll();
     private final String location;
 
     public ClassDefLoader() {
@@ -96,7 +99,8 @@ public class ClassDefLoader {
         }
 
         return new ClassDef(id, name, description, startingAttributes, damageFrom, armorIgnored,
-                atLeast(root, "hpBonus", 0, 0, where));
+                atLeast(root, "hpBonus", 0, 0, where),
+                LooksInContent.look(root, looks, where, id));
     }
 
     private static String text(JsonNode root, String field, String where) {

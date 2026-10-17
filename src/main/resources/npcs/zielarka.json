@@ -1,6 +1,7 @@
 {
   "id": "zielarka",
   "name": "Zielarka Miłka",
+  "look": "zielarka",
   "kind": "PERSON",
   "functions": ["DIALOGUE", "HEALER", "SHOP"],
   "shop": {

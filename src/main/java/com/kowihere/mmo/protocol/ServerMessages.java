@@ -27,9 +27,14 @@ public final class ServerMessages {
      *                    whose connection has gone
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
+    /**
+     * @param look how content says this one is drawn, or null to be drawn as
+     *             whatever its kind and tier suggest. The identity only: what a
+     *             wolf looks like is the client's business, as it always was.
+     */
     public record ActorDto(int id, String name, int x, int y, String dir, boolean online,
                            String kind, String tier, String npcKind, int level, int hp, int maxHp,
-                           boolean inFight, boolean unconscious) {
+                           boolean inFight, boolean unconscious, String look) {
     }
 
     /** One blow. {@code hp} is the target's health after it, so bars need no arithmetic. */
@@ -79,8 +84,15 @@ public final class ServerMessages {
     }
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    /**
+     * @param ground one character per tile saying what the ground is made of,
+     *               or empty when this map says nothing about it. A picture,
+     *               never a rule: {@code collision} decides what can be walked
+     *               on, and the two are allowed to disagree - which is a bridge.
+     */
     public record MapDto(String id, String name, int width, int height, int tileSize,
-                         List<String> collision, List<DoorDto> doors) {
+                         List<String> collision, List<DoorDto> doors, List<String> ground,
+                         java.util.Map<String, String> groundLegend) {
     }
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)

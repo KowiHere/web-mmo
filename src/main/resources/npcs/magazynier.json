@@ -1,6 +1,7 @@
 {
   "id": "magazynier",
   "name": "Magazynier Otton",
+  "look": "magazynier",
   "kind": "PERSON",
   "functions": ["DIALOGUE", "STORAGE"],
   "vault": {

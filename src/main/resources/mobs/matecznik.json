@@ -1,6 +1,7 @@
 {
   "id": "matecznik",
   "name": "Pan Matecznika",
+  "look": "matecznik",
   "tier": "ELITE",
   "level": 12,
   "hp": 420,
